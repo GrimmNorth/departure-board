@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.6.2"
+    version: "1.7.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -137,6 +137,9 @@ button:
     entity_category: config
 
 globals:
+  - id: logo_ok            # custom logo downloaded and ready to draw
+    type: bool
+    initial_value: "false"
   - id: settings_page
     type: int
     initial_value: "0"
@@ -272,6 +275,13 @@ interval:
             App.safe_reboot();
           }
       - script.execute: apply_theme
+  - interval: 60s
+    then:
+      - lambda: |-
+          if (!id(logo_ok) && !id(logo_url).state.empty() && wifi::global_wifi_component->is_connected()) {
+            id(custom_logo)->set_url(id(logo_url).state);
+            id(custom_logo)->update();
+          }
 i2c:
   - id: touch_i2c
     sda: GPIO19
@@ -703,6 +713,23 @@ switch:
     restore_mode: ALWAYS_OFF   # shows a fake delayed and cancelled train, for testing colours
 
 text:
+  - platform: template
+    name: "Departure board logo image"
+    id: logo_url
+    mode: text
+    min_length: 0
+    max_length: 255
+    optimistic: true
+    restore_value: true
+    initial_value: ""     # web address of a PNG, e.g. http://homeassistant.local:8123/local/logo.png
+    entity_category: config
+    on_value:
+      - lambda: 'id(logo_ok) = false;'
+      - if:
+          condition:
+            lambda: 'return !x.empty();'
+          then:
+            - lambda: 'id(custom_logo)->set_url(x); id(custom_logo)->update();'
   - platform: template
     name: "Departure board destination filter"
     id: dest_filter
@@ -2792,7 +2819,12 @@ display:
       std::string foot = STATION_NAMES[si];
       if (info.empty() && !filt.empty()) foot += " > " + filt;
       int fx = 20;
-      if (id(show_logo).state) {
+      if (id(show_logo).state && id(logo_ok)) {
+        // custom logo from Home Assistant, centred in the 56x35 logo space
+        auto *lg = id(custom_logo);
+        it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, amber, bg_col);
+        fx = 20 + 56 + 14;
+      } else if (id(show_logo).state) {
         // simple train icon, 56x35 (replace with your own drawing if you like)
         int lx = 20, ly = fy + 4;
         it.filled_rectangle(lx + 4, ly + 2, 48, 22, amber);                 // body
@@ -2830,3 +2862,18 @@ display:
       }
       fit(foot, F_SUB[fi], info_left - 20 - fx);
       it.printf(fx, fb, F_SUB[fi], amber, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
+
+image:
+  # Custom logo: light pixels are drawn in the theme colour, dark/transparent ones are left out.
+  - platform: online_image
+    id: custom_logo
+    url: "http://homeassistant.local:8123/local/departure-board-logo.png"   # replaced by the logo image setting
+    format: PNG
+    type: BINARY
+    transparency: chroma_key
+    resize: 56x35
+    buffer_size: 16384
+    on_download_finished:
+      - lambda: 'id(logo_ok) = true;'
+    on_error:
+      - lambda: 'id(logo_ok) = false;'

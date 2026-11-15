@@ -29,6 +29,12 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 - Tap the clock (bottom right) for settings: display, trains, extras (highlight stop, disruption banner, logo, focus mode, clock screen), screen (night dimming, screen off), status.
 - All the same switches and numbers appear in Home Assistant under the device.
 
+### Custom logo
+The board shows a small train icon at the bottom left (switch it off with *Show logo*). To use your own logo instead:
+1. Make a PNG of your logo: **white (or light) on a transparent background**, ideally about 56 x 35 pixels (larger images are shrunk to fit). It is drawn in the theme colour.
+2. Put it where the board can download it, for example in Home Assistant's `www` folder (`/config/www/logo.png` is served as `http://homeassistant.local:8123/local/logo.png`; use your Home Assistant's IP address if `homeassistant.local` doesn't work).
+3. On the board's device page in Home Assistant, set **Logo image** to that address. The logo appears within a minute. Clear the setting to go back to the train icon.
+
 ### Troubleshooting
 - **Board shows no trains or says it is waiting:** the automation from step 5 sends the data once a minute. Check it exists and is switched on (Settings > Automations), that you picked the right board and station, and that My Rail Commute has trains. Run the automation by hand with the three-dots menu > Run actions.
 - **Changing station:** edit the board's automation and pick a different station; the board switches within a minute. Keep one automation per board. Two automations sending to the same board make it flick between stations.
