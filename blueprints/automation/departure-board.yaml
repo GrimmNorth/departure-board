@@ -6,6 +6,7 @@ blueprint:
     UK Departure Board every minute. Pick your board, pick your station, and optionally
     type the station name to show at the bottom of the board.
     Set up My Rail Commute with 10 services for the best result.
+    Use one automation per board. To change station later, edit this automation and pick another station.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:

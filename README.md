@@ -31,6 +31,7 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 
 ### Troubleshooting
 - **Board shows no trains or says it is waiting:** the automation from step 5 sends the data once a minute. Check it exists and is switched on (Settings > Automations), that you picked the right board and station, and that My Rail Commute has trains. Run the automation by hand with the three-dots menu > Run actions.
+- **Changing station:** edit the board's automation and pick a different station; the board switches within a minute. Keep one automation per board. Two automations sending to the same board make it flick between stations.
 - **Board says "No trains calling at ...":** a destination filter is set (common if the board was flashed over an older build). Clear it in Home Assistant under the board's "destination filter" text entity.
 - **No update appears:** the board checks for updates when it starts and then every 6 hours. Press the board's *restart* button on its device page to make it check straight away.
 
