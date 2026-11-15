@@ -1,6 +1,7 @@
 # UK departure board for the Elecrow CrowPanel Basic 7.0" (ESP32-S3, 800x480).
-# Reads the "My Rail Commute" sensors from Home Assistant - no proxy needed.
-# Package file: do not edit. Configure it from your own device YAML.
+# Train data is sent by the Home Assistant blueprint in blueprints/automation/
+# (from the My Rail Commute integration). Prebuilt firmware and install page:
+# https://grimmnorth.github.io/departure-board/
 substitutions:
   update_url: "https://grimmnorth.github.io/departure-board/manifest.json"
 
