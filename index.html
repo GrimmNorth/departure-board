@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UK Departure Board - install</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  body { font-family: system-ui, sans-serif; background:#111; color:#eee; max-width:680px; margin:2rem auto; padding:0 1rem; line-height:1.5; }
+  h1 { color:#ffb000; }
+  a { color:#ffb000; }
+  ol li { margin-bottom:.8rem; }
+  .box { background:#1c1c1c; border:1px solid #333; border-radius:8px; padding:1rem 1.2rem; margin:1.2rem 0; }
+  esp-web-install-button button { background:#ffb000; color:#111; border:0; border-radius:6px; padding:.8rem 1.4rem; font-size:1.1rem; cursor:pointer; }
+  small { color:#999; }
+</style>
+</head>
+<body>
+<h1>UK Departure Board</h1>
+<p>A live UK train departure board for the <strong>Elecrow CrowPanel Basic 7.0&quot; (ESP32-S3)</strong>, fed by Home Assistant.</p>
+
+<div class="box">
+  <p><strong>1. Flash the board</strong> (Chrome or Edge on a computer; plug the board in with a USB cable first)</p>
+  <esp-web-install-button manifest="manifest.json">
+    <button slot="activate">Install firmware</button>
+    <span slot="unsupported">This browser can't flash devices. Use Chrome or Edge on a computer.</span>
+  </esp-web-install-button>
+</div>
+
+<ol start="2">
+  <li><strong>Give it Wi-Fi.</strong> On your phone join the Wi-Fi network called <em>Departure-Board</em> (or <em>departure-board-xxxxxx</em>). A page opens (if not, go to 192.168.4.1). Pick your home Wi-Fi and enter its password.</li>
+  <li><strong>Add it to Home Assistant.</strong> It appears under Settings &gt; Devices &amp; services as a discovered ESPHome device. Click Add. No key is needed.</li>
+  <li><strong>Install My Rail Commute</strong> through <a href="https://hacs.xyz">HACS</a> and add your station with 10 services (you need a free Darwin token from National Rail).</li>
+  <li><strong>Paste the sensors.</strong> Open <a href="ha/departure-board-sensors.yaml">departure-board-sensors.yaml</a>, follow the two steps at the top (your entity prefix and station name), paste it into configuration.yaml and reload template entities. The board fills in within a minute.</li>
+</ol>
+<p>Updates arrive in Home Assistant as an &quot;Update&quot; button on the board's device page.</p>
+<p><small>Full guide and source: <a href="https://github.com/GrimmNorth/departure-board">GitHub</a>. Not affiliated with National Rail or Elecrow.</small></p>
+</body>
+</html>

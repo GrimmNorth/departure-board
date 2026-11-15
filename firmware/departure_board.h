@@ -1,11 +1,10 @@
 #pragma once
-// Single header for the UK Departure Board package: CrowPanel USB fix + train helper functions.
+// UK Departure Board helpers: CrowPanel USB-pin workaround + train data helper functions.
 
 // Workaround for I2C timeouts on the CrowPanel 7" touch bus (GPIO19/20).
 // On ESP32-S3 these pins double as the USB-Serial-JTAG D-/D+ lines, so the
 // USB PHY pad must be released before the I2C driver starts.
 //
-// Reconstructed from the description on the ESPHome devices page (esphome issue #15356).
 
 #include "soc/usb_serial_jtag_reg.h"
 #include "soc/io_mux_reg.h"
