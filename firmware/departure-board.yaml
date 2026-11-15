@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.9.0"
+    version: "1.7.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1452,7 +1452,7 @@ display:
       const int PX = L ? 540 : 610;             // platform column (right edge)
       const int DMAX = L ? 12 : 21;             // destination max characters
       // sub-line offset below the main line: never closer than the main line's descenders allow
-      const int SUBOFF = std::max(L ? 50 : 37, fr->get_baseline() + std::abs(fr->get_descender()) + 9
+      const int SUBOFF = std::max(L ? 50 : 37, fr->get_baseline() + std::abs(fr->get_descender()) + 14
                                             - (fs->get_baseline() - (fs->get_capheight() > 0 ? fs->get_capheight() : fs->get_baseline() * 3 / 4)));
       const int SUBH = L ? 38 : 32;
       const int SW = 784 - DX;                  // sub-line width
