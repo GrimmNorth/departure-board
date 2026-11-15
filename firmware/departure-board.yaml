@@ -1366,7 +1366,7 @@ display:
           const bool wifi_ok = wifi::global_wifi_component->is_connected();
           const bool api_ok = api::global_api_server->is_connected();
           static const char *PAGE_NAMES[5] = {"Display", "Trains", "Extras", "Screen", "Status"};
-          it.printf(20, 25, id(f_row_1), amber, TextAlign::CENTER_LEFT, "Settings %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
+          it.printf(20, 25, id(f_row_1), hilite, TextAlign::CENTER_LEFT, "Settings %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
           if (id(settings_page) == 0) {
             R = 0; lab(R, "Theme"); val(R, amber, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
             R = 1; lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
