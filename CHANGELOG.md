@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.1 - 2026-11-15 (beta)
+- Station switching responds instantly and reliably
+
 ## 1.12.0 - 2026-11-15 (beta)
 - Station switching, startup animation, calmer delay colours, shorter entity names (settings reset once)
 
