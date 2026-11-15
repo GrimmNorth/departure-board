@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.11.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.12.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "169e635507546c3e06b3a98d78124fec",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.11.0.ota.bin",
-        "summary": "Paging through all trains, with optional pinned next train"
+        "md5": "8f122bfc8379c364f3373ea14074b377",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.12.0.ota.bin",
+        "summary": "Station switching, startup animation, calmer delay colours, shorter entity names (settings reset once)"
       }
     }
   ]

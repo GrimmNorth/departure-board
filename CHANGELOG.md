@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.0 - 2026-11-15 (beta)
+- Station switching, startup animation, calmer delay colours, shorter entity names (settings reset once)
+
 ## 1.11.0 - 2026-11-15 (beta)
 - Paging through all trains, with optional pinned next train
 
