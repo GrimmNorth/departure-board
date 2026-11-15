@@ -54,7 +54,7 @@ actions:
     continue_on_error: true
     data:
       station: >-
-        {{ (label if label | length > 0 else device_attr(station_id, 'name')) | upper }}
+        {{ (label if label | length > 0 else device_attr(station_id, 'name')) }}
       status: >-
         {{ states(status_ent) if status_ent != '' else '' }}
   - repeat:

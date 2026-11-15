@@ -1289,7 +1289,7 @@ display:
 
       // boot splash
       if (millis() < 6000) {
-        it.printf(400, 170, id(f_row_1), amber, TextAlign::CENTER, "UK DEPARTURE BOARD");
+        it.printf(400, 170, id(f_row_1), amber, TextAlign::CENTER, "UK Departure Board");
         it.printf(400, 225, id(f_sub_1), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
         it.printf(400, 255, id(f_sub_1), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
         if (wifi::global_wifi_component->is_connected())
@@ -1302,10 +1302,9 @@ display:
       auto now = id(ha_time).now();
       bool tv = now.is_valid();
       int nowmin = tv ? now.hour * 60 + now.minute : -1;
-      const char *THEME_NAMES[] = {"CLASSIC", "WHITE LED", "LCD", "GREEN", "CONTRAST", "DAYLIGHT"};
+      const char *THEME_NAMES[] = {"Classic", "White LED", "Modern LCD", "Retro green", "High contrast", "Daylight"};
       const char *FONT_NAMES[] = {"Doto", "DotGothic", "VT323", "B612 Mono"};
-      std::string stn_name = id(station_ts).state.empty() ? std::string("DEPARTURES") : id(station_ts).state;
-      for (auto &ch : stn_name) ch = toupper((unsigned char) ch);
+      std::string stn_name = id(station_ts).state.empty() ? std::string("Departures") : id(station_ts).state;
       const char *STATION_NAMES[] = {stn_name.c_str()};
       int si = id(station_select).active_index().value_or(0);
       uint32_t dms = 0;
@@ -1319,7 +1318,7 @@ display:
         if (millis() - id(last_fresh) > 30000) {
           id(ui_screen) = 0;                    // close after 30 s without a touch
         } else {
-          static const char *SPEEDN[3] = {"SLOW", "MEDIUM", "FAST"};
+          static const char *SPEEDN[3] = {"Slow", "Medium", "Fast"};
           int R = 0;
           auto lab = [&](int row, const char *s) {
             it.printf(20, 50 + row * 46 + 21, id(f_row_1), amber, TextAlign::CENTER_LEFT, "%s", s);
@@ -1335,16 +1334,16 @@ display:
             it.printf(740, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "+");
             it.printf(645, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "%s", v);
           };
-          auto onoff = [&](int row, bool on) { val(row, on ? green : red, on ? "ON" : "OFF"); };
+          auto onoff = [&](int row, bool on) { val(row, on ? green : red, on ? "On" : "Off"); };
           char buf[40];
           const bool wifi_ok = wifi::global_wifi_component->is_connected();
           const bool api_ok = api::global_api_server->is_connected();
-          static const char *PAGE_NAMES[5] = {"DISPLAY", "TRAINS", "EXTRAS", "SCREEN", "STATUS"};
-          it.printf(20, 25, id(f_row_1), amber, TextAlign::CENTER_LEFT, "SETTINGS %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
+          static const char *PAGE_NAMES[5] = {"Display", "Trains", "Extras", "Screen", "Status"};
+          it.printf(20, 25, id(f_row_1), amber, TextAlign::CENTER_LEFT, "Settings %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
           if (id(settings_page) == 0) {
             R = 0; lab(R, "Theme"); val(R, amber, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
             R = 1; lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
-            R = 2; lab(R, "Text size"); val(R, amber, id(text_large).state ? "LARGE" : "NORMAL");
+            R = 2; lab(R, "Text size"); val(R, amber, id(text_large).state ? "Large" : "Normal");
             R = 3; lab(R, "Font"); val(R, amber, FONT_NAMES[id(font_select).active_index().value_or(0)]);
             R = 4; lab(R, "Scroll speed"); val(R, amber, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
             R = 5; lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
@@ -1353,18 +1352,18 @@ display:
           }
           else if (id(settings_page) == 1) {
             R = 0; lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
-            R = 1; lab(R, "Calling at"); { std::string f = id(dest_filter).state; val(R, f.empty() ? red : green, f.empty() ? "OFF" : f.c_str()); }
+            R = 1; lab(R, "Calling at"); { std::string f = id(dest_filter).state; val(R, f.empty() ? red : green, f.empty() ? "Off" : f.c_str()); }
             R = 2; lab(R, "Hide cancelled"); onoff(R, id(hide_cancelled).state);
             R = 3; lab(R, "Show platform"); onoff(R, id(show_platform).state);
             R = 4; lab(R, "Departed grace"); snprintf(buf, sizeof(buf), "%d min", (int) id(departed_grace).state); pm(R, buf);
-            R = 5; lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "OFF"); pm(R, buf);
+            R = 5; lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
           }
           else if (id(settings_page) == 2) {
-            R = 0; lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; val(R, f.empty() ? red : green, f.empty() ? "OFF" : f.c_str()); }
+            R = 0; lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; val(R, f.empty() ? red : green, f.empty() ? "Off" : f.c_str()); }
             R = 1; lab(R, "Disruption banner"); onoff(R, id(disruption_banner).state);
             R = 2; lab(R, "Show logo"); onoff(R, id(show_logo).state);
             R = 3; lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
-            R = 4; lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "OFF"); pm(R, buf);
+            R = 4; lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
           }
           else if (id(settings_page) == 3) {
             R = 0; lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
@@ -1373,23 +1372,23 @@ display:
             R = 3; lab(R, "Night starts"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf);
             R = 4; lab(R, "Night ends"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf);
             R = 5; lab(R, "Night screen off"); onoff(R, id(night_screen_off).state);
-            R = 6; lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "OFF"); pm(R, buf);
+            R = 6; lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
             R = 7; lab(R, "Idle brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(idle_level).state); pm(R, buf);
           }
           else if (id(settings_page) == 4) {
-            R = 0; lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "OFFLINE");
+            R = 0; lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
             R = 1; lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
-            R = 2; lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "CONNECTED" : "OFFLINE");
-            R = 3; lab(R, "Data age"); if (dms == 0) val(R, amber, "NO DATA YET"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 15 ? red : green, buf); }
+            R = 2; lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "Connected" : "Offline");
+            R = 3; lab(R, "Data age"); if (dms == 0) val(R, amber, "No data yet"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 15 ? red : green, buf); }
             R = 4; lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
             R = 5; lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
             R = 6; lab(R, "Firmware"); snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf);
             R = 7; lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
           }
           it.rectangle(60, 426, 300, 46, amber);
-          it.printf(210, 449, id(f_row_1), amber, TextAlign::CENTER, "NEXT >");
+          it.printf(210, 449, id(f_row_1), amber, TextAlign::CENTER, "Next >");
           it.rectangle(440, 426, 300, 46, amber);
-          it.printf(590, 449, id(f_row_1), amber, TextAlign::CENTER, "CLOSE");
+          it.printf(590, 449, id(f_row_1), amber, TextAlign::CENTER, "Close");
           return;
         }
       }
