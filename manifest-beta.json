@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.8.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.9.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "c52313ec31629fc81887fe8389ac956e",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.8.1.ota.bin",
-        "summary": "Row bands line up with the text"
+        "md5": "2a5ae3f8d37ce149bb81f0a834659190",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.9.0.ota.bin",
+        "summary": "Calling-points line no longer crowds the departure line; new dot-matrix fonts: London Underground, Bitcount, Handjet"
       }
     }
   ]

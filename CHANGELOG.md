@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.0 - 2026-11-15 (beta)
+- Calling-points line no longer crowds the departure line; new dot-matrix fonts: London Underground, Bitcount, Handjet
+
 ## 1.8.1 - 2026-11-15 (beta)
 - Row bands line up with the text
 
