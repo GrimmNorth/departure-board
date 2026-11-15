@@ -25,6 +25,7 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 
 ### Using the board
 - Tap a train for its detail page (operator, countdown, calling points with times); tap anywhere to close.
+- Six colour themes: Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Change it under Settings > Display > Theme on the board, or the board's theme setting in Home Assistant.
 - Tap the clock (bottom right) for settings: display, trains, extras (highlight stop, disruption banner, logo, focus mode, clock screen), screen (night dimming, screen off), status.
 - All the same switches and numbers appear in Home Assistant under the device.
 
