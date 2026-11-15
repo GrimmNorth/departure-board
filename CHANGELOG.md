@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.0 - 2026-11-15 (beta)
+- Custom logo: set a PNG address in Home Assistant
+
 ## 1.6.2 - 2026-11-15 (beta)
 - Redesigned train detail screen; footer and clock lined up
 
