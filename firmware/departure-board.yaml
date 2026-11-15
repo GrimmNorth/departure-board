@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.9.1"
+    version: "1.7.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1451,13 +1451,29 @@ display:
       const int DX = L ? 175 : 130;             // destination / sub-line x
       const int PX = L ? 540 : 610;             // platform column (right edge)
       const int DMAX = L ? 12 : 21;             // destination max characters
-      // sub-line offset below the main line: never closer than the main line's descenders allow
-      const int SUBOFF = std::max(L ? 50 : 37, fr->get_baseline() + std::abs(fr->get_descender()) + 14
-                                            - (fs->get_baseline() - (fs->get_capheight() > 0 ? fs->get_capheight() : fs->get_baseline() * 3 / 4)));
-      const int SUBH = L ? 38 : 32;
-      const int SW = 784 - DX;                  // sub-line width
-      int pad = (H - (SUBOFF + SUBH)) / 2;
-      if (pad < 0) pad = 0;
+      // real extent of the letters, measured from the glyphs: capital tops to descender bottoms,
+      // relative to the top of a printed line (font metrics overstate this for some fonts)
+      auto ink_of = [](font::Font *f, int &top, int &bot) {
+        top = f->get_baseline() * 1 / 4; bot = f->get_baseline();
+        bool got = false;
+        for (char c : std::string("HXE")) {
+          const font::Glyph *g = f->find_glyph((uint32_t) c);
+          if (g && g->height > 0) { top = got ? std::min(top, g->offset_y) : g->offset_y; got = true; }
+        }
+        for (char c : std::string("gjpqy,")) {
+          const font::Glyph *g = f->find_glyph((uint32_t) c);
+          if (g && g->height > 0) bot = std::max(bot, g->offset_y + g->height);
+        }
+      };
+      int rT, rB, sT, sB;
+      ink_of(fr, rT, rB);
+      ink_of(fs, sT, sB);
+      // sub line sits just below the main line's letters: 2 px band padding each side + 3 px gap
+      const int SUBOFF = rB + 7 - sT;
+      const int ink_top = rT;
+      const int ink_bot = SUBOFF + sB;
+      int pad = (H - (ink_bot - ink_top)) / 2 - ink_top;
+      if (pad < -ink_top) pad = -ink_top;
       const int speeds[3] = {20, 30, 50};       // scroll px per second
       const int sp = speeds[id(scroll_speed).active_index().value_or(1)];
       const std::string filt = id(dest_filter).state;
@@ -1480,25 +1496,24 @@ display:
       const int bgs = id(bg_style).active_index().value_or(1);
       if (bgs > 0 && view == 0 && !detail) {
         // each band covers the letters themselves: capital height down to the descenders, plus padding
-        auto ink = [](font::Font *f, int top, int &a, int &b) {
-          int base = top + f->get_baseline();
-          int ch = f->get_capheight();
-          if (ch <= 0) ch = f->get_baseline() * 3 / 4;
-          a = base - ch - 5;
-          b = base + std::abs(f->get_descender()) + 4;
+        auto ink = [&](font::Font *f, int top, int &a, int &b) {
+          int t0, b0;
+          ink_of(f, t0, b0);
+          a = top + t0 - 2;
+          b = top + b0 + 2;
         };
         for (int s = 0; s < count; s++) {
           int y = 6 + s * H + pad;
           int mt, mb, st, sb;
           ink(fr, y, mt, mb);
           ink(fs, y + SUBOFF, st, sb);
-          if (mb > st - 3) { int mid = (mb + st) / 2; mb = mid - 1; st = mid + 2; }   // keep a thin gap between the two lines
-          int next = 6 + (s + 1) * H + pad;
-          int nt, nb;
-          ink(fr, next, nt, nb);
-          if (sb > nt - 4) sb = nt - 4;                                             // and before the next train
+          if (mb > st - 3) { int mid = (mb + st) / 2; mb = mid - 1; st = mid + 2; }   // thin gap between the two lines
+          // the bands fill the train's slot, leaving a 3 px gap to the next train
+          int top = 6 + s * H + 1, bottom = std::min(6 + (s + 1) * H - 2, 411);
+          mt = std::min(mt, top);
+          sb = std::max(sb, bottom);
           it.filled_rectangle(10, mt, 780, mb - mt, band_col);
-          if (sb > st) it.filled_rectangle(10, st, 780, sb - st, band_col);
+          it.filled_rectangle(10, st, 780, sb - st, band_col);
         }
         {
           const int fb = 418 + 34;                       // footer baseline
