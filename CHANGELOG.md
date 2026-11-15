@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.11.0 - 2026-11-15 (beta)
+- Paging through all trains, with optional pinned next train
+
 ## 1.10.0 - 2026-11-15 (beta)
 - Platform number flashes when it changes; factory reset button
 

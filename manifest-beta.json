@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.10.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.11.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "568c1ce2492509a5365045adca06623f",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.10.0.ota.bin",
-        "summary": "Platform number flashes when it changes; factory reset button"
+        "md5": "169e635507546c3e06b3a98d78124fec",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.11.0.ota.bin",
+        "summary": "Paging through all trains, with optional pinned next train"
       }
     }
   ]
