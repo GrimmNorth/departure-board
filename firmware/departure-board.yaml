@@ -4,14 +4,21 @@
 # https://grimmnorth.github.io/departure-board/
 substitutions:
   update_url: "https://grimmnorth.github.io/departure-board/manifest.json"
+  update_url_beta: "https://grimmnorth.github.io/departure-board/manifest-beta.json"
 
 esphome:
   name: departure-board
   friendly_name: Departure Board
   name_add_mac_suffix: true   # several boards on one network stay distinct
+  on_boot:
+    priority: -100
+    then:
+      # follow the update channel chosen in Home Assistant (Stable unless changed)
+      - lambda: |-
+          if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.4.0"
+    version: "1.5.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -94,6 +101,7 @@ http_request:
 
 update:
   - platform: http_request
+    id: fw_update
     name: "Departure board firmware"
     source: ${update_url}
     update_interval: 6h
@@ -108,12 +116,24 @@ wifi:
 
 captive_portal:
 
+# Lets the install page ask for Wi-Fi details right after flashing (over the USB cable).
+improv_serial:
+
+# After 5 failed starts in a row the board boots a minimal "safe mode" that can still
+# receive a fixed update, so a bad release never needs a USB cable to recover.
+safe_mode:
+  num_attempts: 5
+  reboot_timeout: 10min
+
 debug:
   update_interval: 60s
 
 button:
   - platform: restart
     name: "Departure board restart"
+    entity_category: config
+  - platform: safe_mode
+    name: "Departure board restart in safe mode"
     entity_category: config
 
 globals:
@@ -214,6 +234,24 @@ interval:
   - interval: 2s
     then:
       - script.execute: update_dim
+  # Memory watchdog: restart cleanly before low memory can freeze the board.
+  - interval: 60s
+    then:
+      - lambda: |-
+          static uint8_t low_count = 0;
+          size_t fr = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+          size_t blk = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+          if (fr < 16384 || blk < 8192) low_count++; else low_count = 0;
+          if (low_count >= 3) {
+            ESP_LOGW("watchdog", "Memory critically low (%u free, %u block) - restarting", (unsigned) fr, (unsigned) blk);
+            App.safe_reboot();
+          }
+          // memory slowly running down: restart quietly at 03:30 instead
+          auto t = id(ha_time).now();
+          if (t.is_valid() && t.hour == 3 && t.minute == 30 && millis() > 3600000UL && fr < 40960) {
+            ESP_LOGW("watchdog", "Memory low (%u free) - overnight restart", (unsigned) fr);
+            App.safe_reboot();
+          }
 i2c:
   - id: touch_i2c
     sda: GPIO19
@@ -666,6 +704,22 @@ text:
     initial_value: ""     # departure times to underline, e.g. "07:42, 08:15"
 
 select:
+  - platform: template
+    name: "Departure board update channel"
+    id: update_channel
+    optimistic: true
+    restore_value: true
+    initial_option: "Stable"
+    options: ["Stable", "Beta"]
+    entity_category: config
+    on_value:
+      - lambda: |-
+          id(fw_update).set_source_url(x == "Beta" ? "${update_url_beta}" : "${update_url}");
+      - if:
+          condition:
+            lambda: 'return millis() > 60000;'   # changed by hand, not restored at boot
+          then:
+            - component.update: fw_update
   - platform: template
     name: "Departure board station"
     id: station_select
@@ -1148,6 +1202,18 @@ sensor:
       id: heap_free
       name: "Departure board free memory"
       entity_category: diagnostic
+    block:
+      name: "Departure board largest free memory block"
+      entity_category: diagnostic
+  - platform: template
+    name: "Departure board data age"
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    update_interval: 60s
+    lambda: |-
+      if (id(data_ms_stn) == 0) return NAN;     // nothing received since start-up
+      return (float) ((millis() - id(data_ms_stn)) / 60000);
   - platform: template
     id: leave_in_s
     name: "Departure board leave in"
@@ -2583,6 +2649,8 @@ display:
         bool big = false;
         if (!wifi_ok) { l1 = "Connecting to Wi-Fi..."; }
         else if (!api_ok || (dms == 0 && millis() < 120000)) { l1 = "Waiting for Home Assistant..."; }
+        else if (dms == 0) { l1 = "No train data received"; l2 = "Check the HA automation"; }
+        else if (millis() - dms > 30UL * 60000UL) { l1 = "Train data is out of date"; l2 = "Check Home Assistant"; }
         else if (!filt.empty()) { l1 = "No trains calling at"; l2 = filt; }
         else { l1 = "No more trains"; l2 = "tonight"; big = true; }
         if (big) {
@@ -2603,7 +2671,7 @@ display:
       if (detail) { info = "Tap to go back"; infoc = amber; }
       else if (!wifi_ok) { info = "No Wi-Fi"; infoc = red; }
       else if (!api_ok) { info = "No Home Assistant"; infoc = red; }
-      else if (dms != 0 && age_min >= 15) {
+      else if (dms != 0 && age_min >= 5) {
         char ab[32];
         snprintf(ab, sizeof(ab), "Data %d min old", (int) age_min);
         info = ab;

@@ -1,0 +1,37 @@
+name: Build check
+
+# Compiles the firmware on every change, so a broken build is caught before any release.
+on:
+  push:
+    branches: [main]
+    paths: ["firmware/**", ".github/workflows/build.yml"]
+  pull_request:
+    paths: ["firmware/**"]
+  workflow_dispatch:
+
+env:
+  ESPHOME_VERSION: "2026.10.2"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.esphome
+            firmware/.esphome
+          key: esphome-${{ env.ESPHOME_VERSION }}-${{ hashFiles('firmware/departure-board.yaml') }}
+          restore-keys: esphome-${{ env.ESPHOME_VERSION }}-
+      - run: pip install "esphome==${ESPHOME_VERSION}"
+      - name: Validate
+        run: esphome config firmware/departure-board.yaml > /dev/null
+      - name: Compile
+        run: esphome compile firmware/departure-board.yaml
+      - name: Size report
+        run: find firmware/.esphome/build -name '*.bin' -newer firmware/departure-board.yaml -exec ls -l {} \;

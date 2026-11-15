@@ -1,0 +1,119 @@
+name: Release
+
+# Run from GitHub: Actions > Release > Run workflow.
+#   beta    - build and publish to boards on the Beta update channel only
+#   stable  - build and publish to everyone (and the install page)
+#   promote - no build: make the current beta the stable release
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Where to publish"
+        type: choice
+        options: [beta, stable, promote]
+        default: beta
+      version:
+        description: "Version number, e.g. 1.5.1 (not needed for promote)"
+        required: false
+      summary:
+        description: "What changed, one line (shown in Home Assistant)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  ESPHOME_VERSION: "2026.10.2"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Promote beta to stable
+        if: inputs.channel == 'promote'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp manifest-beta.json manifest.json
+          VER=$(python3 -c "import json;print(json.load(open('manifest.json'))['version'])")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git diff --cached --quiet && { echo "Stable is already $VER"; exit 0; }
+          git commit -m "Promote $VER to stable"
+          git push
+          gh release edit "v$VER" --prerelease=false --latest || true
+          echo "### $VER is now the stable release" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check inputs
+        if: inputs.channel != 'promote'
+        env:
+          VER: ${{ inputs.version }}
+          SUMMARY: ${{ inputs.summary }}
+        run: |
+          echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::Version must look like 1.5.1"; exit 1; }
+          [ -n "$SUMMARY" ] || { echo "::error::Please give a one-line summary"; exit 1; }
+          [ ! -e "releases/departure-board-$VER.ota.bin" ] || { echo "::error::Version $VER already exists - pick a new number"; exit 1; }
+
+      - uses: actions/setup-python@v5
+        if: inputs.channel != 'promote'
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        if: inputs.channel != 'promote'
+        with:
+          path: |
+            ~/.platformio
+            ~/.esphome
+            firmware/.esphome
+          key: esphome-${{ env.ESPHOME_VERSION }}-${{ hashFiles('firmware/departure-board.yaml') }}
+          restore-keys: esphome-${{ env.ESPHOME_VERSION }}-
+
+      - name: Build
+        if: inputs.channel != 'promote'
+        env:
+          VER: ${{ inputs.version }}
+        run: |
+          pip install "esphome==${ESPHOME_VERSION}"
+          sed -i -E "0,/^    version: \"[^\"]*\"/s//    version: \"$VER\"/" firmware/departure-board.yaml
+          grep -q "version: \"$VER\"" firmware/departure-board.yaml
+          esphome compile firmware/departure-board.yaml
+          FACTORY=$(find firmware/.esphome/build -name '*factory.bin' -newer firmware/departure-board.yaml | head -1)
+          OTA=$(find firmware/.esphome/build -name '*ota.bin' -newer firmware/departure-board.yaml | head -1)
+          [ -f "$FACTORY" ] && [ -f "$OTA" ] || { echo "::error::Build files not found"; find firmware/.esphome/build -name '*.bin'; exit 1; }
+          echo "FACTORY=$FACTORY" >> "$GITHUB_ENV"
+          echo "OTA=$OTA" >> "$GITHUB_ENV"
+
+      - name: Publish
+        if: inputs.channel != 'promote'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ inputs.version }}
+          SUMMARY: ${{ inputs.summary }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          ./release.sh "$VER" "$SUMMARY" "$FACTORY" "$OTA" "$CHANNEL"
+          python3 - <<'PY'
+          import os, datetime
+          ver, summary, ch = os.environ["VER"], os.environ["SUMMARY"], os.environ["CHANNEL"]
+          entry = f"## {ver} - {datetime.date.today().isoformat()}{' (beta)' if ch == 'beta' else ''}\n- {summary}\n\n"
+          text = open("CHANGELOG.md").read()
+          head, sep, rest = text.partition("\n## ")
+          open("CHANGELOG.md", "w").write(head.rstrip() + "\n\n" + entry + (("## " + rest) if sep else ""))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware/departure-board.yaml releases manifest.json manifest-beta.json CHANGELOG.md
+          git commit -m "Release $VER ($CHANNEL)"
+          git tag "v$VER"
+          git push origin HEAD "v$VER"
+          PRE=""; [ "$CHANNEL" = "beta" ] && PRE="--prerelease"
+          gh release create "v$VER" $PRE --title "$VER" --notes "$SUMMARY" \
+            "releases/departure-board-$VER.factory.bin" "releases/departure-board-$VER.ota.bin"
+          echo "### Published $VER to $CHANNEL" >> "$GITHUB_STEP_SUMMARY"

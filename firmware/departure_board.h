@@ -9,6 +9,7 @@
 #include "soc/usb_serial_jtag_reg.h"
 #include "soc/io_mux_reg.h"
 #include "soc/soc.h"
+#include "esp_heap_caps.h"
 
 __attribute__((constructor)) static void crowpanel_usb_disable() {
   // Turn off the USB PHY pad and its D+ pull-up.

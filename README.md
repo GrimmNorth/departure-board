@@ -9,12 +9,19 @@ An amber dot-matrix style UK train departure board for the **Elecrow CrowPanel B
 You need the CrowPanel above, Home Assistant, [HACS](https://hacs.xyz), and the **My Rail Commute** integration (free Darwin token from National Rail).
 
 1. **Flash.** Open the install page in Chrome or Edge on a computer, plug the board in by USB, click Install.
-2. **Wi-Fi.** Join the board's own Wi-Fi (`Departure-Board`) from a phone and pick your home network.
+2. **Wi-Fi.** When the install finishes the page asks for your Wi-Fi details. (Fallback: join the board's own Wi-Fi, `Departure-Board`, from a phone and pick your home network.)
 3. **Home Assistant.** Settings > Devices & services: add the discovered ESPHome device. No key needed. If it isn't discovered, use Add integration > ESPHome and enter the board's IP address (see your router).
 4. **My Rail Commute.** Add your station with **10 services**.
 5. **Connect them.** Use the *Import blueprint* button on the install page, then Settings > Automations & scenes > Blueprints > UK Departure Board > Create automation. Pick your board, pick your station, type the station name to show, Save.
 
 Updates appear in Home Assistant as an Update button on the board's device page.
+
+### Built-in safety nets
+- **Safe mode:** if an update ever stops the board starting, after 5 failed starts it boots a minimal mode that can still take a fixed update. No USB cable needed. There is also a "restart in safe mode" button.
+- **Stale data warning:** the footer turns red ("Data 7 min old") if Home Assistant stops sending trains, and the board says so plainly if no data has arrived at all, instead of showing old times as live.
+- **Memory watchdog:** if memory runs critically low the board restarts cleanly; if it is slowly running down it restarts quietly at 03:30.
+- **Diagnostics** in Home Assistant under the device: uptime, restart reason, data age, free memory, Wi-Fi signal.
+- **Update channel:** leave on *Stable*. Set it to *Beta* (under the device's configuration) to get test versions first.
 
 ### Using the board
 - Tap a train for its detail page (operator, countdown, calling points with times); tap anywhere to close.
@@ -28,14 +35,15 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 
 ## For the maintainer
 
-The firmware source is `firmware/departure-board.yaml` with `firmware/departure_board.h` beside it (compile in ESPHome Builder; it contains no secrets).
+The firmware source is `firmware/departure-board.yaml` with `firmware/departure_board.h` beside it. It contains no secrets. Every push that changes `firmware/` is compiled by the **Build check** workflow, so a broken build shows up as a red cross on GitHub before it can be released.
 
-To publish a new version:
-1. Build in ESPHome Builder and download both the **factory** and **OTA** files.
-2. `./release.sh 1.4.1 "What changed" factory.bin ota.bin`
-3. `git add -A && git commit -m "Release 1.4.1" && git push`
+To publish a new version (no downloads, no scripts on your computer):
+1. On GitHub open **Actions > Release > Run workflow**.
+2. Choose **beta**, type the new version number (e.g. `1.5.1`) and a one-line summary, and run it. It compiles the firmware, publishes it to boards on the Beta channel, adds a GitHub Release and updates `CHANGELOG.md`.
+3. Try it on your own board (set to Beta) for a day or so.
+4. Run the workflow again with **promote** to give that version to everyone and the install page.
 
-GitHub Pages serves `manifest.json` and `releases/`. Boards compare the manifest version to their own and offer the update.
+Choosing **stable** in step 2 skips the beta stage. `release.sh` does the same publishing by hand if you ever build locally. To move to a newer ESPHome, change `ESPHOME_VERSION` in both workflow files.
 
 ## Notes
 - Licensed under the MIT licence (see `LICENSE`).
