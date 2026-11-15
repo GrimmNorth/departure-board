@@ -25,7 +25,7 @@ blueprint:
             - integration: my_rail_commute
     station_name:
       name: Station name on the board
-      description: Shown at the bottom of the board. Leave empty to use the station's own name.
+      description: Shown at the bottom of the board. Leave empty to use the station's name (e.g. "Brough").
       default: ""
       selector:
         text:
@@ -54,7 +54,7 @@ actions:
     continue_on_error: true
     data:
       station: >-
-        {{ (label if label | length > 0 else device_attr(station_id, 'name')) }}
+        {{ label if label | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True)) }}
       status: >-
         {{ states(status_ent) if status_ent != '' else '' }}
   - repeat:
