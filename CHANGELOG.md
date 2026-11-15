@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.8.1 - 2026-11-15 (beta)
+- Row bands line up with the text
+
 ## 1.8.0 - 2026-11-15 (beta)
 - Dot-matrix style backgrounds: row bands or LED grid
 
