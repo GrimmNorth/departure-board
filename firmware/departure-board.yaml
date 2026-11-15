@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.10.0"
+    version: "1.11.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -385,8 +385,10 @@ touchscreen:
                   } break;
                     case 2: id(hide_cancelled).toggle(); break;
                     case 3: id(show_platform).toggle(); break;
-                    case 4: if (plus || minus) { float v = id(departed_grace).state + (plus ? 1 : -1); if (v < 1) v = 1; if (v > 5) v = 5; auto c = id(departed_grace).make_call(); c.set_value(v); c.perform(); } break;
-                    case 5: if (plus || minus) { float v = id(walk_minutes).state + (plus ? 1 : -1); if (v < 0) v = 0; if (v > 30) v = 30; auto c = id(walk_minutes).make_call(); c.set_value(v); c.perform(); } break;
+                    case 4: id(paging_on).toggle(); break;
+                    case 5: id(pin_next).toggle(); break;
+                    case 6: if (plus || minus) { float v = id(departed_grace).state + (plus ? 1 : -1); if (v < 1) v = 1; if (v > 5) v = 5; auto c = id(departed_grace).make_call(); c.set_value(v); c.perform(); } break;
+                    case 7: if (plus || minus) { float v = id(walk_minutes).state + (plus ? 1 : -1); if (v < 0) v = 0; if (v > 30) v = 30; auto c = id(walk_minutes).make_call(); c.set_value(v); c.perform(); } break;
                   }
                   break;
                 case 2:
@@ -567,6 +569,18 @@ color:
 
 number:
   - platform: template
+    name: "Departure board page interval"
+    id: page_secs
+    optimistic: true
+    restore_value: true
+    initial_value: 10
+    min_value: 5
+    max_value: 30
+    step: 1
+    unit_of_measurement: "s"
+    mode: box
+    entity_category: config
+  - platform: template
     name: "Departure board trains shown"
     id: train_count
     min_value: 3
@@ -653,6 +667,18 @@ datetime:
     initial_value: "06:00:00"
 
 switch:
+  - platform: template
+    name: "Departure board paging"
+    id: paging_on
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+  - platform: template
+    name: "Departure board pin next train"
+    id: pin_next
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
   - platform: template
     name: "Departure board night dimming"
     id: night_dimming
@@ -1396,8 +1422,10 @@ display:
             R = 1; lab(R, "Calling at"); { std::string f = id(dest_filter).state; val(R, f.empty() ? red : green, f.empty() ? "Off" : f.c_str()); }
             R = 2; lab(R, "Hide cancelled"); onoff(R, id(hide_cancelled).state);
             R = 3; lab(R, "Show platform"); onoff(R, id(show_platform).state);
-            R = 4; lab(R, "Departed grace"); snprintf(buf, sizeof(buf), "%d min", (int) id(departed_grace).state); pm(R, buf);
-            R = 5; lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
+            R = 4; lab(R, "Paging"); onoff(R, id(paging_on).state);
+            R = 5; lab(R, "Pin next train"); onoff(R, id(pin_next).state);
+            R = 6; lab(R, "Departed grace"); snprintf(buf, sizeof(buf), "%d min", (int) id(departed_grace).state); pm(R, buf);
+            R = 7; lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
           }
           else if (id(settings_page) == 2) {
             R = 0; lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; val(R, f.empty() ? red : green, f.empty() ? "Off" : f.c_str()); }
@@ -1497,6 +1525,23 @@ display:
       const bool clock_idle = id(clock_after).state > 0 && (millis() - id(last_touch_any)) > (uint32_t) (id(clock_after).state * 60000.0f);
       const int view = detail ? 0 : (clock_idle ? 2 : (id(focus_mode).state ? 1 : 0));
       bool dfound = false;
+      // paging: the trains that can be shown are split into pages of `count` rows
+      static int elig_prev = 0;
+      int elig = 0;
+      const bool pin = id(pin_next).state;
+      const int per = pin ? std::max(1, count - 1) : count;
+      int pages = 1;
+      if (id(paging_on).state && view == 0 && !detail && elig_prev > count)
+        pages = pin ? (elig_prev - 1 + per - 1) / per : (elig_prev + per - 1) / per;
+      const uint32_t page_ms = (uint32_t) (id(page_secs).state * 1000.0f);
+      const int page = pages > 1 ? (int) ((millis() / page_ms) % pages) : 0;
+      const uint32_t page_t0 = pages > 1 ? (millis() / page_ms) * page_ms : 0;   // scrolling restarts each page
+      auto on_page = [&](int i) {
+        if (pages <= 1) return true;
+        if (pin && i == 0) return true;                 // the next train stays on every page
+        int k = pin ? i - 1 : i;
+        return k / per == page;
+      };
       if (!detail) for (int i = 0; i < 6; i++) id(slot_train)[i] = 0;
       // unlit LED rows behind the text, like a real dot-matrix board
       const int bgs = id(bg_style).active_index().value_or(1);
@@ -1731,7 +1776,7 @@ display:
       };
 
       // ---- train 1 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t1_scheduled_departure).state; exp = id(stn_t1_expected_departure).state; stat = id(stn_t1_status).state; plat = id(stn_t1_platform).state; pchg = id(stn_t1_platform_changed).state; calls = id(stn_t1_calling_points).state; dreason = id(stn_t1_delay_reason).state; creason = id(stn_t1_cancellation_reason).state; oper = id(stn_t1_operator).state; delaym = id(stn_t1_delay_minutes).state; stops = id(stn_t1_stops).state; sarr = id(stn_t1_scheduled_arrival).state; earr = id(stn_t1_estimated_arrival).state; pprev = id(stn_t1_previous_platform).state; break;
@@ -1742,6 +1787,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 1) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -1752,12 +1802,11 @@ display:
               id(slot_train)[0] = 1;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 1;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -1843,7 +1892,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -1853,7 +1902,7 @@ display:
         }
       }
       // ---- train 2 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t2_scheduled_departure).state; exp = id(stn_t2_expected_departure).state; stat = id(stn_t2_status).state; plat = id(stn_t2_platform).state; pchg = id(stn_t2_platform_changed).state; calls = id(stn_t2_calling_points).state; dreason = id(stn_t2_delay_reason).state; creason = id(stn_t2_cancellation_reason).state; oper = id(stn_t2_operator).state; delaym = id(stn_t2_delay_minutes).state; stops = id(stn_t2_stops).state; sarr = id(stn_t2_scheduled_arrival).state; earr = id(stn_t2_estimated_arrival).state; pprev = id(stn_t2_previous_platform).state; break;
@@ -1865,6 +1914,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 2) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -1875,12 +1929,11 @@ display:
               id(slot_train)[0] = 2;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 2;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -1966,7 +2019,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -1976,7 +2029,7 @@ display:
         }
       }
       // ---- train 3 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t3_scheduled_departure).state; exp = id(stn_t3_expected_departure).state; stat = id(stn_t3_status).state; plat = id(stn_t3_platform).state; pchg = id(stn_t3_platform_changed).state; calls = id(stn_t3_calling_points).state; dreason = id(stn_t3_delay_reason).state; creason = id(stn_t3_cancellation_reason).state; oper = id(stn_t3_operator).state; delaym = id(stn_t3_delay_minutes).state; stops = id(stn_t3_stops).state; sarr = id(stn_t3_scheduled_arrival).state; earr = id(stn_t3_estimated_arrival).state; pprev = id(stn_t3_previous_platform).state; break;
@@ -1988,6 +2041,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 3) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -1998,12 +2056,11 @@ display:
               id(slot_train)[0] = 3;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 3;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2089,7 +2146,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2099,7 +2156,7 @@ display:
         }
       }
       // ---- train 4 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t4_scheduled_departure).state; exp = id(stn_t4_expected_departure).state; stat = id(stn_t4_status).state; plat = id(stn_t4_platform).state; pchg = id(stn_t4_platform_changed).state; calls = id(stn_t4_calling_points).state; dreason = id(stn_t4_delay_reason).state; creason = id(stn_t4_cancellation_reason).state; oper = id(stn_t4_operator).state; delaym = id(stn_t4_delay_minutes).state; stops = id(stn_t4_stops).state; sarr = id(stn_t4_scheduled_arrival).state; earr = id(stn_t4_estimated_arrival).state; pprev = id(stn_t4_previous_platform).state; break;
@@ -2111,6 +2168,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 4) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -2121,12 +2183,11 @@ display:
               id(slot_train)[0] = 4;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 4;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2212,7 +2273,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2222,7 +2283,7 @@ display:
         }
       }
       // ---- train 5 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t5_scheduled_departure).state; exp = id(stn_t5_expected_departure).state; stat = id(stn_t5_status).state; plat = id(stn_t5_platform).state; pchg = id(stn_t5_platform_changed).state; calls = id(stn_t5_calling_points).state; dreason = id(stn_t5_delay_reason).state; creason = id(stn_t5_cancellation_reason).state; oper = id(stn_t5_operator).state; delaym = id(stn_t5_delay_minutes).state; stops = id(stn_t5_stops).state; sarr = id(stn_t5_scheduled_arrival).state; earr = id(stn_t5_estimated_arrival).state; pprev = id(stn_t5_previous_platform).state; break;
@@ -2233,6 +2294,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 5) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -2243,12 +2309,11 @@ display:
               id(slot_train)[0] = 5;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 5;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2334,7 +2399,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2344,7 +2409,7 @@ display:
         }
       }
       // ---- train 6 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t6_scheduled_departure).state; exp = id(stn_t6_expected_departure).state; stat = id(stn_t6_status).state; plat = id(stn_t6_platform).state; pchg = id(stn_t6_platform_changed).state; calls = id(stn_t6_calling_points).state; dreason = id(stn_t6_delay_reason).state; creason = id(stn_t6_cancellation_reason).state; oper = id(stn_t6_operator).state; delaym = id(stn_t6_delay_minutes).state; stops = id(stn_t6_stops).state; sarr = id(stn_t6_scheduled_arrival).state; earr = id(stn_t6_estimated_arrival).state; pprev = id(stn_t6_previous_platform).state; break;
@@ -2355,6 +2420,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 6) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -2365,12 +2435,11 @@ display:
               id(slot_train)[0] = 6;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 6;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2456,7 +2525,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2466,7 +2535,7 @@ display:
         }
       }
       // ---- train 7 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t7_scheduled_departure).state; exp = id(stn_t7_expected_departure).state; stat = id(stn_t7_status).state; plat = id(stn_t7_platform).state; pchg = id(stn_t7_platform_changed).state; calls = id(stn_t7_calling_points).state; dreason = id(stn_t7_delay_reason).state; creason = id(stn_t7_cancellation_reason).state; oper = id(stn_t7_operator).state; delaym = id(stn_t7_delay_minutes).state; stops = id(stn_t7_stops).state; sarr = id(stn_t7_scheduled_arrival).state; earr = id(stn_t7_estimated_arrival).state; pprev = id(stn_t7_previous_platform).state; break;
@@ -2477,6 +2546,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 7) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -2487,12 +2561,11 @@ display:
               id(slot_train)[0] = 7;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 7;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2578,7 +2651,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2588,7 +2661,7 @@ display:
         }
       }
       // ---- train 8 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t8_scheduled_departure).state; exp = id(stn_t8_expected_departure).state; stat = id(stn_t8_status).state; plat = id(stn_t8_platform).state; pchg = id(stn_t8_platform_changed).state; calls = id(stn_t8_calling_points).state; dreason = id(stn_t8_delay_reason).state; creason = id(stn_t8_cancellation_reason).state; oper = id(stn_t8_operator).state; delaym = id(stn_t8_delay_minutes).state; stops = id(stn_t8_stops).state; sarr = id(stn_t8_scheduled_arrival).state; earr = id(stn_t8_estimated_arrival).state; pprev = id(stn_t8_previous_platform).state; break;
@@ -2599,6 +2672,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 8) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -2609,12 +2687,11 @@ display:
               id(slot_train)[0] = 8;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 8;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2700,7 +2777,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2710,7 +2787,7 @@ display:
         }
       }
       // ---- train 9 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t9_scheduled_departure).state; exp = id(stn_t9_expected_departure).state; stat = id(stn_t9_status).state; plat = id(stn_t9_platform).state; pchg = id(stn_t9_platform_changed).state; calls = id(stn_t9_calling_points).state; dreason = id(stn_t9_delay_reason).state; creason = id(stn_t9_cancellation_reason).state; oper = id(stn_t9_operator).state; delaym = id(stn_t9_delay_minutes).state; stops = id(stn_t9_stops).state; sarr = id(stn_t9_scheduled_arrival).state; earr = id(stn_t9_estimated_arrival).state; pprev = id(stn_t9_previous_platform).state; break;
@@ -2721,6 +2798,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 9) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -2731,12 +2813,11 @@ display:
               id(slot_train)[0] = 9;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 9;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2822,7 +2903,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2832,7 +2913,7 @@ display:
         }
       }
       // ---- train 10 ----
-      if (slot < count) {
+      {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
         switch (si) {
           case 0: sched = id(stn_t10_scheduled_departure).state; exp = id(stn_t10_expected_departure).state; stat = id(stn_t10_status).state; plat = id(stn_t10_platform).state; pchg = id(stn_t10_platform_changed).state; calls = id(stn_t10_calling_points).state; dreason = id(stn_t10_delay_reason).state; creason = id(stn_t10_cancellation_reason).state; oper = id(stn_t10_operator).state; delaym = id(stn_t10_delay_minutes).state; stops = id(stn_t10_stops).state; sarr = id(stn_t10_scheduled_arrival).state; earr = id(stn_t10_estimated_arrival).state; pprev = id(stn_t10_previous_platform).state; break;
@@ -2843,6 +2924,11 @@ display:
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
+          const int eidx = elig++;
+          {
+            int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
+          }
           if (detail) {
             if (id(detail_train) == 10) {
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
@@ -2853,12 +2939,11 @@ display:
               id(slot_train)[0] = 10;
               slot++;
             }
-          } else {
+          } else if (slot < count && on_page(eidx)) {
           id(slot_train)[slot] = 10;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
-          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
           Color c0 = soon ? grey : amber;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
@@ -2944,7 +3029,7 @@ display:
             drawsub(DX);
           } else {
             int cyc = bw + 120;
-            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            int off = (int) (((uint64_t) (millis() - page_t0) * sp / 1000) % cyc);
             drawsub(DX - off);
             drawsub(DX - off + cyc);
           }
@@ -2960,10 +3045,11 @@ display:
         if (!detail && view == 0 && (!id(leave_in_s).has_state() || (int) id(leave_in_s).state != lv)) id(leave_in_s).publish_state(lv);
       }
 
+      elig_prev = elig;
       if (detail && !dfound) id(ui_screen) = 0;      // the train has gone: back to the list
 
       // nothing to show: say why
-      if (slot == 0 && !detail) {
+      if (slot == 0 && !detail && elig == 0) {
         std::string l1, l2;
         bool big = false;
         if (!wifi_ok) { l1 = "Connecting to Wi-Fi..."; }
@@ -3006,6 +3092,12 @@ display:
         else snprintf(lb, sizeof(lb), "Leave in %d min", leave_mins);
         info = lb;
         infoc = green;
+      }
+      else if (pages > 1) {
+        char pb[24];
+        snprintf(pb, sizeof(pb), "Page %d of %d", page + 1, pages);
+        info = pb;
+        infoc = amber;
       }
       std::string foot = STATION_NAMES[si];
       if (info.empty() && !filt.empty()) foot += " > " + filt;

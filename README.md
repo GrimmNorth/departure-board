@@ -26,6 +26,7 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 
 ### Using the board
 - Each train shows its time, destination, platform and status, with the calling points (and any delay reason) scrolling underneath. A platform number flashes for a minute when it changes.
+- **Paging:** when there are more trains than rows, the board flicks between pages ("Page 1 of 2" in the footer), every 10 seconds by default. *Pin next train* keeps the next departure on every page. Switch either off under Settings > Trains, and change the interval with *page interval* in Home Assistant.
 - Tap a train for its detail page: status and expected time, platform and operator, countdown, delay reason, arrival time, and the calling points as a route line with times. Tap anywhere to close.
 - **Themes:** Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Settings > Display > Theme on the board, or the theme setting in Home Assistant.
 - **Background:** *Rows* (default) puts each line on a faint unlit band like a real LED board; *Dot matrix* adds the grid of unlit dots; *Plain* turns it off. Set it in Home Assistant.
