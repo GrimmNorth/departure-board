@@ -3,10 +3,11 @@ blueprint:
   author: GrimmNorth
   description: >-
     Sends your National Rail departures (from the My Rail Commute integration) to your
-    UK Departure Board every minute. Pick your board, pick your station, and optionally
-    type the station name to show at the bottom of the board.
+    UK Departure Board every minute. Pick your board and your station.
+    Add more stations to switch between them: tap the station name at the bottom of the board,
+    or change the board's "Station number" in Home Assistant.
     Set up My Rail Commute with 10 services for the best result.
-    Use one automation per board. To change station later, edit this automation and pick another station.
+    Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:
@@ -24,9 +25,18 @@ blueprint:
         device:
           filter:
             - integration: my_rail_commute
+    more_stations:
+      name: More stations (optional)
+      description: Extra stations to switch between. Station 1 is the one above, then these in order.
+      default: []
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: my_rail_commute
     station_name:
       name: Station name on the board
-      description: Shown at the bottom of the board. Leave empty to use the station's name (e.g. "Brough").
+      description: Wording for the first station at the bottom of the board. Leave empty to use the station's name (e.g. "Brough").
       default: ""
       selector:
         text:
@@ -39,11 +49,23 @@ triggers:
     minutes: "/1"
   - trigger: homeassistant
     event: start
+  # the board asks for new data straight away when you switch station
+  - trigger: event
+    event_type: esphome.departure_board_station
+    event_data:
+      device_id: !input board
 
 variables:
   board_id: !input board
-  station_id: !input station
-  label: !input station_name
+  first_station: !input station
+  extra: !input more_stations
+  label_in: !input station_name
+  stations: "{{ [first_station] + (extra if extra is list else ([extra] if extra else [])) }}"
+  num_ent: "{{ device_entities(board_id) | select('match', 'number\\.') | select('search', 'station_number') | first | default('') }}"
+  pick: "{{ states(num_ent) | int(1) if num_ent != '' else 1 }}"
+  idx: "{{ pick - 1 if 1 <= pick <= (stations | count) else 0 }}"
+  station_id: "{{ stations[idx] }}"
+  label: "{{ label_in if idx == 0 else '' }}"
   svc: "{{ device_attr(board_id, 'name') | slugify }}"
   ents: "{{ device_entities(station_id) }}"
   status_ent: "{{ ents | select('search', '_status$') | first | default('') }}"
@@ -83,3 +105,8 @@ actions:
             calls: "{% set c = state_attr(t, 'calling_points') %}{{ c if c is list else [] }}"
             stops: >-
               {% set ns = namespace(out=[]) %}{% if by_dest and sid %}{% for dest in by_dest.values() %}{% for s in dest.services %}{% if s.service_id == sid %}{% for p in s.calling_point_details %}{% set tm = p.expected if (p.expected | regex_match('^[0-9]{2}:[0-9]{2}$')) else p.scheduled %}{% set ns.out = ns.out + [p.name ~ ' ' ~ tm] %}{% endfor %}{% endif %}{% endfor %}{% endfor %}{% endif %}{{ ns.out | join(', ') | truncate(250, true, '') }}
+  # tell the board how many stations there are (older firmware without this just ignores it)
+  - action: "esphome.{{ svc }}_set_station_count"
+    continue_on_error: true
+    data:
+      count: "{{ stations | count }}"

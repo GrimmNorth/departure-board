@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.11.0"
+    version: "1.12.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -45,6 +45,13 @@ logger:
 api:
   reboot_timeout: 15min      # no Home Assistant connection for 15 min = reboot
   actions:
+    - action: set_station_count
+      variables:
+        count: int
+      then:
+        - lambda: |-
+            id(stn_count) = count < 1 ? 1 : (count > 5 ? 5 : count);
+            if (id(stn_num).state > id(stn_count)) { auto c = id(stn_num).make_call(); c.set_value(1); c.perform(); }
     # Called by the Home Assistant blueprint (about once a minute).
     - action: update_status
       variables:
@@ -102,7 +109,7 @@ http_request:
 update:
   - platform: http_request
     id: fw_update
-    name: "Departure board firmware"
+    name: "Firmware"
     source: ${update_url}
     update_interval: 6h
 
@@ -130,16 +137,23 @@ debug:
 
 button:
   - platform: restart
-    name: "Departure board restart"
+    name: "Restart"
     entity_category: config
   - platform: safe_mode
-    name: "Departure board restart in safe mode"
+    name: "Restart in safe mode"
     entity_category: config
   - platform: factory_reset
-    name: "Departure board factory reset (clears Wi-Fi and settings)"
+    name: "Factory reset (clears Wi-Fi and settings)"
     entity_category: config
 
 globals:
+  - id: stn_count            # how many stations the blueprint offers (it sends this every minute)
+    type: int
+    restore_value: true
+    initial_value: "1"
+  - id: stn_switch_ms        # when the station was last switched (0 = not switching)
+    type: uint32_t
+    initial_value: "0"
   - id: logo_ok            # custom logo downloaded and ready to draw
     type: bool
     initial_value: "false"
@@ -334,9 +348,14 @@ touchscreen:
               int sl = id(focus_mode).state ? 0 : (y - 6) / (406 / cnt);
               int tn = (sl >= 0 && sl < cnt) ? id(slot_train)[sl] : 0;
               if (tn > 0) { id(detail_train) = tn; id(ui_screen) = 2; }
-              else id(station_select).make_call().select_next(true).perform();
             }
-            else id(station_select).make_call().select_next(true).perform();   // tap the footer = next station
+            else if (id(stn_count) > 1) {   // tap the footer = next station
+              int nx = (int) id(stn_num).state + 1;
+              if (nx > id(stn_count)) nx = 1;
+              auto c = id(stn_num).make_call();
+              c.set_value(nx);
+              c.perform();
+            }
           } else if (id(ui_screen) == 2) {
             id(ui_screen) = 0;                  // any tap closes the detail view
           } else {
@@ -569,7 +588,25 @@ color:
 
 number:
   - platform: template
-    name: "Departure board page interval"
+    name: "Station number"
+    id: stn_num
+    optimistic: true
+    restore_value: true
+    initial_value: 1
+    min_value: 1
+    max_value: 5
+    step: 1
+    mode: box
+    on_value:
+      - if:
+          condition:
+            lambda: 'return millis() > 30000;'     # a real change, not the value restored at start-up
+          then:
+            - lambda: 'id(stn_switch_ms) = millis();'
+            - homeassistant.event:                 # the blueprint sends the new station's trains straight away
+                event: esphome.departure_board_station
+  - platform: template
+    name: "Page interval"
     id: page_secs
     optimistic: true
     restore_value: true
@@ -581,7 +618,7 @@ number:
     mode: box
     entity_category: config
   - platform: template
-    name: "Departure board trains shown"
+    name: "Trains shown"
     id: train_count
     min_value: 3
     max_value: 5
@@ -590,7 +627,7 @@ number:
     restore_value: true
     initial_value: 5
   - platform: template
-    name: "Departure board night brightness"
+    name: "Night brightness"
     id: night_level
     min_value: 1
     max_value: 100
@@ -600,7 +637,7 @@ number:
     restore_value: true
     initial_value: 20
   - platform: template
-    name: "Departure board idle dim after"
+    name: "Idle dim after"
     id: idle_minutes
     min_value: 0
     max_value: 60
@@ -610,7 +647,7 @@ number:
     restore_value: true
     initial_value: 0          # 0 = never dim when idle
   - platform: template
-    name: "Departure board idle brightness"
+    name: "Idle brightness"
     id: idle_level
     min_value: 5
     max_value: 100
@@ -620,7 +657,7 @@ number:
     restore_value: true
     initial_value: 30
   - platform: template
-    name: "Departure board departed grace"
+    name: "Departed grace"
     id: departed_grace
     min_value: 1
     max_value: 5
@@ -630,7 +667,7 @@ number:
     restore_value: true
     initial_value: 1          # minutes a train stays listed after its time
   - platform: template
-    name: "Departure board clock screen after"
+    name: "Clock screen after"
     id: clock_after
     min_value: 0
     max_value: 60
@@ -640,7 +677,7 @@ number:
     restore_value: true
     initial_value: 0          # 0 = off. After this long without a touch, show the big clock screen
   - platform: template
-    name: "Departure board walking time"
+    name: "Walking time"
     id: walk_minutes
     min_value: 0
     max_value: 30
@@ -652,14 +689,14 @@ number:
 
 datetime:
   - platform: template
-    name: "Departure board night starts"
+    name: "Night starts"
     id: night_start
     type: time
     optimistic: true
     restore_value: true
     initial_value: "22:00:00"
   - platform: template
-    name: "Departure board night ends"
+    name: "Night ends"
     id: night_end
     type: time
     optimistic: true
@@ -668,86 +705,86 @@ datetime:
 
 switch:
   - platform: template
-    name: "Departure board paging"
+    name: "Paging"
     id: paging_on
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
     entity_category: config
   - platform: template
-    name: "Departure board pin next train"
+    name: "Pin next train"
     id: pin_next
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
     entity_category: config
   - platform: template
-    name: "Departure board night dimming"
+    name: "Night dimming"
     id: night_dimming
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
   - platform: template
-    name: "Departure board night screen off"
+    name: "Night screen off"
     id: night_screen_off
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF   # on = screen goes fully off at night; tap to wake for a minute
   - platform: template
-    name: "Departure board countdown"
+    name: "Countdown"
     id: countdown_mode
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF   # on = "Due" / "5 min" instead of "On time" / expected time
   - platform: template
-    name: "Departure board large text"
+    name: "Large text"
     id: text_large
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF   # large text shows at most 4 trains
   - platform: template
-    name: "Departure board scrolling text"
+    name: "Scrolling text"
     id: scroll_enabled
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON    # off = long lines are shortened with ...
   - platform: template
-    name: "Departure board clock seconds"
+    name: "Clock seconds"
     id: show_seconds
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
   - platform: template
-    name: "Departure board 12 hour clock"
+    name: "12 hour clock"
     id: clock_12h
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
   - platform: template
-    name: "Departure board hide cancelled"
+    name: "Hide cancelled"
     id: hide_cancelled
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
   - platform: template
-    name: "Departure board show platform"
+    name: "Show platform"
     id: show_platform
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
   - platform: template
-    name: "Departure board disruption banner"
+    name: "Disruption banner"
     id: disruption_banner
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
   - platform: template
-    name: "Departure board focus mode"
+    name: "Focus mode"
     id: focus_mode
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF   # on = one big view of just the next train
   - platform: template
-    name: "Departure board show logo"
+    name: "Show logo"
     id: show_logo
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
   - platform: template
-    name: "Departure board demo mode"
+    name: "Demo mode"
     id: demo_mode
     optimistic: true
     restore_mode: ALWAYS_OFF   # shows a fake delayed and cancelled train, for testing colours
 
 text:
   - platform: template
-    name: "Departure board logo image"
+    name: "Logo image"
     id: logo_url
     mode: text
     min_length: 0
@@ -764,7 +801,7 @@ text:
           then:
             - lambda: 'id(custom_logo)->set_url(x); id(custom_logo)->update();'
   - platform: template
-    name: "Departure board destination filter"
+    name: "Destination filter"
     id: dest_filter
     mode: text
     min_length: 0
@@ -773,7 +810,7 @@ text:
     restore_value: true
     initial_value: ""     # e.g. "Hull" = only trains calling at Hull
   - platform: template
-    name: "Departure board favourite stop"
+    name: "Favourite stop"
     id: fav_stop
     mode: text
     min_length: 0
@@ -782,7 +819,7 @@ text:
     restore_value: true
     initial_value: ""     # a stop name to highlight on the board, e.g. "Hull"
   - platform: template
-    name: "Departure board favourite trains"
+    name: "Favourite trains"
     id: fav_times
     mode: text
     min_length: 0
@@ -793,7 +830,7 @@ text:
 
 select:
   - platform: template
-    name: "Departure board update channel"
+    name: "Update channel"
     id: update_channel
     optimistic: true
     restore_value: true
@@ -809,14 +846,14 @@ select:
           then:
             - component.update: fw_update
   - platform: template
-    name: "Departure board background"
+    name: "Background"
     id: bg_style
     optimistic: true
     restore_value: true
     initial_option: "Rows"
     options: ["Plain", "Rows", "Dot matrix"]
   - platform: template
-    name: "Departure board theme"
+    name: "Theme"
     id: theme_select
     optimistic: true
     restore_value: true
@@ -825,21 +862,22 @@ select:
     on_value:
       - script.execute: apply_theme
   - platform: template
-    name: "Departure board station"
+    name: "Station"
     id: station_select
+    internal: true
     optimistic: true
     restore_value: true
     initial_option: "Station"
     options: ["Station"]
   - platform: template
-    name: "Departure board scroll speed"
+    name: "Scroll speed"
     id: scroll_speed
     optimistic: true
     restore_value: true
     initial_option: "Medium"
     options: ["Slow", "Medium", "Fast"]
   - platform: template
-    name: "Departure board font"
+    name: "Font"
     id: font_select
     optimistic: true
     restore_value: true
@@ -852,7 +890,7 @@ text_sensor:
     internal: true
   - platform: debug
     reset_reason:
-      name: "Departure board restart reason"
+      name: "Restart reason"
       entity_category: diagnostic
   - platform: template
     id: stn_status
@@ -1280,37 +1318,37 @@ text_sensor:
   - platform: wifi_info
     ip_address:
       id: wifi_ip_ts
-      name: "Departure board IP"
+      name: "IP"
       internal: true
     ssid:
       id: wifi_ssid_ts
-      name: "Departure board SSID"
+      name: "SSID"
       internal: true
   - platform: version
     id: esphome_ver_ts
-    name: "Departure board ESPHome version"
+    name: "ESPHome version"
     hide_timestamp: true
     internal: true
 
 sensor:
   - platform: wifi_signal
     id: wifi_rssi_s
-    name: "Departure board Wi-Fi signal"
+    name: "Wi-Fi signal"
     update_interval: 30s
     entity_category: diagnostic
   - platform: uptime
-    name: "Departure board uptime"
+    name: "Uptime"
     entity_category: diagnostic
   - platform: debug
     free:
       id: heap_free
-      name: "Departure board free memory"
+      name: "Free memory"
       entity_category: diagnostic
     block:
-      name: "Departure board largest free memory block"
+      name: "Largest free memory block"
       entity_category: diagnostic
   - platform: template
-    name: "Departure board data age"
+    name: "Data age"
     unit_of_measurement: "min"
     accuracy_decimals: 0
     entity_category: diagnostic
@@ -1320,7 +1358,7 @@ sensor:
       return (float) ((millis() - id(data_ms_stn)) / 60000);
   - platform: template
     id: leave_in_s
-    name: "Departure board leave in"
+    name: "Leave in"
     unit_of_measurement: "min"
     accuracy_decimals: 0
 
@@ -1354,15 +1392,27 @@ display:
     lambda: |-
       it.fill(bg_col);
 
-      // boot splash
-      if (millis() < 6000) {
+      // start-up: the title wipes in like an LED board, then the details appear
+      static uint32_t boot_t0 = 0;
+      if (boot_t0 == 0) boot_t0 = millis();
+      const uint32_t bt = millis() - boot_t0;
+      if (bt < 5000) {
+        it.filled_rectangle(60, 138, 680, 64, band_col);
+        const int wipe = std::min<int>(800, (int) (bt * 800 / 1600));
+        it.start_clipping(0, 0, wipe, 480);
         it.printf(400, 170, id(f_row_1), amber, TextAlign::CENTER, "UK Departure Board");
-        it.printf(400, 225, id(f_sub_1), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
-        it.printf(400, 255, id(f_sub_1), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
-        if (wifi::global_wifi_component->is_connected())
-          it.printf(400, 280, id(f_sub_1), green, TextAlign::CENTER, "Wi-Fi connected");
-        else
-          it.printf(400, 280, id(f_sub_1), orange, TextAlign::CENTER, "Connecting to Wi-Fi...");
+        it.end_clipping();
+        if (wipe > 60 && wipe < 740) it.filled_rectangle(wipe, 138, 4, 64, hilite);   // the bright "cursor"
+        if (bt > 1800) it.printf(400, 232, id(f_sub_1), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
+        if (bt > 2200) it.printf(400, 268, id(f_sub_1), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
+        if (bt > 2600) {
+          if (wifi::global_wifi_component->is_connected())
+            it.printf(400, 304, id(f_sub_1), green, TextAlign::CENTER, "Wi-Fi connected");
+          else
+            it.printf(400, 304, id(f_sub_1), orange, TextAlign::CENTER, "Connecting to Wi-Fi...");
+        }
+        for (int d = 0; d < 24; d++)                     // a row of dots fills up while it starts
+          it.filled_circle(400 - 230 + d * 20, 390, 4, bt > (uint32_t) d * 200 ? amber : band_col);
         return;
       }
 
@@ -1525,6 +1575,8 @@ display:
       const bool clock_idle = id(clock_after).state > 0 && (millis() - id(last_touch_any)) > (uint32_t) (id(clock_after).state * 60000.0f);
       const int view = detail ? 0 : (clock_idle ? 2 : (id(focus_mode).state ? 1 : 0));
       bool dfound = false;
+      // just switched station: hide the old station's trains until the new ones arrive
+      const bool switching = id(stn_switch_ms) != 0 && id(data_ms_stn) < id(stn_switch_ms) && millis() - id(stn_switch_ms) < 15000;
       // paging: the trains that can be shown are split into pages of `count` rows
       static int elig_prev = 0;
       int elig = 0;
@@ -1802,7 +1854,7 @@ display:
               id(slot_train)[0] = 1;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 1;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -1845,6 +1897,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -1876,7 +1930,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -1929,7 +1993,7 @@ display:
               id(slot_train)[0] = 2;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 2;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -1972,6 +2036,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2003,7 +2069,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2056,7 +2132,7 @@ display:
               id(slot_train)[0] = 3;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 3;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2099,6 +2175,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2130,7 +2208,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2183,7 +2271,7 @@ display:
               id(slot_train)[0] = 4;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 4;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2226,6 +2314,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2257,7 +2347,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2309,7 +2409,7 @@ display:
               id(slot_train)[0] = 5;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 5;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2352,6 +2452,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2383,7 +2485,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2435,7 +2547,7 @@ display:
               id(slot_train)[0] = 6;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 6;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2478,6 +2590,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2509,7 +2623,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2561,7 +2685,7 @@ display:
               id(slot_train)[0] = 7;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 7;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2604,6 +2728,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2635,7 +2761,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2687,7 +2823,7 @@ display:
               id(slot_train)[0] = 8;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 8;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2730,6 +2866,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2761,7 +2899,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2813,7 +2961,7 @@ display:
               id(slot_train)[0] = 9;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 9;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2856,6 +3004,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -2887,7 +3037,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -2939,7 +3099,7 @@ display:
               id(slot_train)[0] = 10;
               slot++;
             }
-          } else if (slot < count && on_page(eidx)) {
+          } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 10;
           int y = 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2982,6 +3142,8 @@ display:
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
           if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          else if (cancelled) head = "Cancelled";
+          const size_t labn = head.size();       // just this label is coloured
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
@@ -3013,7 +3175,17 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (!head.empty()) {
+              size_t k = std::min(labn, head.size());
+              std::string l1 = head.substr(0, k), l2 = head.substr(k);
+              int lw = 0;
+              if (!l1.empty()) {
+                int a, b, c;
+                it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
+                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+              }
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+            }
             if (tail.empty()) return;
             if (hpos < 0) {
               it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
@@ -3048,6 +3220,7 @@ display:
       elig_prev = elig;
       if (detail && !dfound) id(ui_screen) = 0;      // the train has gone: back to the list
 
+      if (switching && !detail) it.printf(400, 180, F_ROWL[fi], amber, TextAlign::CENTER, "Switching station...");
       // nothing to show: say why
       if (slot == 0 && !detail && elig == 0) {
         std::string l1, l2;
