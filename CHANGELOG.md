@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.0 - 2026-11-15 (beta)
+- Six colour themes; sharper DotGothic text; scrolling line no longer cut off
+
 ## 1.5.0 - 2026-11-15 (beta)
 - Safe mode, Wi-Fi setup from the install page, update channels, stale-data warnings, memory watchdog, more diagnostics
 

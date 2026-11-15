@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.5.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.6.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "2287f76608cd9677a73da25525c09c7d",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.5.0.ota.bin",
-        "summary": "Safe mode, Wi-Fi setup from the install page, update channels, stale-data warnings, memory watchdog, more diagnostics"
+        "md5": "21bc958472020191aeae27df5f1da41f",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.6.0.ota.bin",
+        "summary": "Six colour themes; sharper DotGothic text; scrolling line no longer cut off"
       }
     }
   ]
