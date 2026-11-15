@@ -6,12 +6,12 @@ An amber dot-matrix style UK train departure board for the **Elecrow CrowPanel B
 
 ## For users
 
-You need the CrowPanel above, Home Assistant, [HACS](https://hacs.xyz), and the **My Rail Commute** integration (free Darwin token from National Rail).
+You need the CrowPanel above, Home Assistant 2026.11 or newer, and the **My Rail Commute** integration from the Home Assistant Marketplace (free Darwin token from National Rail). On older Home Assistant versions, install My Rail Commute through HACS instead.
 
 1. **Flash.** Open the install page in Chrome or Edge on a computer, plug the board in by USB, click Install.
 2. **Wi-Fi.** When the install finishes the page asks for your Wi-Fi details. (Fallback: join the board's own Wi-Fi, `Departure-Board`, from a phone and pick your home network.)
 3. **Home Assistant.** Settings > Devices & services: add the discovered ESPHome device. No key needed. If it isn't discovered, use Add integration > ESPHome and enter the board's IP address (see your router).
-4. **My Rail Commute.** Add your station with **10 services**.
+4. **My Rail Commute.** Install it from **Settings > Marketplace** ([open it in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&repository=my-rail-commute&category=integration)), then add your station with **10 services**.
 5. **Connect them.** Use the *Import blueprint* button on the install page, then Settings > Automations & scenes > Blueprints > UK Departure Board > Create automation. Pick your board, pick your station, type the station name to show, Save.
 
 Updates appear in Home Assistant as an Update button on the board's device page.

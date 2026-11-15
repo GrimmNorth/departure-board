@@ -13,6 +13,8 @@
   .box { background:#1c1c1c; border:1px solid #333; border-radius:8px; padding:1rem 1.2rem; margin:1.2rem 0; }
   esp-web-install-button button { background:#ffb000; color:#111; border:0; border-radius:6px; padding:.8rem 1.4rem; font-size:1.1rem; cursor:pointer; }
   small { color:#999; }
+  .btn { display:inline-block; background:#ffb000; color:#111; text-decoration:none; font-weight:600; border-radius:6px; padding:.6rem 1.1rem; }
+  .btn-alt { background:transparent; color:#ffb000; border:1px solid #ffb000; }
 </style>
 </head>
 <body>
@@ -30,7 +32,10 @@
 <ol start="2">
   <li><strong>Give it Wi-Fi.</strong> When the install finishes, the page asks for your home Wi-Fi name and password: enter them there. (If it doesn't ask, join the Wi-Fi network called <em>Departure-Board</em> from your phone; a page opens, or go to 192.168.4.1, and pick your home Wi-Fi.)</li>
   <li><strong>Add it to Home Assistant.</strong> It appears under Settings &gt; Devices &amp; services as a discovered ESPHome device. Click Add. No key is needed. (If it isn't discovered, choose Add integration &gt; ESPHome and type the board's IP address from your router.)</li>
-  <li><strong>Install My Rail Commute</strong> through <a href="https://hacs.xyz">HACS</a> and add your station with 10 services (you need a free Darwin token from National Rail).</li>
+  <li><strong>Install My Rail Commute</strong> from the Home Assistant Marketplace (Settings &gt; Marketplace). This button opens it for you; click <em>Install</em>:
+    <p><a class="btn" href="https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&amp;repository=my-rail-commute&amp;category=integration">Install My Rail Commute from the Marketplace</a></p>
+    Then add your station, choosing <strong>10 services</strong>. You need a free Darwin token from National Rail.
+    <p><a class="btn btn-alt" href="https://my.home-assistant.io/redirect/config_flow_start/?domain=my_rail_commute">Set up My Rail Commute</a></p></li>
   <li><strong>Connect them.</strong> Click the button below to add the blueprint to Home Assistant, then go to Settings &gt; Automations &amp; scenes &gt; Blueprints &gt; UK Departure Board &gt; Create automation. Pick your board, pick your station, type the station name to show, and Save. The board fills in within a minute.
     <p><a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FGrimmNorth%2Fdeparture-board%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fdeparture-board.yaml"><img alt="Open your Home Assistant instance and import this blueprint." src="https://my.home-assistant.io/badges/blueprint_import.svg"></a></p></li>
 </ol>
