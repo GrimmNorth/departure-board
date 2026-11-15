@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.4.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.5.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "65de385b7ef5349a94131561fb44fee7",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.4.0.ota.bin",
-        "summary": "Home Assistant blueprint sends data to the board - no YAML pasting"
+        "md5": "2287f76608cd9677a73da25525c09c7d",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.5.0.ota.bin",
+        "summary": "Safe mode, Wi-Fi setup from the install page, update channels, stale-data warnings, memory watchdog, more diagnostics"
       }
     }
   ]

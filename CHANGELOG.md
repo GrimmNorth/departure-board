@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.0 - 2026-11-15 (beta)
+- Safe mode, Wi-Fi setup from the install page, update channels, stale-data warnings, memory watchdog, more diagnostics
+
 ## 1.4.0 - 2026-11-15
 - Home Assistant blueprint sends train data to the board - no YAML pasting.
 
