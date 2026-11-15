@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.8.0"
+    version: "1.7.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1477,15 +1477,35 @@ display:
       // unlit LED rows behind the text, like a real dot-matrix board
       const int bgs = id(bg_style).active_index().value_or(1);
       if (bgs > 0 && view == 0 && !detail) {
-        const int sh = std::max(SUBH, (int) fs->get_height());
+        // each band covers the letters themselves: capital height down to the descenders, plus padding
+        auto ink = [](font::Font *f, int top, int &a, int &b) {
+          int base = top + f->get_baseline();
+          int ch = f->get_capheight();
+          if (ch <= 0) ch = f->get_baseline() * 3 / 4;
+          a = base - ch - 5;
+          b = base + std::abs(f->get_descender()) + 4;
+        };
         for (int s = 0; s < count; s++) {
           int y = 6 + s * H + pad;
-          int next = 6 + (s + 1) * H + pad - 3;          // keep a gap before the next train
-          it.filled_rectangle(10, y - 3, 780, SUBOFF - 2, band_col);
-          int sb = std::min(sh + 5, next - (y + SUBOFF - 2));
-          if (sb > 0) it.filled_rectangle(10, y + SUBOFF - 2, 780, sb, band_col);
+          int mt, mb, st, sb;
+          ink(fr, y, mt, mb);
+          ink(fs, y + SUBOFF, st, sb);
+          if (mb > st - 3) { int mid = (mb + st) / 2; mb = mid - 1; st = mid + 2; }   // keep a thin gap between the two lines
+          int next = 6 + (s + 1) * H + pad;
+          int nt, nb;
+          ink(fr, next, nt, nb);
+          if (sb > nt - 4) sb = nt - 4;                                             // and before the next train
+          it.filled_rectangle(10, mt, 780, mb - mt, band_col);
+          if (sb > st) it.filled_rectangle(10, st, 780, sb - st, band_col);
         }
-        it.filled_rectangle(10, 415, 780, 61, band_col);
+        {
+          const int fb = 418 + 34;                       // footer baseline
+          int ft = fb - std::max(F_SUB[fi]->get_capheight(), F_CLK[fi]->get_capheight()) - 7;
+          int fbm = fb + std::abs(F_SUB[fi]->get_descender()) + 5;
+          ft = std::min(ft, 418 + 1);                     // room for the logo (418+4 .. 418+39)
+          fbm = std::min(std::max(fbm, 418 + 42), 478);
+          it.filled_rectangle(10, ft, 780, fbm - ft, band_col);
+        }
         if (bgs == 2) {                                   // fine grid: the gaps between LEDs
           for (int x = 12; x < 790; x += 4) it.vertical_line(x, 0, 476, bg_col);
           for (int y = 1; y < 476; y += 4) it.horizontal_line(10, y, 780, bg_col);
