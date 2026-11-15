@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.2 - 2026-11-15 (beta)
+- Redesigned train detail screen; footer and clock lined up
+
 ## 1.6.1 - 2026-11-15 (beta)
 - Normal case instead of capitals across the board
 
