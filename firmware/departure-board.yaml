@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.5.0"
+    version: "1.6.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -187,6 +187,25 @@ time:
 # Decides every 2 seconds whether the screen should be normal, dimmed for the night,
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
+  - id: apply_theme
+    mode: single
+    then:
+      - lambda: |-
+          static const uint8_t P[6][7][3] = {
+              {{0, 0, 0}, {255, 176, 0}, {255, 77, 0}, {255, 0, 0}, {51, 255, 51}, {115, 115, 115}, {255, 255, 255}},
+              {{0, 0, 0}, {242, 242, 242}, {255, 176, 0}, {255, 59, 59}, {125, 255, 125}, {110, 110, 110}, {255, 200, 0}},
+              {{11, 31, 74}, {255, 255, 255}, {255, 212, 0}, {255, 90, 90}, {123, 228, 149}, {120, 135, 170}, {255, 212, 0}},
+              {{2, 10, 2}, {60, 255, 90}, {200, 255, 60}, {255, 80, 80}, {60, 255, 90}, {30, 110, 40}, {220, 255, 220}},
+              {{0, 0, 0}, {255, 230, 0}, {255, 255, 255}, {255, 64, 64}, {80, 255, 80}, {150, 150, 150}, {0, 255, 255}},
+              {{244, 241, 232}, {26, 26, 26}, {179, 92, 0}, {196, 30, 30}, {30, 122, 46}, {150, 150, 150}, {0, 70, 180}}
+          };
+          static int applied = -1;
+          int t = id(theme_select).active_index().value_or(0);
+          if (t == 5 && (id(dim_state) == 1 || id(dim_state) == 2)) t = 0;   // no bright screen at night
+          if (t == applied) return;
+          applied = t;
+          Color *dst[7] = {&id(bg_col), &id(amber), &id(orange), &id(red), &id(green), &id(grey), &id(hilite)};
+          for (int k = 0; k < 7; k++) *dst[k] = Color(P[t][k][0], P[t][k][1], P[t][k][2]);
   - id: update_dim
     mode: single
     then:
@@ -252,6 +271,7 @@ interval:
             ESP_LOGW("watchdog", "Memory low (%u free) - overnight restart", (unsigned) fr);
             App.safe_reboot();
           }
+      - script.execute: apply_theme
 i2c:
   - id: touch_i2c
     sda: GPIO19
@@ -318,7 +338,7 @@ touchscreen:
               switch (id(settings_page)) {
                 case 0:
                   switch (row) {
-                    case 0: id(station_select).make_call().select_next(true).perform(); break;
+                    case 0: id(theme_select).make_call().select_next(true).perform(); break;
                     case 1: if (plus || minus) { float v = id(train_count).state + (plus ? 1 : -1); if (v < 3) v = 3; if (v > 5) v = 5; auto c = id(train_count).make_call(); c.set_value(v); c.perform(); } break;
                     case 2: id(text_large).toggle(); break;
                     case 3: id(font_select).make_call().select_next(true).perform(); break;
@@ -438,19 +458,19 @@ font:
     size: 34
   - file: "gfonts://DotGothic16"
     id: f_row_1
-    size: 34
+    size: 32
   - file: "gfonts://DotGothic16"
     id: f_sub_1
-    size: 28
+    size: 32
   - file: "gfonts://DotGothic16"
     id: f_clk_1
-    size: 34
+    size: 32
   - file: "gfonts://DotGothic16"
     id: f_row_l_1
-    size: 44
+    size: 48
   - file: "gfonts://DotGothic16"
     id: f_sub_l_1
-    size: 34
+    size: 32
   - file: "gfonts://VT323"
     id: f_row_2
     size: 44
@@ -487,7 +507,7 @@ font:
     glyphs: "0123456789: apmDueinh"
   - file: "gfonts://DotGothic16"
     id: f_big_1
-    size: 150
+    size: 144
     glyphs: "0123456789: apmDueinh"
   - file: "gfonts://VT323"
     id: f_big_2
@@ -499,6 +519,14 @@ font:
     glyphs: "0123456789: apmDueinh"
 
 color:
+  - id: bg_col
+    red: 0%
+    green: 0%
+    blue: 0%
+  - id: hilite
+    red: 100%
+    green: 100%
+    blue: 100%
   - id: amber
     red: 100%
     green: 69%
@@ -720,6 +748,15 @@ select:
             lambda: 'return millis() > 60000;'   # changed by hand, not restored at boot
           then:
             - component.update: fw_update
+  - platform: template
+    name: "Departure board theme"
+    id: theme_select
+    optimistic: true
+    restore_value: true
+    initial_option: "Classic amber"
+    options: ["Classic amber", "White LED", "Modern LCD", "Retro green", "High contrast", "Daylight"]
+    on_value:
+      - script.execute: apply_theme
   - platform: template
     name: "Departure board station"
     id: station_select
@@ -1248,7 +1285,7 @@ display:
       green: [GPIO9, GPIO46, GPIO3, GPIO8, GPIO16, GPIO1]
       blue: [GPIO15, GPIO7, GPIO6, GPIO5, GPIO4]
     lambda: |-
-      it.fill(Color::BLACK);
+      it.fill(bg_col);
 
       // boot splash
       if (millis() < 6000) {
@@ -1265,6 +1302,7 @@ display:
       auto now = id(ha_time).now();
       bool tv = now.is_valid();
       int nowmin = tv ? now.hour * 60 + now.minute : -1;
+      const char *THEME_NAMES[] = {"CLASSIC", "WHITE LED", "LCD", "GREEN", "CONTRAST", "DAYLIGHT"};
       const char *FONT_NAMES[] = {"Doto", "DotGothic", "VT323", "B612 Mono"};
       std::string stn_name = id(station_ts).state.empty() ? std::string("DEPARTURES") : id(station_ts).state;
       for (auto &ch : stn_name) ch = toupper((unsigned char) ch);
@@ -1304,7 +1342,7 @@ display:
           static const char *PAGE_NAMES[5] = {"DISPLAY", "TRAINS", "EXTRAS", "SCREEN", "STATUS"};
           it.printf(20, 25, id(f_row_1), amber, TextAlign::CENTER_LEFT, "SETTINGS %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
           if (id(settings_page) == 0) {
-            R = 0; lab(R, "Station"); val(R, amber, STATION_NAMES[si]);
+            R = 0; lab(R, "Theme"); val(R, amber, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
             R = 1; lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
             R = 2; lab(R, "Text size"); val(R, amber, id(text_large).state ? "LARGE" : "NORMAL");
             R = 3; lab(R, "Font"); val(R, amber, FONT_NAMES[id(font_select).active_index().value_or(0)]);
@@ -1524,9 +1562,9 @@ display:
           std::string nm = stp[i].first;
           if (nm.size() > 17) { nm.resize(17); nm += "."; }
           bool fav = !fstop.empty() && departure::ieq(stp[i].first, fstop);
-          Color tc = fav ? Color::WHITE : amber;
+          Color tc = fav ? hilite : amber;
           it.printf(sx, sy2, F_SUB[fi], tc, "%s", nm.c_str());
-          it.printf(sx + 372, sy2, F_SUB[fi], fav ? Color::WHITE : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
+          it.printf(sx + 372, sy2, F_SUB[fi], fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
         }
         if (stp.size() > (size_t) (rows * 2)) it.printf(784, cy - 36, F_SUB[fi], amber, TextAlign::TOP_RIGHT, "+%d more", (int) stp.size() - rows * 2);
       };
@@ -1623,11 +1661,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -1734,11 +1772,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -1845,11 +1883,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -1956,11 +1994,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -2066,11 +2104,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -2176,11 +2214,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -2286,11 +2324,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -2396,11 +2434,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -2506,11 +2544,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -2616,11 +2654,11 @@ display:
             } else {
               int tx = x + hw;
               if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
               if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
             }
           };
-          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
           if (!scroll) {
             drawsub(DX);
           } else {
@@ -2697,10 +2735,10 @@ display:
         // simple train icon, 56x35 (replace with your own drawing if you like)
         int lx = 20, ly = fy + 4;
         it.filled_rectangle(lx + 4, ly + 2, 48, 22, amber);                 // body
-        it.filled_rectangle(lx + 8, ly + 6, 12, 9, Color(0, 0, 0));          // windows
-        it.filled_rectangle(lx + 22, ly + 6, 12, 9, Color(0, 0, 0));
-        it.filled_rectangle(lx + 36, ly + 6, 12, 9, Color(0, 0, 0));
-        it.filled_rectangle(lx + 4, ly + 19, 48, 3, Color(0, 0, 0));         // stripe
+        it.filled_rectangle(lx + 8, ly + 6, 12, 9, bg_col);          // windows
+        it.filled_rectangle(lx + 22, ly + 6, 12, 9, bg_col);
+        it.filled_rectangle(lx + 36, ly + 6, 12, 9, bg_col);
+        it.filled_rectangle(lx + 4, ly + 19, 48, 3, bg_col);         // stripe
         it.filled_rectangle(lx + 10, ly + 26, 8, 6, amber);                  // wheels
         it.filled_rectangle(lx + 38, ly + 26, 8, 6, amber);
         it.filled_rectangle(lx, ly + 33, 56, 2, amber);                      // rail
