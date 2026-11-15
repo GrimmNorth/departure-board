@@ -1472,6 +1472,8 @@ display:
       const int SUBOFF = rB + 7 - sT;
       const int ink_top = rT;
       const int ink_bot = SUBOFF + sB;
+      const int SUBH = L ? 38 : 32;
+      const int SW = 784 - DX;                  // sub-line width
       int pad = (H - (ink_bot - ink_top)) / 2 - ink_top;
       if (pad < -ink_top) pad = -ink_top;
       const int speeds[3] = {20, 30, 50};       // scroll px per second
