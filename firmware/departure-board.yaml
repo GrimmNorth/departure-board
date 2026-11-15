@@ -10,7 +10,7 @@ esphome:
   name_add_mac_suffix: true   # several boards on one network stay distinct
   project:
     name: "community.uk_departure_board"
-    version: "1.3.0"
+    version: "1.4.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -36,6 +36,53 @@ logger:
 
 api:
   reboot_timeout: 15min      # no Home Assistant connection for 15 min = reboot
+  actions:
+    # Called by the Home Assistant blueprint (about once a minute).
+    - action: update_status
+      variables:
+        station: string
+        status: string
+      then:
+        - lambda: |-
+            id(station_ts).publish_state(station);
+            id(stn_status).publish_state(status);
+            id(data_ms_stn) = millis();
+    - action: update_train
+      variables:
+        n: int
+        sched: string
+        expct: string
+        plat: string
+        pchg: string
+        stat: string
+        dreason: string
+        creason: string
+        oper: string
+        delaym: string
+        sarr: string
+        earr: string
+        pprev: string
+        stops: string
+        calls: string[]
+      then:
+        - lambda: |-
+            std::string cp = "[";
+            for (size_t i = 0; i < calls.size(); i++) { if (i) cp += ", "; cp += "\"" + calls[i] + "\""; }
+            cp += "]";
+            switch (n) {
+              case 1: id(stn_t1_scheduled_departure).publish_state(sched); id(stn_t1_expected_departure).publish_state(expct); id(stn_t1_platform).publish_state(plat); id(stn_t1_platform_changed).publish_state(pchg); id(stn_t1_status).publish_state(stat); id(stn_t1_delay_reason).publish_state(dreason); id(stn_t1_cancellation_reason).publish_state(creason); id(stn_t1_operator).publish_state(oper); id(stn_t1_delay_minutes).publish_state(delaym); id(stn_t1_scheduled_arrival).publish_state(sarr); id(stn_t1_estimated_arrival).publish_state(earr); id(stn_t1_previous_platform).publish_state(pprev); id(stn_t1_stops).publish_state(stops); id(stn_t1_calling_points).publish_state(cp); break;
+              case 2: id(stn_t2_scheduled_departure).publish_state(sched); id(stn_t2_expected_departure).publish_state(expct); id(stn_t2_platform).publish_state(plat); id(stn_t2_platform_changed).publish_state(pchg); id(stn_t2_status).publish_state(stat); id(stn_t2_delay_reason).publish_state(dreason); id(stn_t2_cancellation_reason).publish_state(creason); id(stn_t2_operator).publish_state(oper); id(stn_t2_delay_minutes).publish_state(delaym); id(stn_t2_scheduled_arrival).publish_state(sarr); id(stn_t2_estimated_arrival).publish_state(earr); id(stn_t2_previous_platform).publish_state(pprev); id(stn_t2_stops).publish_state(stops); id(stn_t2_calling_points).publish_state(cp); break;
+              case 3: id(stn_t3_scheduled_departure).publish_state(sched); id(stn_t3_expected_departure).publish_state(expct); id(stn_t3_platform).publish_state(plat); id(stn_t3_platform_changed).publish_state(pchg); id(stn_t3_status).publish_state(stat); id(stn_t3_delay_reason).publish_state(dreason); id(stn_t3_cancellation_reason).publish_state(creason); id(stn_t3_operator).publish_state(oper); id(stn_t3_delay_minutes).publish_state(delaym); id(stn_t3_scheduled_arrival).publish_state(sarr); id(stn_t3_estimated_arrival).publish_state(earr); id(stn_t3_previous_platform).publish_state(pprev); id(stn_t3_stops).publish_state(stops); id(stn_t3_calling_points).publish_state(cp); break;
+              case 4: id(stn_t4_scheduled_departure).publish_state(sched); id(stn_t4_expected_departure).publish_state(expct); id(stn_t4_platform).publish_state(plat); id(stn_t4_platform_changed).publish_state(pchg); id(stn_t4_status).publish_state(stat); id(stn_t4_delay_reason).publish_state(dreason); id(stn_t4_cancellation_reason).publish_state(creason); id(stn_t4_operator).publish_state(oper); id(stn_t4_delay_minutes).publish_state(delaym); id(stn_t4_scheduled_arrival).publish_state(sarr); id(stn_t4_estimated_arrival).publish_state(earr); id(stn_t4_previous_platform).publish_state(pprev); id(stn_t4_stops).publish_state(stops); id(stn_t4_calling_points).publish_state(cp); break;
+              case 5: id(stn_t5_scheduled_departure).publish_state(sched); id(stn_t5_expected_departure).publish_state(expct); id(stn_t5_platform).publish_state(plat); id(stn_t5_platform_changed).publish_state(pchg); id(stn_t5_status).publish_state(stat); id(stn_t5_delay_reason).publish_state(dreason); id(stn_t5_cancellation_reason).publish_state(creason); id(stn_t5_operator).publish_state(oper); id(stn_t5_delay_minutes).publish_state(delaym); id(stn_t5_scheduled_arrival).publish_state(sarr); id(stn_t5_estimated_arrival).publish_state(earr); id(stn_t5_previous_platform).publish_state(pprev); id(stn_t5_stops).publish_state(stops); id(stn_t5_calling_points).publish_state(cp); break;
+              case 6: id(stn_t6_scheduled_departure).publish_state(sched); id(stn_t6_expected_departure).publish_state(expct); id(stn_t6_platform).publish_state(plat); id(stn_t6_platform_changed).publish_state(pchg); id(stn_t6_status).publish_state(stat); id(stn_t6_delay_reason).publish_state(dreason); id(stn_t6_cancellation_reason).publish_state(creason); id(stn_t6_operator).publish_state(oper); id(stn_t6_delay_minutes).publish_state(delaym); id(stn_t6_scheduled_arrival).publish_state(sarr); id(stn_t6_estimated_arrival).publish_state(earr); id(stn_t6_previous_platform).publish_state(pprev); id(stn_t6_stops).publish_state(stops); id(stn_t6_calling_points).publish_state(cp); break;
+              case 7: id(stn_t7_scheduled_departure).publish_state(sched); id(stn_t7_expected_departure).publish_state(expct); id(stn_t7_platform).publish_state(plat); id(stn_t7_platform_changed).publish_state(pchg); id(stn_t7_status).publish_state(stat); id(stn_t7_delay_reason).publish_state(dreason); id(stn_t7_cancellation_reason).publish_state(creason); id(stn_t7_operator).publish_state(oper); id(stn_t7_delay_minutes).publish_state(delaym); id(stn_t7_scheduled_arrival).publish_state(sarr); id(stn_t7_estimated_arrival).publish_state(earr); id(stn_t7_previous_platform).publish_state(pprev); id(stn_t7_stops).publish_state(stops); id(stn_t7_calling_points).publish_state(cp); break;
+              case 8: id(stn_t8_scheduled_departure).publish_state(sched); id(stn_t8_expected_departure).publish_state(expct); id(stn_t8_platform).publish_state(plat); id(stn_t8_platform_changed).publish_state(pchg); id(stn_t8_status).publish_state(stat); id(stn_t8_delay_reason).publish_state(dreason); id(stn_t8_cancellation_reason).publish_state(creason); id(stn_t8_operator).publish_state(oper); id(stn_t8_delay_minutes).publish_state(delaym); id(stn_t8_scheduled_arrival).publish_state(sarr); id(stn_t8_estimated_arrival).publish_state(earr); id(stn_t8_previous_platform).publish_state(pprev); id(stn_t8_stops).publish_state(stops); id(stn_t8_calling_points).publish_state(cp); break;
+              case 9: id(stn_t9_scheduled_departure).publish_state(sched); id(stn_t9_expected_departure).publish_state(expct); id(stn_t9_platform).publish_state(plat); id(stn_t9_platform_changed).publish_state(pchg); id(stn_t9_status).publish_state(stat); id(stn_t9_delay_reason).publish_state(dreason); id(stn_t9_cancellation_reason).publish_state(creason); id(stn_t9_operator).publish_state(oper); id(stn_t9_delay_minutes).publish_state(delaym); id(stn_t9_scheduled_arrival).publish_state(sarr); id(stn_t9_estimated_arrival).publish_state(earr); id(stn_t9_previous_platform).publish_state(pprev); id(stn_t9_stops).publish_state(stops); id(stn_t9_calling_points).publish_state(cp); break;
+              case 10: id(stn_t10_scheduled_departure).publish_state(sched); id(stn_t10_expected_departure).publish_state(expct); id(stn_t10_platform).publish_state(plat); id(stn_t10_platform_changed).publish_state(pchg); id(stn_t10_status).publish_state(stat); id(stn_t10_delay_reason).publish_state(dreason); id(stn_t10_cancellation_reason).publish_state(creason); id(stn_t10_operator).publish_state(oper); id(stn_t10_delay_minutes).publish_state(delaym); id(stn_t10_scheduled_arrival).publish_state(sarr); id(stn_t10_estimated_arrival).publish_state(earr); id(stn_t10_previous_platform).publish_state(pprev); id(stn_t10_stops).publish_state(stops); id(stn_t10_calling_points).publish_state(cp); break;
+              default: break;
+            }
+            id(data_ms_stn) = millis();
 
 ota:
   - platform: esphome
@@ -641,716 +688,435 @@ select:
     options: ["Doto", "DotGothic", "VT323", "B612 Mono"]
 
 text_sensor:
-  - platform: homeassistant
+  - platform: template
     id: station_ts
-    entity_id: sensor.departure_board_status
-    attribute: station
     internal: true
   - platform: debug
     reset_reason:
       name: "Departure board restart reason"
       entity_category: diagnostic
-  - platform: homeassistant
-    id: stn_updated
-    entity_id: sensor.departure_board_train_1
-    attribute: last_updated
-    internal: true
-    on_value:
-      - lambda: |-
-          id(data_ms_stn) = millis();
-  - platform: homeassistant
+  - platform: template
     id: stn_status
-    entity_id: sensor.departure_board_status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_scheduled_departure
-    entity_id: sensor.departure_board_train_1
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_expected_departure
-    entity_id: sensor.departure_board_train_1
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_platform
-    entity_id: sensor.departure_board_train_1
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_platform_changed
-    entity_id: sensor.departure_board_train_1
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_status
-    entity_id: sensor.departure_board_train_1
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_calling_points
-    entity_id: sensor.departure_board_train_1
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_delay_reason
-    entity_id: sensor.departure_board_train_1
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_cancellation_reason
-    entity_id: sensor.departure_board_train_1
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_operator
-    entity_id: sensor.departure_board_train_1
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_delay_minutes
-    entity_id: sensor.departure_board_train_1
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_scheduled_arrival
-    entity_id: sensor.departure_board_train_1
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_estimated_arrival
-    entity_id: sensor.departure_board_train_1
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_previous_platform
-    entity_id: sensor.departure_board_train_1
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_scheduled_departure
-    entity_id: sensor.departure_board_train_2
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_expected_departure
-    entity_id: sensor.departure_board_train_2
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_platform
-    entity_id: sensor.departure_board_train_2
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_platform_changed
-    entity_id: sensor.departure_board_train_2
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_status
-    entity_id: sensor.departure_board_train_2
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_calling_points
-    entity_id: sensor.departure_board_train_2
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_delay_reason
-    entity_id: sensor.departure_board_train_2
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_cancellation_reason
-    entity_id: sensor.departure_board_train_2
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_operator
-    entity_id: sensor.departure_board_train_2
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_delay_minutes
-    entity_id: sensor.departure_board_train_2
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_scheduled_arrival
-    entity_id: sensor.departure_board_train_2
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_estimated_arrival
-    entity_id: sensor.departure_board_train_2
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_previous_platform
-    entity_id: sensor.departure_board_train_2
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_scheduled_departure
-    entity_id: sensor.departure_board_train_3
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_expected_departure
-    entity_id: sensor.departure_board_train_3
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_platform
-    entity_id: sensor.departure_board_train_3
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_platform_changed
-    entity_id: sensor.departure_board_train_3
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_status
-    entity_id: sensor.departure_board_train_3
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_calling_points
-    entity_id: sensor.departure_board_train_3
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_delay_reason
-    entity_id: sensor.departure_board_train_3
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_cancellation_reason
-    entity_id: sensor.departure_board_train_3
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_operator
-    entity_id: sensor.departure_board_train_3
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_delay_minutes
-    entity_id: sensor.departure_board_train_3
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_scheduled_arrival
-    entity_id: sensor.departure_board_train_3
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_estimated_arrival
-    entity_id: sensor.departure_board_train_3
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_previous_platform
-    entity_id: sensor.departure_board_train_3
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_scheduled_departure
-    entity_id: sensor.departure_board_train_4
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_expected_departure
-    entity_id: sensor.departure_board_train_4
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_platform
-    entity_id: sensor.departure_board_train_4
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_platform_changed
-    entity_id: sensor.departure_board_train_4
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_status
-    entity_id: sensor.departure_board_train_4
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_calling_points
-    entity_id: sensor.departure_board_train_4
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_delay_reason
-    entity_id: sensor.departure_board_train_4
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_cancellation_reason
-    entity_id: sensor.departure_board_train_4
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_operator
-    entity_id: sensor.departure_board_train_4
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_delay_minutes
-    entity_id: sensor.departure_board_train_4
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_scheduled_arrival
-    entity_id: sensor.departure_board_train_4
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_estimated_arrival
-    entity_id: sensor.departure_board_train_4
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_previous_platform
-    entity_id: sensor.departure_board_train_4
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_scheduled_departure
-    entity_id: sensor.departure_board_train_5
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_expected_departure
-    entity_id: sensor.departure_board_train_5
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_platform
-    entity_id: sensor.departure_board_train_5
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_platform_changed
-    entity_id: sensor.departure_board_train_5
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_status
-    entity_id: sensor.departure_board_train_5
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_calling_points
-    entity_id: sensor.departure_board_train_5
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_delay_reason
-    entity_id: sensor.departure_board_train_5
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_cancellation_reason
-    entity_id: sensor.departure_board_train_5
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_operator
-    entity_id: sensor.departure_board_train_5
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_delay_minutes
-    entity_id: sensor.departure_board_train_5
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_scheduled_arrival
-    entity_id: sensor.departure_board_train_5
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_estimated_arrival
-    entity_id: sensor.departure_board_train_5
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_previous_platform
-    entity_id: sensor.departure_board_train_5
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_scheduled_departure
-    entity_id: sensor.departure_board_train_6
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_expected_departure
-    entity_id: sensor.departure_board_train_6
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_platform
-    entity_id: sensor.departure_board_train_6
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_platform_changed
-    entity_id: sensor.departure_board_train_6
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_status
-    entity_id: sensor.departure_board_train_6
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_calling_points
-    entity_id: sensor.departure_board_train_6
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_delay_reason
-    entity_id: sensor.departure_board_train_6
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_cancellation_reason
-    entity_id: sensor.departure_board_train_6
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_operator
-    entity_id: sensor.departure_board_train_6
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_delay_minutes
-    entity_id: sensor.departure_board_train_6
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_scheduled_arrival
-    entity_id: sensor.departure_board_train_6
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_estimated_arrival
-    entity_id: sensor.departure_board_train_6
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_previous_platform
-    entity_id: sensor.departure_board_train_6
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_scheduled_departure
-    entity_id: sensor.departure_board_train_7
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_expected_departure
-    entity_id: sensor.departure_board_train_7
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_platform
-    entity_id: sensor.departure_board_train_7
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_platform_changed
-    entity_id: sensor.departure_board_train_7
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_status
-    entity_id: sensor.departure_board_train_7
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_calling_points
-    entity_id: sensor.departure_board_train_7
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_delay_reason
-    entity_id: sensor.departure_board_train_7
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_cancellation_reason
-    entity_id: sensor.departure_board_train_7
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_operator
-    entity_id: sensor.departure_board_train_7
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_delay_minutes
-    entity_id: sensor.departure_board_train_7
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_scheduled_arrival
-    entity_id: sensor.departure_board_train_7
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_estimated_arrival
-    entity_id: sensor.departure_board_train_7
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_previous_platform
-    entity_id: sensor.departure_board_train_7
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_scheduled_departure
-    entity_id: sensor.departure_board_train_8
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_expected_departure
-    entity_id: sensor.departure_board_train_8
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_platform
-    entity_id: sensor.departure_board_train_8
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_platform_changed
-    entity_id: sensor.departure_board_train_8
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_status
-    entity_id: sensor.departure_board_train_8
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_calling_points
-    entity_id: sensor.departure_board_train_8
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_delay_reason
-    entity_id: sensor.departure_board_train_8
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_cancellation_reason
-    entity_id: sensor.departure_board_train_8
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_operator
-    entity_id: sensor.departure_board_train_8
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_delay_minutes
-    entity_id: sensor.departure_board_train_8
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_scheduled_arrival
-    entity_id: sensor.departure_board_train_8
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_estimated_arrival
-    entity_id: sensor.departure_board_train_8
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_previous_platform
-    entity_id: sensor.departure_board_train_8
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_scheduled_departure
-    entity_id: sensor.departure_board_train_9
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_expected_departure
-    entity_id: sensor.departure_board_train_9
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_platform
-    entity_id: sensor.departure_board_train_9
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_platform_changed
-    entity_id: sensor.departure_board_train_9
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_status
-    entity_id: sensor.departure_board_train_9
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_calling_points
-    entity_id: sensor.departure_board_train_9
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_delay_reason
-    entity_id: sensor.departure_board_train_9
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_cancellation_reason
-    entity_id: sensor.departure_board_train_9
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_operator
-    entity_id: sensor.departure_board_train_9
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_delay_minutes
-    entity_id: sensor.departure_board_train_9
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_scheduled_arrival
-    entity_id: sensor.departure_board_train_9
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_estimated_arrival
-    entity_id: sensor.departure_board_train_9
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_previous_platform
-    entity_id: sensor.departure_board_train_9
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_scheduled_departure
-    entity_id: sensor.departure_board_train_10
-    attribute: scheduled_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_expected_departure
-    entity_id: sensor.departure_board_train_10
-    attribute: expected_departure
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_platform
-    entity_id: sensor.departure_board_train_10
-    attribute: platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_platform_changed
-    entity_id: sensor.departure_board_train_10
-    attribute: platform_changed
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_status
-    entity_id: sensor.departure_board_train_10
-    attribute: status
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_calling_points
-    entity_id: sensor.departure_board_train_10
-    attribute: calling_points
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_delay_reason
-    entity_id: sensor.departure_board_train_10
-    attribute: delay_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_cancellation_reason
-    entity_id: sensor.departure_board_train_10
-    attribute: cancellation_reason
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_operator
-    entity_id: sensor.departure_board_train_10
-    attribute: operator
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_delay_minutes
-    entity_id: sensor.departure_board_train_10
-    attribute: delay_minutes
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_scheduled_arrival
-    entity_id: sensor.departure_board_train_10
-    attribute: scheduled_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_estimated_arrival
-    entity_id: sensor.departure_board_train_10
-    attribute: estimated_arrival
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_previous_platform
-    entity_id: sensor.departure_board_train_10
-    attribute: previous_platform
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t1_stops
-    entity_id: sensor.departure_board_train_1_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t2_stops
-    entity_id: sensor.departure_board_train_2_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t3_stops
-    entity_id: sensor.departure_board_train_3_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t4_stops
-    entity_id: sensor.departure_board_train_4_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t5_stops
-    entity_id: sensor.departure_board_train_5_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t6_stops
-    entity_id: sensor.departure_board_train_6_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t7_stops
-    entity_id: sensor.departure_board_train_7_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t8_stops
-    entity_id: sensor.departure_board_train_8_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t9_stops
-    entity_id: sensor.departure_board_train_9_stops
     internal: true
-  - platform: homeassistant
+  - platform: template
     id: stn_t10_stops
-    entity_id: sensor.departure_board_train_10_stops
     internal: true
   - platform: wifi_info
     ip_address:

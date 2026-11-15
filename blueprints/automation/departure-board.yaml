@@ -1,0 +1,84 @@
+blueprint:
+  name: UK Departure Board - send trains to the board
+  author: GrimmNorth
+  description: >-
+    Sends your National Rail departures (from the My Rail Commute integration) to your
+    UK Departure Board every minute. Pick your board, pick your station, and optionally
+    type the station name to show at the bottom of the board.
+    Set up My Rail Commute with 10 services for the best result.
+  domain: automation
+  source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
+  input:
+    board:
+      name: Departure board
+      description: Your departure board (it appears here once you have added it to Home Assistant).
+      selector:
+        device:
+          filter:
+            - integration: esphome
+    station:
+      name: Station
+      description: Your station, from the My Rail Commute integration.
+      selector:
+        device:
+          filter:
+            - integration: my_rail_commute
+    station_name:
+      name: Station name on the board
+      description: Shown at the bottom of the board. Leave empty to use the station's own name.
+      default: ""
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: time_pattern
+    minutes: "/1"
+  - trigger: homeassistant
+    event: start
+
+variables:
+  board_id: !input board
+  station_id: !input station
+  label: !input station_name
+  svc: "{{ device_attr(board_id, 'name') | slugify }}"
+  ents: "{{ device_entities(station_id) }}"
+  status_ent: "{{ ents | select('search', '_status$') | first | default('') }}"
+  summary_ent: "{{ ents | select('search', '_summary$') | first | default('') }}"
+  by_dest: "{{ state_attr(summary_ent, 'services_by_destination') }}"
+
+actions:
+  - action: "esphome.{{ svc }}_update_status"
+    continue_on_error: true
+    data:
+      station: >-
+        {{ (label if label | length > 0 else device_attr(station_id, 'name')) | upper }}
+      status: >-
+        {{ states(status_ent) if status_ent != '' else '' }}
+  - repeat:
+      for_each: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      sequence:
+        - variables:
+            t: "{{ ents | select('search', '_train_' ~ repeat.item ~ '$') | first | default('') }}"
+            sid: "{{ state_attr(t, 'service_id') if t != '' else '' }}"
+        - action: "esphome.{{ svc }}_update_train"
+          continue_on_error: true
+          data:
+            n: "{{ repeat.item }}"
+            sched: "{% set v = state_attr(t, 'scheduled_departure') %}{{ '' if v is none else v }}"
+            expct: "{% set v = state_attr(t, 'expected_departure') %}{{ '' if v is none else v }}"
+            plat: "{% set v = state_attr(t, 'platform') %}{{ '' if v is none else v }}"
+            pchg: "{% set v = state_attr(t, 'platform_changed') %}{{ '' if v is none else v }}"
+            stat: "{% set v = state_attr(t, 'status') %}{{ '' if v is none else v }}"
+            dreason: "{% set v = state_attr(t, 'delay_reason') %}{{ '' if v is none else v }}"
+            creason: "{% set v = state_attr(t, 'cancellation_reason') %}{{ '' if v is none else v }}"
+            oper: "{% set v = state_attr(t, 'operator') %}{{ '' if v is none else v }}"
+            delaym: "{% set v = state_attr(t, 'delay_minutes') %}{{ '' if v is none else v }}"
+            sarr: "{% set v = state_attr(t, 'scheduled_arrival') %}{{ '' if v is none else v }}"
+            earr: "{% set v = state_attr(t, 'estimated_arrival') %}{{ '' if v is none else v }}"
+            pprev: "{% set v = state_attr(t, 'previous_platform') %}{{ '' if v is none else v }}"
+            calls: "{% set c = state_attr(t, 'calling_points') %}{{ c if c is list else [] }}"
+            stops: >-
+              {% set ns = namespace(out=[]) %}{% if by_dest and sid %}{% for dest in by_dest.values() %}{% for s in dest.services %}{% if s.service_id == sid %}{% for p in s.calling_point_details %}{% set tm = p.expected if (p.expected | regex_match('^[0-9]{2}:[0-9]{2}$')) else p.scheduled %}{% set ns.out = ns.out + [p.name ~ ' ' ~ tm] %}{% endfor %}{% endif %}{% endfor %}{% endfor %}{% endif %}{{ ns.out | join(', ') | truncate(250, true, '') }}

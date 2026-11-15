@@ -10,9 +10,9 @@ You need the CrowPanel above, Home Assistant, [HACS](https://hacs.xyz), and the 
 
 1. **Flash.** Open the install page in Chrome or Edge on a computer, plug the board in by USB, click Install.
 2. **Wi-Fi.** Join the board's own Wi-Fi (`Departure-Board`) from a phone and pick your home network.
-3. **Home Assistant.** Settings > Devices & services: add the discovered ESPHome device. No key needed.
+3. **Home Assistant.** Settings > Devices & services: add the discovered ESPHome device. No key needed. If it isn't discovered, use Add integration > ESPHome and enter the board's IP address (see your router).
 4. **My Rail Commute.** Add your station with **10 services**.
-5. **Sensors.** Open `ha/departure-board-sensors.yaml` and copy it. Then use Find and Replace: replace `YOUR_PREFIX` with your entity prefix (for `sensor.departures_from_beverley_train_1` that is `departures_from_beverley`) and `YOUR STATION` with your station name. Paste it at the end of `configuration.yaml` (the `template:` line starts at the left edge), run Check configuration, then Reload template entities.
+5. **Connect them.** Use the *Import blueprint* button on the install page, then Settings > Automations & scenes > Blueprints > UK Departure Board > Create automation. Pick your board, pick your station, type the station name to show, Save.
 
 Updates appear in Home Assistant as an Update button on the board's device page.
 
@@ -22,7 +22,7 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 - All the same switches and numbers appear in Home Assistant under the device.
 
 ### Troubleshooting
-- **Board shows no trains:** the entity prefix in step 5 is wrong, or My Rail Commute has fewer than 10 services. Look for `sensor.departure_board_train_1` in Developer tools > States.
+- **Board shows no trains or says it is waiting:** the automation from step 5 sends the data once a minute. Check it exists and is switched on (Settings > Automations), that you picked the right board and station, and that My Rail Commute has trains. Run the automation by hand with the three-dots menu > Run actions.
 - **Board says "No trains calling at ...":** a destination filter is set (common if the board was flashed over an older build). Clear it in Home Assistant under the board's "destination filter" text entity.
 - **No update appears:** updates are checked every 6 hours; press "Check for update" on the device page.
 
