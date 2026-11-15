@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.2 - 2026-11-15 (beta)
+- Rows laid out from the real letter shapes; even row bands
+
 ## 1.9.1 - 2026-11-15 (beta)
 - Clearer gap between departure and calling-points lines
 

@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.9.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.9.2.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "a80329faa0b7c8ecfa0204bed820d627",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.9.1.ota.bin",
-        "summary": "Clearer gap between departure and calling-points lines"
+        "md5": "601bda7d78595a7245ad9dad83fe5c07",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.9.2.ota.bin",
+        "summary": "Rows laid out from the real letter shapes; even row bands"
       }
     }
   ]
