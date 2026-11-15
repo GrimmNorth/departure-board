@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.1 - 2026-11-15 (beta)
+- Normal case instead of capitals across the board
+
 ## 1.6.0 - 2026-11-15 (beta)
 - Six colour themes; sharper DotGothic text; scrolling line no longer cut off
 

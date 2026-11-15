@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.6.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.6.1.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "21bc958472020191aeae27df5f1da41f",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.6.0.ota.bin",
-        "summary": "Six colour themes; sharper DotGothic text; scrolling line no longer cut off"
+        "md5": "054254ebfe403c3f221c5c9945bb1831",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.6.1.ota.bin",
+        "summary": "Normal case instead of capitals across the board"
       }
     }
   ]
