@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.9.2"
+    version: "1.7.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -134,6 +134,9 @@ button:
     entity_category: config
   - platform: safe_mode
     name: "Departure board restart in safe mode"
+    entity_category: config
+  - platform: factory_reset
+    name: "Departure board factory reset (clears Wi-Fi and settings)"
     entity_category: config
 
 globals:
@@ -1417,7 +1420,7 @@ display:
             R = 0; lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
             R = 1; lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
             R = 2; lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "Connected" : "Offline");
-            R = 3; lab(R, "Data age"); if (dms == 0) val(R, amber, "No data yet"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 15 ? red : green, buf); }
+            R = 3; lab(R, "Data age"); if (dms == 0) val(R, amber, "No data yet"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 5 ? red : green, buf); }
             R = 4; lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
             R = 5; lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
             R = 6; lab(R, "Firmware"); snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf);
@@ -1439,6 +1442,7 @@ display:
       if (L && count > 4) count = 4;            // large text only has room for 4 trains
       const int H = 406 / count;                // pixel height of one train (two lines)
       const int fi = id(font_select).active_index().value_or(0);
+      static std::map<std::string, uint32_t> pchg_seen;   // when each platform change was first shown
       font::Font *F_ROW[] = {id(f_row_0), id(f_row_1), id(f_row_2), id(f_row_3)};
       font::Font *F_SUB[] = {id(f_sub_0), id(f_sub_1), id(f_sub_2), id(f_sub_3)};
       font::Font *F_CLK[] = {id(f_clk_0), id(f_clk_1), id(f_clk_2), id(f_clk_3)};
@@ -1763,7 +1767,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -1874,7 +1890,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -1985,7 +2013,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -2096,7 +2136,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -2206,7 +2258,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -2316,7 +2380,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -2426,7 +2502,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -2536,7 +2624,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -2646,7 +2746,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
@@ -2756,7 +2868,19 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            if (departure::truthy(pchg)) {
+              // platform changed: flash it for the first minute this train is shown with the new platform
+              std::string pk = sched + "|" + dest + "|" + plat;
+              auto pit = pchg_seen.find(pk);
+              if (pit == pchg_seen.end()) {
+                if (pchg_seen.size() > 20) pchg_seen.clear();
+                pit = pchg_seen.emplace(pk, millis()).first;
+              }
+              bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            } else {
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+            }
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);

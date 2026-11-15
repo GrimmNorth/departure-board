@@ -1,0 +1,39 @@
+name: Something's not working
+description: Report a problem with the board, the firmware or the blueprint
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: Shown on the startup screen, under Settings > Status > Firmware on the board, or on the board's device page in Home Assistant.
+      placeholder: "1.9.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Update channel
+      options: [Stable, Beta]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, what you saw instead, and roughly when. A photo of the screen helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again (if you know)
+  - type: input
+    id: ha
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.11.1"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: From the board's logs in the ESPHome dashboard, or the automation's trace in Home Assistant.
+      render: text

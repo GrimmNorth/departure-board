@@ -33,7 +33,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Promote beta to stable
         if: inputs.channel == 'promote'
@@ -61,11 +61,11 @@ jobs:
           [ -n "$SUMMARY" ] || { echo "::error::Please give a one-line summary"; exit 1; }
           [ ! -e "releases/departure-board-$VER.ota.bin" ] || { echo "::error::Version $VER already exists - pick a new number"; exit 1; }
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: inputs.channel != 'promote'
         with:
           python-version: "3.12"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         if: inputs.channel != 'promote'
         with:
           path: |

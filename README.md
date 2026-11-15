@@ -12,7 +12,7 @@ You need the CrowPanel above, Home Assistant 2026.11 or newer, and the **My Rail
 2. **Wi-Fi.** When the install finishes the page asks for your Wi-Fi details. (Fallback: join the board's own Wi-Fi, `Departure-Board`, from a phone and pick your home network.)
 3. **Home Assistant.** Settings > Devices & services: add the discovered ESPHome device. No key needed. If it isn't discovered, use Add integration > ESPHome and enter the board's IP address (see your router).
 4. **My Rail Commute.** Install it from **Settings > Marketplace** ([open it in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&repository=my-rail-commute&category=integration)), then add your station with **10 services**.
-5. **Connect them.** Use the *Import blueprint* button on the install page, then Settings > Automations & scenes > Blueprints > UK Departure Board > Create automation. Pick your board, pick your station, type the station name to show, Save.
+5. **Connect them.** Use the *Import blueprint* button on the install page, then Settings > Automations & scenes > Blueprints > UK Departure Board > Create automation. Pick your board and your station, then Save. (The footer shows the station's name; type something in *Station name on the board* only if you want different wording.)
 
 Updates appear in Home Assistant as an Update button on the board's device page.
 
@@ -22,10 +22,14 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 - **Memory watchdog:** if memory runs critically low the board restarts cleanly; if it is slowly running down it restarts quietly at 03:30.
 - **Diagnostics** in Home Assistant under the device: uptime, restart reason, data age, free memory, Wi-Fi signal.
 - **Update channel:** leave on *Stable*. Set it to *Beta* (under the device's configuration) to get test versions first.
+- **Factory reset:** a button on the device page clears Wi-Fi and all settings, for passing a board on. The board then starts its `Departure-Board` setup hotspot again.
 
 ### Using the board
-- Tap a train for its detail page (operator, countdown, calling points with times); tap anywhere to close.
-- Six colour themes: Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Change it under Settings > Display > Theme on the board, or the board's theme setting in Home Assistant.
+- Each train shows its time, destination, platform and status, with the calling points (and any delay reason) scrolling underneath. A platform number flashes for a minute when it changes.
+- Tap a train for its detail page: status and expected time, platform and operator, countdown, delay reason, arrival time, and the calling points as a route line with times. Tap anywhere to close.
+- **Themes:** Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Settings > Display > Theme on the board, or the theme setting in Home Assistant.
+- **Background:** *Rows* (default) puts each line on a faint unlit band like a real LED board; *Dot matrix* adds the grid of unlit dots; *Plain* turns it off. Set it in Home Assistant.
+- **Fonts:** DotGothic (default), Underground (London Underground dot-matrix style), Bitcount (round LED dots) and Handjet (narrow dot-matrix). Settings > Display > Font.
 - Tap the clock (bottom right) for settings: display, trains, extras (highlight stop, disruption banner, logo, focus mode, clock screen), screen (night dimming, screen off), status.
 - All the same switches and numbers appear in Home Assistant under the device.
 
@@ -58,4 +62,5 @@ Choosing **stable** in step 2 skips the beta stage. `release.sh` does the same p
 - Built and tested on one CrowPanel Basic 7" with ESPHome 2026.10. Hobby project, not affiliated with National Rail or Elecrow.
 - The board's API is unencrypted so setup stays simple; keep it on your home network.
 - Train data comes from the National Rail Darwin feed via My Rail Commute; check its terms for your use.
+- The Underground and Bitcount fonts are bundled under the SIL Open Font License; see `firmware/fonts/README.md` for credits.
 - `departure_board.h` includes a USB-pin workaround for the CrowPanel touch bus, based on the community notes on the ESPHome devices page.
