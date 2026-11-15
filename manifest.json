@@ -1,0 +1,17 @@
+{
+  "name": "UK Departure Board",
+  "version": "1.3.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "releases/departure-board-1.3.0.factory.bin", "offset": 0 }
+      ],
+      "ota": {
+        "md5": "d88ad42f0df0ad0b31797538e3674e3e",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.3.0.ota.bin",
+        "summary": "First release of the generic departure board"
+      }
+    }
+  ]
+}
