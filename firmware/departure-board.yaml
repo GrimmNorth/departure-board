@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.6.1"
+    version: "1.6.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1437,6 +1437,20 @@ display:
       bool dfound = false;
       if (!detail) for (int i = 0; i < 6; i++) id(slot_train)[i] = 0;
 
+      // shorten s with "..." until it fits in maxw pixels
+      auto fit = [&](std::string &s, font::Font *f, int maxw) {
+        if (maxw < 20) { s.clear(); return; }
+        int fbx, fby, fbw, fbh;
+        it.get_text_bounds(0, 0, s.c_str(), f, TextAlign::TOP_LEFT, &fbx, &fby, &fbw, &fbh);
+        if (fbw <= maxw) return;
+        while (!s.empty()) {
+          s.pop_back();
+          while (!s.empty() && s.back() == ' ') s.pop_back();
+          std::string t = s + "...";
+          it.get_text_bounds(0, 0, t.c_str(), f, TextAlign::TOP_LEFT, &fbx, &fby, &fbw, &fbh);
+          if (fbw <= maxw) { s = t; return; }
+        }
+      };
       auto draw_bigclock = [&]() {
         if (!tv) return;
         int hh = now.hour;
@@ -1484,61 +1498,86 @@ display:
                              std::string reason, std::string oper, std::string delaym, std::string stops,
                              std::string sarr, std::string earr, std::string pprev, bool cancelled, bool late) {
 
+        // ---------- header: time, destination, status ----------
+        const int LH = F_SUB[fi]->get_height() + 4;            // line height follows the chosen font
+        int bx, by, bw, bh;
         Color sc = cancelled ? red : (late ? orange : green);
-        std::string dd = departure::destination(calls, 18);
+        std::string st = cancelled ? std::string("Cancelled") : (late ? (departure::valid(exp) ? "Exp " + exp : std::string("Delayed")) : std::string("On time"));
+        it.get_text_bounds(0, 0, sched.c_str(), F_ROW[fi], TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+        const int dx = 18 + bw + 20;                           // content column, lined up under the destination
+        int stw;
+        it.get_text_bounds(0, 0, st.c_str(), F_ROW[fi], TextAlign::TOP_LEFT, &bx, &by, &stw, &bh);
+        std::string dd = departure::destination(calls, 60);
+        fit(dd, F_ROW[fi], 784 - stw - 24 - dx);
         it.printf(18, 8, F_ROW[fi], amber, "%s", sched.c_str());
-        it.printf(130, 8, F_ROW[fi], amber, "%s", dd.c_str());
-        it.printf(784, 8, F_ROW[fi], sc, TextAlign::TOP_RIGHT, "%s", cancelled ? "Cancelled" : (late ? "Delayed" : "On time"));
-        std::string l2 = departure::valid(oper) ? oper : "";
-        if (departure::valid(plat) && !cancelled) {
-          l2 += (l2.empty() ? "" : "   ");
-          l2 += "Platform " + plat;
-          if (departure::truthy(pchg) && departure::valid(pprev)) l2 += " (was " + pprev + ")";
-        }
-        it.printf(18, 54, F_SUB[fi], departure::truthy(pchg) ? orange : amber, "%s", l2.c_str());
+        it.printf(dx, 8, F_ROW[fi], amber, "%s", dd.c_str());
+        it.printf(784, 8, F_ROW[fi], sc, TextAlign::TOP_RIGHT, "%s", st.c_str());
+        int cy = 8 + F_ROW[fi]->get_height() + 6;
+
+        // ---------- platform and operator, countdown on the right ----------
+        char cb[24] = "";
         if (!cancelled) {
           int dm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           if (dm >= 0) {
-            char cb[24];
             if (dm <= 1) snprintf(cb, sizeof(cb), "Due");
             else if (dm < 60) snprintf(cb, sizeof(cb), "in %d min", dm);
             else snprintf(cb, sizeof(cb), "in %dh %02dm", dm / 60, dm % 60);
-            it.printf(784, 54, F_SUB[fi], late ? orange : green, TextAlign::TOP_RIGHT, "%s", cb);
           }
         }
-        int cy = 90;   // running y position: later lines flow down from here
+        int cw = 0;
+        if (cb[0]) it.get_text_bounds(0, 0, cb, F_SUB[fi], TextAlign::TOP_LEFT, &bx, &by, &cw, &bh);
+        std::string l2;
+        if (departure::valid(plat) && !cancelled) {
+          l2 = "Platform " + plat;
+          if (departure::truthy(pchg) && departure::valid(pprev)) l2 += " (was " + pprev + ")";
+        }
+        if (departure::valid(oper)) l2 += (l2.empty() ? "" : "  -  ") + oper;
+        fit(l2, F_SUB[fi], 784 - (cw ? cw + 24 : 0) - dx);
+        it.printf(dx, cy, F_SUB[fi], departure::truthy(pchg) ? orange : amber, "%s", l2.c_str());
+        if (cb[0]) it.printf(784, cy, F_SUB[fi], late ? orange : green, TextAlign::TOP_RIGHT, "%s", cb);
+        cy += LH;
+
+        // ---------- delay, reason, arrival ----------
         if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
-        if (late && departure::valid(exp)) {
+        if (late && !cancelled && departure::valid(exp)) {
           std::string l3 = "Expected " + exp;
           if (departure::valid(delaym) && delaym != "0") l3 += "  -  " + delaym + " min late";
-          it.printf(18, cy, F_SUB[fi], orange, "%s", l3.c_str());
-          cy += 32;
+          fit(l3, F_SUB[fi], 784 - dx);
+          it.printf(dx, cy, F_SUB[fi], orange, "%s", l3.c_str());
+          cy += LH;
         }
         if (departure::valid(reason)) {
           std::string rem = reason;
-          int ly = cy;
           for (int ln = 0; ln < 2 && !rem.empty(); ln++) {
-            std::string part = rem;
-            if (part.size() > 36) {
-              size_t cut = part.rfind(' ', 36);
-              if (cut == std::string::npos || cut < 15) cut = 36;
-              part = rem.substr(0, cut);
-              rem = rem.substr(cut);
-              while (!rem.empty() && rem[0] == ' ') rem.erase(0, 1);
-            } else rem.clear();
-            if (ln == 1 && !rem.empty()) part += "...";
-            it.printf(18, ly, F_SUB[fi], cancelled ? red : orange, "%s", part.c_str());
-            ly += 32;
+            std::string line;
+            size_t p = 0, next = std::string::npos;
+            while (p <= rem.size()) {
+              size_t e = rem.find(' ', p);
+              if (e == std::string::npos) e = rem.size();
+              std::string cand = rem.substr(0, e);
+              it.get_text_bounds(0, 0, cand.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+              if (bw > 784 - dx && !line.empty()) break;
+              line = cand;
+              next = e + 1;
+              if (e >= rem.size()) break;
+              p = e + 1;
+            }
+            rem = (next != std::string::npos && next < rem.size()) ? rem.substr(next) : "";
+            if (ln == 1 && !rem.empty()) line += " ...";
+            fit(line, F_SUB[fi], 784 - dx);
+            it.printf(dx, cy, F_SUB[fi], cancelled ? red : orange, "%s", line.c_str());
+            cy += LH;
           }
-          cy = ly;
         }
-        if (departure::valid(sarr)) {
-          std::string l4 = "Arrives " + departure::destination(calls, 20) + " " + sarr;
+        if (departure::valid(sarr) && !cancelled) {
           bool latearr = departure::valid(earr) && earr != sarr;
-          if (latearr) l4 += "  (exp " + earr + ")";
-          it.printf(18, cy, F_SUB[fi], (latearr ? orange : amber), "%s", l4.c_str());
-          cy += 36;
+          std::string l4 = "Arrives " + (latearr ? earr : sarr);
+          if (latearr) l4 += "  (due " + sarr + ")";
+          it.printf(dx, cy, F_SUB[fi], latearr ? orange : amber, "%s", l4.c_str());
+          cy += LH;
         }
+
+        // ---------- calling points as a route line ----------
         std::vector<std::pair<std::string, std::string>> stp;
         if (departure::valid(stops)) {
           size_t pos = 0;
@@ -1552,20 +1591,45 @@ display:
         } else {
           for (auto &p : departure::points(calls)) stp.push_back({p, ""});
         }
-        int rows = (404 - cy) / 30;
+        if (stp.empty()) return;
+        cy += 4;
+        it.horizontal_line(18, cy, 766, grey);
+        cy += 10;
+        int tmw;
+        it.get_text_bounds(0, 0, "00:00", F_SUB[fi], TextAlign::TOP_LEFT, &bx, &by, &tmw, &bh);
+        const int bottom = 404;
+        int rows = (bottom - cy) / LH;
         if (rows < 1) rows = 1;
-        if (rows > 9) rows = 9;
-        for (size_t i = 0; i < stp.size() && i < (size_t) (rows * 2); i++) {
-          int sx = 18 + (int) (i / rows) * 392;
-          int sy2 = cy + (int) (i % rows) * 30;
-          std::string nm = stp[i].first;
-          if (nm.size() > 17) { nm.resize(17); nm += "."; }
+        int cols = stp.size() > (size_t) rows ? 2 : 1;
+        size_t shown = std::min(stp.size(), (size_t) (rows * cols));
+        bool more = shown < stp.size();
+        if (more) shown -= 1;                                  // last slot says how many are left
+        const int colw = cols == 2 ? 383 : 766;
+        for (size_t i = 0; i < shown + (more ? 1 : 0); i++) {
+          int col = (int) i / rows, row = (int) i % rows;
+          int x0 = 18 + col * 392;
+          int y = cy + row * LH;
+          int lx = x0 + tmw + 16;                              // route line x
+          int my = y + LH / 2 - 2;
+          if (more && i == shown) {
+            char mb[24];
+            snprintf(mb, sizeof(mb), "+%d more", (int) (stp.size() - shown));
+            it.printf(lx + 18, y, F_SUB[fi], grey, "%s", mb);
+            break;
+          }
+          bool last = (i == stp.size() - 1);
           bool fav = !fstop.empty() && departure::ieq(stp[i].first, fstop);
           Color tc = fav ? hilite : amber;
-          it.printf(sx, sy2, F_SUB[fi], tc, "%s", nm.c_str());
-          it.printf(sx + 372, sy2, F_SUB[fi], fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
+          // route line: joins this stop to the ones above and below in the same column
+          if (row > 0) it.vertical_line(lx, y - 2, my - y + 2, grey);
+          if (!last && row < rows - 1 && i + 1 < shown + (more ? 1 : 0)) it.vertical_line(lx, my, y + LH - my - 2, grey);
+          it.filled_circle(lx, my, last ? 6 : 4, last ? amber : tc);
+          if (!stp[i].second.empty())
+            it.printf(x0 + tmw, y, F_SUB[fi], fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
+          std::string nm = stp[i].first;
+          fit(nm, F_SUB[fi], x0 + colw - (lx + 18) - 8);
+          it.printf(lx + 18, y, F_SUB[fi], tc, "%s", nm.c_str());
         }
-        if (stp.size() > (size_t) (rows * 2)) it.printf(784, cy - 36, F_SUB[fi], amber, TextAlign::TOP_RIGHT, "+%d more", (int) stp.size() - rows * 2);
       };
 
       // ---- train 1 ----
@@ -2705,7 +2769,7 @@ display:
       std::string info;
       Color infoc = amber;
       uint32_t age_min = dms ? (millis() - dms) / 60000 : 0;
-      if (detail) { info = "Tap to go back"; infoc = amber; }
+      if (detail) { info = "Tap to close"; infoc = amber; }
       else if (!wifi_ok) { info = "No Wi-Fi"; infoc = red; }
       else if (!api_ok) { info = "No Home Assistant"; infoc = red; }
       else if (dms != 0 && age_min >= 5) {
@@ -2725,10 +2789,8 @@ display:
         info = lb;
         infoc = green;
       }
-      if (info.size() > 24) info.resize(24);
       std::string foot = STATION_NAMES[si];
       if (info.empty() && !filt.empty()) foot += " > " + filt;
-      if (foot.size() > 26) foot.resize(26);
       int fx = 20;
       if (id(show_logo).state) {
         // simple train icon, 56x35 (replace with your own drawing if you like)
@@ -2743,9 +2805,9 @@ display:
         it.filled_rectangle(lx, ly + 33, 56, 2, amber);                      // rail
         fx = 20 + 56 + 14;
       }
-      it.printf(fx, fy, F_SUB[fi], amber, "%s", foot.c_str());
-      if (!info.empty())
-        it.printf(610, fy + 14, F_SUB[fi], infoc, TextAlign::CENTER_RIGHT, "%s", info.c_str());
+      // station, message and clock share one baseline; the clock is placed first, then the rest fits around it
+      const int fb = fy + 34;
+      int clk_left = 784;
       if (tv) {
         char cb[24];
         int hh = now.hour;
@@ -2753,5 +2815,18 @@ display:
         if (id(clock_12h).state) { ap = hh >= 12 ? "pm" : "am"; hh = hh % 12; if (hh == 0) hh = 12; }
         if (id(show_seconds).state) snprintf(cb, sizeof(cb), "%02d:%02d:%02d%s", hh, now.minute, now.second, ap);
         else snprintf(cb, sizeof(cb), "%02d:%02d%s", hh, now.minute, ap);
-        it.printf(784, fy - 4, F_CLK[fi], amber, TextAlign::TOP_RIGHT, "%s", cb);
+        int kbx, kby, kbw, kbh;
+        it.get_text_bounds(784, fb, cb, F_CLK[fi], TextAlign::BASELINE_RIGHT, &kbx, &kby, &kbw, &kbh);
+        clk_left = kbx;
+        it.printf(784, fb, F_CLK[fi], amber, TextAlign::BASELINE_RIGHT, "%s", cb);
       }
+      int info_left = clk_left;
+      if (!info.empty()) {
+        fit(info, F_SUB[fi], clk_left - 24 - (fx + 160));
+        int ibx, iby, ibw, ibh;
+        it.get_text_bounds(0, 0, info.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &ibx, &iby, &ibw, &ibh);
+        info_left = clk_left - 24 - ibw;
+        it.printf(clk_left - 24, fb, F_SUB[fi], infoc, TextAlign::BASELINE_RIGHT, "%s", info.c_str());
+      }
+      fit(foot, F_SUB[fi], info_left - 20 - fx);
+      it.printf(fx, fb, F_SUB[fi], amber, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
