@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.0 - 2026-11-15 (beta)
+- Platform number flashes when it changes; factory reset button
+
 ## 1.9.2 - 2026-11-15 (beta)
 - Rows laid out from the real letter shapes; even row bands
 
