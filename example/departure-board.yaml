@@ -1,0 +1,23 @@
+# Your device file. Copy this into ESPHome Builder as a new device, edit the three
+# lines marked CHANGE, and put departure_board.h next to it (see README step 3).
+
+substitutions:
+  name: departure-board                       # CHANGE if you like (lowercase, dashes only)
+  station_name: "YOUR STATION"                # CHANGE: shown on screen, e.g. "BROUGH"
+  entity_prefix: departures_from_your_station # CHANGE: see README step 2
+
+packages:
+  departure_board: github://GrimmNorth/departure-board/packages/departure-board.yaml@main
+
+# These stay in YOUR file so no passwords are ever published.
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password

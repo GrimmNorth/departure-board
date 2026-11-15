@@ -1,0 +1,2868 @@
+# UK departure board for the Elecrow CrowPanel Basic 7.0" (ESP32-S3, 800x480).
+# Reads the "My Rail Commute" sensors from Home Assistant - no proxy needed.
+# Package file: do not edit. Configure it from your own device YAML.
+substitutions:
+  # Override any of these in your own device file (see example/departure-board.yaml)
+  name: departure-board
+  friendly_name: Departure Board
+  station_name: "STATION"                      # shown on screen, e.g. "BROUGH"
+  entity_prefix: departures_from_station       # entities are sensor.<entity_prefix>_train_1 ... _10
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  project:
+    name: "community.uk_departure_board"
+    version: "1.2.0"
+  platformio_options:
+    board_build.esp-idf.memory_type: qio_opi
+    board_build.flash_mode: dio
+  includes:
+    - departure_board.h
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 4MB            # 4MB, NOT 16MB (16MB causes a boot loop)
+  cpu_frequency: 240MHz
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESPTOOLPY_FLASHSIZE_4MB: y
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  hardware_uart: UART0   # the USB-C port is wired to UART0 via a CH340 chip
+  baud_rate: 115200
+
+api:
+  reboot_timeout: 15min      # no Home Assistant connection for 15 min = reboot
+
+wifi:
+  reboot_timeout: 15min      # no Wi-Fi for 15 min = reboot
+  power_save_mode: none      # steadier connection for an always-on display
+  # Fallback hotspot: if the board can't join the network above it starts its own
+  # "Departure-Board" Wi-Fi so new details can be entered from a phone.
+  ap:
+    ssid: "Departure-Board"
+
+captive_portal:
+
+debug:
+  update_interval: 60s
+
+button:
+  - platform: restart
+    name: "Departure board restart"
+    entity_category: config
+
+globals:
+  - id: settings_page
+    type: int
+    initial_value: "0"
+  - id: ui_screen          # 0 = departures, 1 = settings
+    type: int
+    initial_value: "0"
+  - id: touch_down
+    type: bool
+    initial_value: "false"
+  - id: last_event
+    type: uint32_t
+    initial_value: "0"
+  - id: last_fresh
+    type: uint32_t
+    initial_value: "0"
+  - id: last_touch_any
+    type: uint32_t
+    initial_value: "0"
+  - id: dim_state          # 0 normal, 1 night dim, 2 night screen off, 3 idle dim
+    type: int
+    initial_value: "0"
+  - id: was_on
+    type: bool
+    initial_value: "true"
+  - id: wake_until
+    type: uint32_t
+    initial_value: "0"
+  - id: detail_train       # train number shown on the detail screen
+    type: int
+    initial_value: "0"
+  - id: slot_train         # which train is drawn in each row (for taps)
+    type: int[6]
+    initial_value: "{0, 0, 0, 0, 0, 0}"
+  - id: last_period        # auto station: -1 unknown, 0 before switch time, 1 after
+    type: int
+    initial_value: "-1"
+  - id: day_brightness
+    type: float
+    initial_value: "1.0"
+  - id: data_ms_stn
+    type: uint32_t
+    initial_value: "0"
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# Decides every 2 seconds whether the screen should be normal, dimmed for the night,
+# off for the night (tap to wake) or dimmed after inactivity.
+script:
+  - id: update_dim
+    mode: single
+    then:
+      - lambda: |-
+          auto t = id(ha_time).now();
+          uint32_t ms = millis();
+          bool inwin = false;
+          if (t.is_valid()) {
+            int nowm = t.hour * 60 + t.minute;
+            int s = id(night_start).hour * 60 + id(night_start).minute;
+            int e = id(night_end).hour * 60 + id(night_end).minute;
+            inwin = (s <= e) ? (nowm >= s && nowm < e) : (nowm >= s || nowm < e);
+          }
+          bool night_active = id(night_dimming).state && inwin;
+          bool idle_active = id(idle_minutes).state > 0 &&
+                             (ms - id(last_touch_any)) > (uint32_t) (id(idle_minutes).state * 60000.0f);
+          if (id(wake_until) != 0 && ms >= id(wake_until)) id(wake_until) = 0;
+          bool waking = id(wake_until) != 0;
+          int target = 0;
+          if (night_active) target = (id(night_screen_off).state && !waking) ? 2 : 1;
+          else if (idle_active) target = 3;
+          int prev = id(dim_state);
+          if (target == prev) return;
+          id(dim_state) = target;
+          if (prev == 0) {
+            id(was_on) = id(backlight).current_values.is_on();
+            if (id(was_on)) id(day_brightness) = id(backlight).current_values.get_brightness();
+          }
+          if (!id(was_on)) return;          // the screen was switched off by hand: leave it alone
+          if (target == 2) {
+            auto c = id(backlight).turn_off();
+            c.set_transition_length(0);
+            c.perform();
+            return;
+          }
+          float b = id(day_brightness);
+          if (target == 1) b = id(night_level).state / 100.0f;
+          if (target == 3) b = id(idle_level).state / 100.0f;
+          auto c = id(backlight).turn_on();
+          c.set_brightness(b);
+          c.set_transition_length(0);
+          c.perform();
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: update_dim
+i2c:
+  - id: touch_i2c
+    sda: GPIO19
+    scl: GPIO20
+    frequency: 400kHz
+    scan: false              # scanning can upset the GT911
+
+touchscreen:
+  - platform: gt911
+    id: touch_panel
+    i2c_id: touch_i2c
+    address: 0x5D            # try 0x14 if touch is dead
+    update_interval: 50ms
+    on_touch:
+      - lambda: |-
+          uint32_t now = millis();
+          uint32_t prev_touch = id(last_touch_any);
+          id(last_touch_any) = now;
+          bool fresh = !id(touch_down) || (now - id(last_event) > 400);
+          id(last_event) = now;
+          id(touch_down) = true;
+          if (!fresh) return;
+          // screen off or dimmed: the first tap only wakes it
+          if (id(dim_state) == 2 || id(dim_state) == 3 || id(wake_until) != 0) {
+            bool wasoff = (id(dim_state) == 2) || (id(wake_until) != 0);
+            if (wasoff) id(wake_until) = now + 60000;
+            id(update_dim).execute();
+            if (id(dim_state) == 2 || id(dim_state) == 3) return;
+          }
+          // clock screen: the first tap just brings the list back
+          if (id(ui_screen) == 0 && id(clock_after).state > 0 &&
+              (now - prev_touch) > (uint32_t) (id(clock_after).state * 60000.0f)) {
+            id(main_display).update();
+            return;
+          }
+          int x = touch.x, y = touch.y;
+          id(last_fresh) = now;
+          if (id(ui_screen) == 0) {
+            // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
+            if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = 0; }
+            else if (y < 406) {
+              // tap a train for its details
+              int cnt = (int) id(train_count).state;
+              if (cnt < 3) cnt = 3;
+              if (cnt > 5) cnt = 5;
+              if (id(text_large).state && cnt > 4) cnt = 4;
+              int sl = id(focus_mode).state ? 0 : (y - 6) / (406 / cnt);
+              int tn = (sl >= 0 && sl < cnt) ? id(slot_train)[sl] : 0;
+              if (tn > 0) { id(detail_train) = tn; id(ui_screen) = 2; }
+              else id(station_select).make_call().select_next(true).perform();
+            }
+            else id(station_select).make_call().select_next(true).perform();   // tap the footer = next station
+          } else if (id(ui_screen) == 2) {
+            id(ui_screen) = 0;                  // any tap closes the detail view
+          } else {
+            if (y >= 424) {
+              if (x < 400) id(settings_page) = (id(settings_page) + 1) % 5;   // NEXT
+              else id(ui_screen) = 0;                                          // CLOSE
+            } else if (y >= 50 && y < 418) {
+              int row = (y - 50) / 46;
+              bool plus = x > 640;
+              bool minus = !plus && x >= 500;
+              int si = id(station_select).active_index().value_or(0);
+              switch (id(settings_page)) {
+                case 0:
+                  switch (row) {
+                    case 0: id(station_select).make_call().select_next(true).perform(); break;
+                    case 1: if (plus || minus) { float v = id(train_count).state + (plus ? 1 : -1); if (v < 3) v = 3; if (v > 5) v = 5; auto c = id(train_count).make_call(); c.set_value(v); c.perform(); } break;
+                    case 2: id(text_large).toggle(); break;
+                    case 3: id(font_select).make_call().select_next(true).perform(); break;
+                    case 4: id(scroll_speed).make_call().select_next(true).perform(); break;
+                    case 5: id(scroll_enabled).toggle(); break;
+                    case 6: id(show_seconds).toggle(); break;
+                    case 7: id(clock_12h).toggle(); break;
+                  }
+                  break;
+                case 1:
+                  switch (row) {
+                    case 0: id(countdown_mode).toggle(); break;
+                    case 1: {
+                    std::vector<std::string> opts;
+                    opts.push_back("");
+                    auto add = [&](const std::string &d) {
+                      if (d.empty()) return;
+                      for (auto &o : opts) if (o == d) return;
+                      opts.push_back(d);
+                    };
+                    switch (si) {
+                      case 0: add(departure::destination(id(stn_t1_calling_points).state, 40)); add(departure::destination(id(stn_t2_calling_points).state, 40)); add(departure::destination(id(stn_t3_calling_points).state, 40)); add(departure::destination(id(stn_t4_calling_points).state, 40)); add(departure::destination(id(stn_t5_calling_points).state, 40)); add(departure::destination(id(stn_t6_calling_points).state, 40)); add(departure::destination(id(stn_t7_calling_points).state, 40)); add(departure::destination(id(stn_t8_calling_points).state, 40)); add(departure::destination(id(stn_t9_calling_points).state, 40)); add(departure::destination(id(stn_t10_calling_points).state, 40)); break;
+                    }
+                    std::string cur = id(dest_filter).state;
+                    size_t idx = 0;
+                    for (size_t i = 0; i < opts.size(); i++) if (opts[i] == cur) idx = i;
+                    idx = (idx + 1) % opts.size();
+                    auto c = id(dest_filter).make_call();
+                    c.set_value(opts[idx]);
+                    c.perform();
+                  } break;
+                    case 2: id(hide_cancelled).toggle(); break;
+                    case 3: id(show_platform).toggle(); break;
+                    case 4: if (plus || minus) { float v = id(departed_grace).state + (plus ? 1 : -1); if (v < 1) v = 1; if (v > 5) v = 5; auto c = id(departed_grace).make_call(); c.set_value(v); c.perform(); } break;
+                    case 5: if (plus || minus) { float v = id(walk_minutes).state + (plus ? 1 : -1); if (v < 0) v = 0; if (v > 30) v = 30; auto c = id(walk_minutes).make_call(); c.set_value(v); c.perform(); } break;
+                  }
+                  break;
+                case 2:
+                  switch (row) {
+                    case 0: {
+                    std::vector<std::string> opts;
+                    opts.push_back("");
+                    auto add = [&](const std::string &d) {
+                      if (d.empty()) return;
+                      for (auto &o : opts) if (o == d) return;
+                      opts.push_back(d);
+                    };
+                    switch (si) {
+                      case 0: for (auto &p : departure::points(id(stn_t1_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t2_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t3_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t4_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t5_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t6_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t7_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t8_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t9_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t10_calling_points).state)) add(p); break;
+                    }
+                    std::string cur = id(fav_stop).state;
+                    size_t idx = 0;
+                    for (size_t i = 0; i < opts.size(); i++) if (opts[i] == cur) idx = i;
+                    idx = (idx + 1) % opts.size();
+                    auto c = id(fav_stop).make_call();
+                    c.set_value(opts[idx]);
+                    c.perform();
+                  } break;
+                    case 1: id(disruption_banner).toggle(); break;
+                    case 2: id(show_logo).toggle(); break;
+                    case 3: id(focus_mode).toggle(); break;
+                    case 4: if (plus || minus) { float v = id(clock_after).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(clock_after).make_call(); c.set_value(v); c.perform(); } break;
+                  }
+                  break;
+                case 3:
+                  switch (row) {
+                    case 0: if (plus || minus) { float b = id(backlight).current_values.get_brightness() + (plus ? 0.1f : -0.1f); if (b < 0.1f) b = 0.1f; if (b > 1.0f) b = 1.0f; auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform(); } break;
+                    case 1: id(night_dimming).toggle(); break;
+                    case 2: if (plus || minus) { float v = id(night_level).state + (plus ? 5 : -5); if (v < 1) v = 1; if (v > 100) v = 100; auto c = id(night_level).make_call(); c.set_value(v); c.perform(); } break;
+                    case 3: if (plus || minus) { int h = (id(night_start).hour + (plus ? 1 : 23)) % 24; auto c = id(night_start).make_call(); c.set_time(h, id(night_start).minute, 0); c.perform(); } break;
+                    case 4: if (plus || minus) { int h = (id(night_end).hour + (plus ? 1 : 23)) % 24; auto c = id(night_end).make_call(); c.set_time(h, id(night_end).minute, 0); c.perform(); } break;
+                    case 5: id(night_screen_off).toggle(); break;
+                    case 6: if (plus || minus) { float v = id(idle_minutes).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(idle_minutes).make_call(); c.set_value(v); c.perform(); } break;
+                    case 7: if (plus || minus) { float v = id(idle_level).state + (plus ? 5 : -5); if (v < 5) v = 5; if (v > 100) v = 100; auto c = id(idle_level).make_call(); c.set_value(v); c.perform(); } break;
+                  }
+                  break;
+                case 4:
+                  switch (row) {
+                  }
+                  break;
+              }
+            }
+          }
+          id(main_display).update();
+    on_release:
+      - lambda: |-
+          id(touch_down) = false;
+
+output:
+  - platform: ledc
+    pin: GPIO2
+    id: backlight_pwm
+    frequency: 1220Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Backlight"
+    id: backlight
+    restore_mode: ALWAYS_ON
+
+font:
+  - file: "gfonts://Doto@700"
+    id: f_row_0
+    size: 34
+  - file: "gfonts://Doto@700"
+    id: f_sub_0
+    size: 28
+  - file: "gfonts://Doto@700"
+    id: f_clk_0
+    size: 34
+  - file: "gfonts://Doto@700"
+    id: f_row_l_0
+    size: 44
+  - file: "gfonts://Doto@700"
+    id: f_sub_l_0
+    size: 34
+  - file: "gfonts://DotGothic16"
+    id: f_row_1
+    size: 34
+  - file: "gfonts://DotGothic16"
+    id: f_sub_1
+    size: 28
+  - file: "gfonts://DotGothic16"
+    id: f_clk_1
+    size: 34
+  - file: "gfonts://DotGothic16"
+    id: f_row_l_1
+    size: 44
+  - file: "gfonts://DotGothic16"
+    id: f_sub_l_1
+    size: 34
+  - file: "gfonts://VT323"
+    id: f_row_2
+    size: 44
+  - file: "gfonts://VT323"
+    id: f_sub_2
+    size: 36
+  - file: "gfonts://VT323"
+    id: f_clk_2
+    size: 44
+  - file: "gfonts://VT323"
+    id: f_row_l_2
+    size: 57
+  - file: "gfonts://VT323"
+    id: f_sub_l_2
+    size: 44
+  - file: "gfonts://B612+Mono"
+    id: f_row_3
+    size: 31
+  - file: "gfonts://B612+Mono"
+    id: f_sub_3
+    size: 25
+  - file: "gfonts://B612+Mono"
+    id: f_clk_3
+    size: 31
+  - file: "gfonts://B612+Mono"
+    id: f_row_l_3
+    size: 40
+  - file: "gfonts://B612+Mono"
+    id: f_sub_l_3
+    size: 31
+  - file: "gfonts://Doto@700"
+    id: f_big_0
+    size: 150
+    glyphs: "0123456789: apmDueinh"
+  - file: "gfonts://DotGothic16"
+    id: f_big_1
+    size: 150
+    glyphs: "0123456789: apmDueinh"
+  - file: "gfonts://VT323"
+    id: f_big_2
+    size: 195
+    glyphs: "0123456789: apmDueinh"
+  - file: "gfonts://B612+Mono"
+    id: f_big_3
+    size: 135
+    glyphs: "0123456789: apmDueinh"
+
+color:
+  - id: amber
+    red: 100%
+    green: 69%
+    blue: 0%
+  - id: red
+    red: 100%
+    green: 0%
+    blue: 0%
+  - id: green
+    red: 20%
+    green: 100%
+    blue: 20%
+  - id: grey
+    red: 45%
+    green: 45%
+    blue: 45%
+  - id: orange
+    red: 100%
+    green: 30%
+    blue: 0%
+
+number:
+  - platform: template
+    name: "Departure board trains shown"
+    id: train_count
+    min_value: 3
+    max_value: 5
+    step: 1
+    optimistic: true
+    restore_value: true
+    initial_value: 5
+  - platform: template
+    name: "Departure board night brightness"
+    id: night_level
+    min_value: 1
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    initial_value: 20
+  - platform: template
+    name: "Departure board idle dim after"
+    id: idle_minutes
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+    optimistic: true
+    restore_value: true
+    initial_value: 0          # 0 = never dim when idle
+  - platform: template
+    name: "Departure board idle brightness"
+    id: idle_level
+    min_value: 5
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    initial_value: 30
+  - platform: template
+    name: "Departure board departed grace"
+    id: departed_grace
+    min_value: 1
+    max_value: 5
+    step: 1
+    unit_of_measurement: "min"
+    optimistic: true
+    restore_value: true
+    initial_value: 1          # minutes a train stays listed after its time
+  - platform: template
+    name: "Departure board clock screen after"
+    id: clock_after
+    min_value: 0
+    max_value: 60
+    step: 1
+    unit_of_measurement: "min"
+    optimistic: true
+    restore_value: true
+    initial_value: 0          # 0 = off. After this long without a touch, show the big clock screen
+  - platform: template
+    name: "Departure board walking time"
+    id: walk_minutes
+    min_value: 0
+    max_value: 30
+    step: 1
+    unit_of_measurement: "min"
+    optimistic: true
+    restore_value: true
+    initial_value: 0          # 0 = off. Trains sooner than this are greyed out
+
+datetime:
+  - platform: template
+    name: "Departure board night starts"
+    id: night_start
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "22:00:00"
+  - platform: template
+    name: "Departure board night ends"
+    id: night_end
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+
+switch:
+  - platform: template
+    name: "Departure board night dimming"
+    id: night_dimming
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Departure board night screen off"
+    id: night_screen_off
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF   # on = screen goes fully off at night; tap to wake for a minute
+  - platform: template
+    name: "Departure board countdown"
+    id: countdown_mode
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF   # on = "Due" / "5 min" instead of "On time" / expected time
+  - platform: template
+    name: "Departure board large text"
+    id: text_large
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF   # large text shows at most 4 trains
+  - platform: template
+    name: "Departure board scrolling text"
+    id: scroll_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON    # off = long lines are shortened with ...
+  - platform: template
+    name: "Departure board clock seconds"
+    id: show_seconds
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Departure board 12 hour clock"
+    id: clock_12h
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Departure board hide cancelled"
+    id: hide_cancelled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Departure board show platform"
+    id: show_platform
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Departure board disruption banner"
+    id: disruption_banner
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Departure board focus mode"
+    id: focus_mode
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF   # on = one big view of just the next train
+  - platform: template
+    name: "Departure board show logo"
+    id: show_logo
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Departure board demo mode"
+    id: demo_mode
+    optimistic: true
+    restore_mode: ALWAYS_OFF   # shows a fake delayed and cancelled train, for testing colours
+
+text:
+  - platform: template
+    name: "Departure board destination filter"
+    id: dest_filter
+    mode: text
+    min_length: 0
+    max_length: 40
+    optimistic: true
+    restore_value: true
+    initial_value: ""     # e.g. "Leeds" = only trains calling at Hull
+  - platform: template
+    name: "Departure board favourite stop"
+    id: fav_stop
+    mode: text
+    min_length: 0
+    max_length: 40
+    optimistic: true
+    restore_value: true
+    initial_value: ""     # a stop name to highlight on the board, e.g. "Leeds"
+  - platform: template
+    name: "Departure board favourite trains"
+    id: fav_times
+    mode: text
+    min_length: 0
+    max_length: 80
+    optimistic: true
+    restore_value: true
+    initial_value: ""     # departure times to underline, e.g. "07:42, 08:15"
+
+select:
+  - platform: template
+    name: "Departure board station"
+    id: station_select
+    optimistic: true
+    restore_value: true
+    initial_option: "${station_name}"
+    options: ["${station_name}"]
+  - platform: template
+    name: "Departure board scroll speed"
+    id: scroll_speed
+    optimistic: true
+    restore_value: true
+    initial_option: "Medium"
+    options: ["Slow", "Medium", "Fast"]
+  - platform: template
+    name: "Departure board font"
+    id: font_select
+    optimistic: true
+    restore_value: true
+    initial_option: "Doto"
+    options: ["Doto", "DotGothic", "VT323", "B612 Mono"]
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "Departure board restart reason"
+      entity_category: diagnostic
+  - platform: homeassistant
+    id: stn_updated
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: last_updated
+    internal: true
+    on_value:
+      - lambda: |-
+          id(data_ms_stn) = millis();
+  - platform: homeassistant
+    id: stn_status
+    entity_id: sensor.${entity_prefix}_status
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_expected_departure
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_platform
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_platform_changed
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_status
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_calling_points
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_delay_reason
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_operator
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_previous_platform
+    entity_id: sensor.${entity_prefix}_train_1
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_expected_departure
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_platform
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_platform_changed
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_status
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_calling_points
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_delay_reason
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_operator
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_previous_platform
+    entity_id: sensor.${entity_prefix}_train_2
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_expected_departure
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_platform
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_platform_changed
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_status
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_calling_points
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_delay_reason
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_operator
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_previous_platform
+    entity_id: sensor.${entity_prefix}_train_3
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_expected_departure
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_platform
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_platform_changed
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_status
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_calling_points
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_delay_reason
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_operator
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_previous_platform
+    entity_id: sensor.${entity_prefix}_train_4
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_expected_departure
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_platform
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_platform_changed
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_status
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_calling_points
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_delay_reason
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_operator
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_previous_platform
+    entity_id: sensor.${entity_prefix}_train_5
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_expected_departure
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_platform
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_platform_changed
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_status
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_calling_points
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_delay_reason
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_operator
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_previous_platform
+    entity_id: sensor.${entity_prefix}_train_6
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_expected_departure
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_platform
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_platform_changed
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_status
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_calling_points
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_delay_reason
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_operator
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_previous_platform
+    entity_id: sensor.${entity_prefix}_train_7
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_expected_departure
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_platform
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_platform_changed
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_status
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_calling_points
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_delay_reason
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_operator
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_previous_platform
+    entity_id: sensor.${entity_prefix}_train_8
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_expected_departure
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_platform
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_platform_changed
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_status
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_calling_points
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_delay_reason
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_operator
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_previous_platform
+    entity_id: sensor.${entity_prefix}_train_9
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_scheduled_departure
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: scheduled_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_expected_departure
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: expected_departure
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_platform
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_platform_changed
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: platform_changed
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_status
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: status
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_calling_points
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: calling_points
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_delay_reason
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: delay_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_cancellation_reason
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: cancellation_reason
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_operator
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: operator
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_delay_minutes
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: delay_minutes
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_scheduled_arrival
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: scheduled_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_estimated_arrival
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: estimated_arrival
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_previous_platform
+    entity_id: sensor.${entity_prefix}_train_10
+    attribute: previous_platform
+    internal: true
+  - platform: homeassistant
+    id: stn_t1_stops
+    entity_id: sensor.${entity_prefix}_train_1_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t2_stops
+    entity_id: sensor.${entity_prefix}_train_2_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t3_stops
+    entity_id: sensor.${entity_prefix}_train_3_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t4_stops
+    entity_id: sensor.${entity_prefix}_train_4_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t5_stops
+    entity_id: sensor.${entity_prefix}_train_5_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t6_stops
+    entity_id: sensor.${entity_prefix}_train_6_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t7_stops
+    entity_id: sensor.${entity_prefix}_train_7_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t8_stops
+    entity_id: sensor.${entity_prefix}_train_8_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t9_stops
+    entity_id: sensor.${entity_prefix}_train_9_stops
+    internal: true
+  - platform: homeassistant
+    id: stn_t10_stops
+    entity_id: sensor.${entity_prefix}_train_10_stops
+    internal: true
+  - platform: wifi_info
+    ip_address:
+      id: wifi_ip_ts
+      name: "Departure board IP"
+      internal: true
+    ssid:
+      id: wifi_ssid_ts
+      name: "Departure board SSID"
+      internal: true
+  - platform: version
+    id: esphome_ver_ts
+    name: "Departure board ESPHome version"
+    hide_timestamp: true
+    internal: true
+
+sensor:
+  - platform: wifi_signal
+    id: wifi_rssi_s
+    name: "Departure board Wi-Fi signal"
+    update_interval: 30s
+    entity_category: diagnostic
+  - platform: uptime
+    name: "Departure board uptime"
+    entity_category: diagnostic
+  - platform: debug
+    free:
+      id: heap_free
+      name: "Departure board free memory"
+      entity_category: diagnostic
+  - platform: template
+    id: leave_in_s
+    name: "Departure board leave in"
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+
+display:
+  - platform: mipi_rgb
+    model: RPI
+    id: main_display
+    dimensions:
+      width: 800
+      height: 480
+    invert_colors: true      # both this and pclk_inverted are required
+    color_order: RGB
+    auto_clear_enabled: false
+    update_interval: 250ms
+    de_pin: GPIO41
+    hsync_pin: GPIO39
+    vsync_pin: GPIO40
+    pclk_pin: GPIO0
+    pclk_frequency: 15MHz
+    pclk_inverted: true
+    hsync_front_porch: 40
+    hsync_pulse_width: 48
+    hsync_back_porch: 13
+    vsync_front_porch: 1
+    vsync_pulse_width: 31
+    vsync_back_porch: 13
+    data_pins:
+      red: [GPIO14, GPIO21, GPIO47, GPIO48, GPIO45]
+      green: [GPIO9, GPIO46, GPIO3, GPIO8, GPIO16, GPIO1]
+      blue: [GPIO15, GPIO7, GPIO6, GPIO5, GPIO4]
+    lambda: |-
+      it.fill(Color::BLACK);
+
+      // boot splash
+      if (millis() < 6000) {
+        it.printf(400, 170, id(f_row_1), amber, TextAlign::CENTER, "UK DEPARTURE BOARD");
+        it.printf(400, 225, id(f_sub_1), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
+        it.printf(400, 255, id(f_sub_1), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
+        if (wifi::global_wifi_component->is_connected())
+          it.printf(400, 280, id(f_sub_1), green, TextAlign::CENTER, "Wi-Fi connected");
+        else
+          it.printf(400, 280, id(f_sub_1), orange, TextAlign::CENTER, "Connecting to Wi-Fi...");
+        return;
+      }
+
+      auto now = id(ha_time).now();
+      bool tv = now.is_valid();
+      int nowmin = tv ? now.hour * 60 + now.minute : -1;
+      const char *FONT_NAMES[] = {"Doto", "DotGothic", "VT323", "B612 Mono"};
+      const char *STATION_NAMES[] = {"${station_name}"};
+      int si = id(station_select).active_index().value_or(0);
+      uint32_t dms = 0;
+      std::string disr;
+      switch (si) {
+        case 0: dms = id(data_ms_stn); disr = id(stn_status).state; break;
+      }
+
+      // ---------------- settings screen (tap the clock to open) ----------------
+      if (id(ui_screen) == 1) {
+        if (millis() - id(last_fresh) > 30000) {
+          id(ui_screen) = 0;                    // close after 30 s without a touch
+        } else {
+          static const char *SPEEDN[3] = {"SLOW", "MEDIUM", "FAST"};
+          int R = 0;
+          auto lab = [&](int row, const char *s) {
+            it.printf(20, 50 + row * 46 + 21, id(f_row_1), amber, TextAlign::CENTER_LEFT, "%s", s);
+          };
+          auto val = [&](int row, Color c, const char *s) {
+            it.printf(776, 50 + row * 46 + 21, id(f_row_1), c, TextAlign::CENTER_RIGHT, "%s", s);
+          };
+          auto pm = [&](int row, const char *v) {
+            int ry = 50 + row * 46;
+            it.rectangle(510, ry, 80, 42, amber);
+            it.printf(550, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "-");
+            it.rectangle(700, ry, 80, 42, amber);
+            it.printf(740, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "+");
+            it.printf(645, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "%s", v);
+          };
+          auto onoff = [&](int row, bool on) { val(row, on ? green : red, on ? "ON" : "OFF"); };
+          char buf[40];
+          const bool wifi_ok = wifi::global_wifi_component->is_connected();
+          const bool api_ok = api::global_api_server->is_connected();
+          static const char *PAGE_NAMES[5] = {"DISPLAY", "TRAINS", "EXTRAS", "SCREEN", "STATUS"};
+          it.printf(20, 25, id(f_row_1), amber, TextAlign::CENTER_LEFT, "SETTINGS %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
+          if (id(settings_page) == 0) {
+            R = 0; lab(R, "Station"); val(R, amber, STATION_NAMES[si]);
+            R = 1; lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
+            R = 2; lab(R, "Text size"); val(R, amber, id(text_large).state ? "LARGE" : "NORMAL");
+            R = 3; lab(R, "Font"); val(R, amber, FONT_NAMES[id(font_select).active_index().value_or(0)]);
+            R = 4; lab(R, "Scroll speed"); val(R, amber, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
+            R = 5; lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
+            R = 6; lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
+            R = 7; lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
+          }
+          else if (id(settings_page) == 1) {
+            R = 0; lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
+            R = 1; lab(R, "Calling at"); { std::string f = id(dest_filter).state; val(R, f.empty() ? red : green, f.empty() ? "OFF" : f.c_str()); }
+            R = 2; lab(R, "Hide cancelled"); onoff(R, id(hide_cancelled).state);
+            R = 3; lab(R, "Show platform"); onoff(R, id(show_platform).state);
+            R = 4; lab(R, "Departed grace"); snprintf(buf, sizeof(buf), "%d min", (int) id(departed_grace).state); pm(R, buf);
+            R = 5; lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "OFF"); pm(R, buf);
+          }
+          else if (id(settings_page) == 2) {
+            R = 0; lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; val(R, f.empty() ? red : green, f.empty() ? "OFF" : f.c_str()); }
+            R = 1; lab(R, "Disruption banner"); onoff(R, id(disruption_banner).state);
+            R = 2; lab(R, "Show logo"); onoff(R, id(show_logo).state);
+            R = 3; lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
+            R = 4; lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "OFF"); pm(R, buf);
+          }
+          else if (id(settings_page) == 3) {
+            R = 0; lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
+            R = 1; lab(R, "Night dimming"); onoff(R, id(night_dimming).state);
+            R = 2; lab(R, "Night brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(night_level).state); pm(R, buf);
+            R = 3; lab(R, "Night starts"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf);
+            R = 4; lab(R, "Night ends"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf);
+            R = 5; lab(R, "Night screen off"); onoff(R, id(night_screen_off).state);
+            R = 6; lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "OFF"); pm(R, buf);
+            R = 7; lab(R, "Idle brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(idle_level).state); pm(R, buf);
+          }
+          else if (id(settings_page) == 4) {
+            R = 0; lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "OFFLINE");
+            R = 1; lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
+            R = 2; lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "CONNECTED" : "OFFLINE");
+            R = 3; lab(R, "Data age"); if (dms == 0) val(R, amber, "NO DATA YET"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 15 ? red : green, buf); }
+            R = 4; lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
+            R = 5; lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
+            R = 6; lab(R, "Firmware"); snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf);
+            R = 7; lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
+          }
+          it.rectangle(60, 426, 300, 46, amber);
+          it.printf(210, 449, id(f_row_1), amber, TextAlign::CENTER, "NEXT >");
+          it.rectangle(440, 426, 300, 46, amber);
+          it.printf(590, 449, id(f_row_1), amber, TextAlign::CENTER, "CLOSE");
+          return;
+        }
+      }
+
+      // ---------------- departures screen ----------------
+      const bool L = id(text_large).state;
+      int count = (int) id(train_count).state;
+      if (count < 3) count = 3;
+      if (count > 5) count = 5;
+      if (L && count > 4) count = 4;            // large text only has room for 4 trains
+      const int H = 406 / count;                // pixel height of one train (two lines)
+      const int fi = id(font_select).active_index().value_or(0);
+      font::Font *F_ROW[] = {id(f_row_0), id(f_row_1), id(f_row_2), id(f_row_3)};
+      font::Font *F_SUB[] = {id(f_sub_0), id(f_sub_1), id(f_sub_2), id(f_sub_3)};
+      font::Font *F_CLK[] = {id(f_clk_0), id(f_clk_1), id(f_clk_2), id(f_clk_3)};
+      font::Font *F_ROWL[] = {id(f_row_l_0), id(f_row_l_1), id(f_row_l_2), id(f_row_l_3)};
+      font::Font *F_SUBL[] = {id(f_sub_l_0), id(f_sub_l_1), id(f_sub_l_2), id(f_sub_l_3)};
+      font::Font *F_BIG[] = {id(f_big_0), id(f_big_1), id(f_big_2), id(f_big_3)};
+      auto fr = L ? F_ROWL[fi] : F_ROW[fi];
+      auto fs = L ? F_SUBL[fi] : F_SUB[fi];
+      const int TX = 18;
+      const int DX = L ? 175 : 130;             // destination / sub-line x
+      const int PX = L ? 540 : 610;             // platform column (right edge)
+      const int DMAX = L ? 12 : 21;             // destination max characters
+      const int SUBOFF = L ? 50 : 37;           // sub-line offset below the main line
+      const int SUBH = L ? 38 : 32;
+      const int SW = 784 - DX;                  // sub-line width
+      int pad = (H - (SUBOFF + SUBH)) / 2;
+      if (pad < 0) pad = 0;
+      const int speeds[3] = {20, 30, 50};       // scroll px per second
+      const int sp = speeds[id(scroll_speed).active_index().value_or(1)];
+      const std::string filt = id(dest_filter).state;
+      const std::string favs = id(fav_times).state;
+      const std::string fstop = id(fav_stop).state;       // favourite stop to highlight
+      const int walk = (int) id(walk_minutes).state;
+      const int grace = (int) id(departed_grace).state;
+      const bool wifi_ok = wifi::global_wifi_component->is_connected();
+      const bool api_ok = api::global_api_server->is_connected();
+      int leave_mins = -1;
+      int slot = 0;
+      if (id(ui_screen) == 2 && millis() - id(last_fresh) > 30000) id(ui_screen) = 0;   // detail view times out
+      const bool detail = (id(ui_screen) == 2);
+      // view: 0 = list, 1 = focus on the next train, 2 = clock screen (after idle time)
+      const bool clock_idle = id(clock_after).state > 0 && (millis() - id(last_touch_any)) > (uint32_t) (id(clock_after).state * 60000.0f);
+      const int view = detail ? 0 : (clock_idle ? 2 : (id(focus_mode).state ? 1 : 0));
+      bool dfound = false;
+      if (!detail) for (int i = 0; i < 6; i++) id(slot_train)[i] = 0;
+
+      auto draw_bigclock = [&]() {
+        if (!tv) return;
+        int hh = now.hour;
+        const char *ap = "";
+        if (id(clock_12h).state) { ap = hh >= 12 ? "pm" : "am"; hh = hh % 12; if (hh == 0) hh = 12; }
+        char cb[16];
+        snprintf(cb, sizeof(cb), "%02d:%02d%s", hh, now.minute, ap);
+        it.printf(400, 105, F_BIG[fi], amber, TextAlign::CENTER, "%s", cb);
+        std::string ds = now.strftime("%A %d %B");
+        it.printf(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, "%s", ds.c_str());
+      };
+      auto draw_next = [&](int vw, std::string sched, std::string exp, std::string plat, std::string calls,
+                           std::string oper, std::string delaym, bool cancelled, bool late) {
+        std::string dest = departure::destination(calls, 24);
+        int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+        Color sc = cancelled ? red : (late ? orange : green);
+        if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+        std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
+        if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
+        std::string pl = (departure::valid(plat) && !cancelled) ? "Platform " + plat : "";
+        if (vw == 2) {
+          draw_bigclock();
+          it.printf(400, 290, F_ROWL[fi], amber, TextAlign::CENTER, "%s  %s", sched.c_str(), dest.c_str());
+          std::string l2 = pl.empty() ? st : pl + "   " + st;
+          it.printf(400, 350, F_SUB[fi], sc, TextAlign::CENTER, "%s", l2.c_str());
+        } else {
+          it.printf(400, 45, F_ROWL[fi], amber, TextAlign::CENTER, "%s  %s", sched.c_str(), dest.c_str());
+          if (cancelled) {
+            it.printf(400, 190, F_ROWL[fi], red, TextAlign::CENTER, "Cancelled");
+          } else {
+            char cb[24];
+            if (mins < 0) snprintf(cb, sizeof(cb), "--");
+            else if (mins <= 1) snprintf(cb, sizeof(cb), "Due");
+            else if (mins < 60) snprintf(cb, sizeof(cb), "%d min", mins);
+            else snprintf(cb, sizeof(cb), "%dh %02dm", mins / 60, mins % 60);
+            it.printf(400, 190, F_BIG[fi], sc, TextAlign::CENTER, "%s", cb);
+          }
+          it.printf(400, 310, F_ROW[fi], sc, TextAlign::CENTER, "%s", st.c_str());
+          std::string l3 = pl;
+          if (departure::valid(oper)) l3 += (l3.empty() ? "" : "   ") + oper;
+          it.printf(400, 360, F_SUB[fi], amber, TextAlign::CENTER, "%s", l3.c_str());
+        }
+      };
+      auto draw_detail = [&](std::string sched, std::string exp, std::string plat, std::string pchg, std::string calls,
+                             std::string reason, std::string oper, std::string delaym, std::string stops,
+                             std::string sarr, std::string earr, std::string pprev, bool cancelled, bool late) {
+
+        Color sc = cancelled ? red : (late ? orange : green);
+        std::string dd = departure::destination(calls, 18);
+        it.printf(18, 8, F_ROW[fi], amber, "%s", sched.c_str());
+        it.printf(130, 8, F_ROW[fi], amber, "%s", dd.c_str());
+        it.printf(784, 8, F_ROW[fi], sc, TextAlign::TOP_RIGHT, "%s", cancelled ? "Cancelled" : (late ? "Delayed" : "On time"));
+        std::string l2 = departure::valid(oper) ? oper : "";
+        if (departure::valid(plat) && !cancelled) {
+          l2 += (l2.empty() ? "" : "   ");
+          l2 += "Platform " + plat;
+          if (departure::truthy(pchg) && departure::valid(pprev)) l2 += " (was " + pprev + ")";
+        }
+        it.printf(18, 54, F_SUB[fi], departure::truthy(pchg) ? orange : amber, "%s", l2.c_str());
+        if (!cancelled) {
+          int dm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          if (dm >= 0) {
+            char cb[24];
+            if (dm <= 1) snprintf(cb, sizeof(cb), "Due");
+            else if (dm < 60) snprintf(cb, sizeof(cb), "in %d min", dm);
+            else snprintf(cb, sizeof(cb), "in %dh %02dm", dm / 60, dm % 60);
+            it.printf(784, 54, F_SUB[fi], late ? orange : green, TextAlign::TOP_RIGHT, "%s", cb);
+          }
+        }
+        int cy = 90;   // running y position: later lines flow down from here
+        if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+        if (late && departure::valid(exp)) {
+          std::string l3 = "Expected " + exp;
+          if (departure::valid(delaym) && delaym != "0") l3 += "  -  " + delaym + " min late";
+          it.printf(18, cy, F_SUB[fi], orange, "%s", l3.c_str());
+          cy += 32;
+        }
+        if (departure::valid(reason)) {
+          std::string rem = reason;
+          int ly = cy;
+          for (int ln = 0; ln < 2 && !rem.empty(); ln++) {
+            std::string part = rem;
+            if (part.size() > 36) {
+              size_t cut = part.rfind(' ', 36);
+              if (cut == std::string::npos || cut < 15) cut = 36;
+              part = rem.substr(0, cut);
+              rem = rem.substr(cut);
+              while (!rem.empty() && rem[0] == ' ') rem.erase(0, 1);
+            } else rem.clear();
+            if (ln == 1 && !rem.empty()) part += "...";
+            it.printf(18, ly, F_SUB[fi], cancelled ? red : orange, "%s", part.c_str());
+            ly += 32;
+          }
+          cy = ly;
+        }
+        if (departure::valid(sarr)) {
+          std::string l4 = "Arrives " + departure::destination(calls, 20) + " " + sarr;
+          bool latearr = departure::valid(earr) && earr != sarr;
+          if (latearr) l4 += "  (exp " + earr + ")";
+          it.printf(18, cy, F_SUB[fi], (latearr ? orange : amber), "%s", l4.c_str());
+          cy += 36;
+        }
+        std::vector<std::pair<std::string, std::string>> stp;
+        if (departure::valid(stops)) {
+          size_t pos = 0;
+          while (pos < stops.size()) {
+            size_t e = stops.find(", ", pos);
+            std::string item = stops.substr(pos, e == std::string::npos ? std::string::npos : e - pos);
+            pos = (e == std::string::npos) ? stops.size() : e + 2;
+            if (item.size() > 6 && item[item.size() - 6] == ' ') stp.push_back({item.substr(0, item.size() - 6), item.substr(item.size() - 5)});
+            else stp.push_back({item, ""});
+          }
+        } else {
+          for (auto &p : departure::points(calls)) stp.push_back({p, ""});
+        }
+        int rows = (404 - cy) / 30;
+        if (rows < 1) rows = 1;
+        if (rows > 9) rows = 9;
+        for (size_t i = 0; i < stp.size() && i < (size_t) (rows * 2); i++) {
+          int sx = 18 + (int) (i / rows) * 392;
+          int sy2 = cy + (int) (i % rows) * 30;
+          std::string nm = stp[i].first;
+          if (nm.size() > 17) { nm.resize(17); nm += "."; }
+          bool fav = !fstop.empty() && departure::ieq(stp[i].first, fstop);
+          Color tc = fav ? Color::WHITE : amber;
+          it.printf(sx, sy2, F_SUB[fi], tc, "%s", nm.c_str());
+          it.printf(sx + 372, sy2, F_SUB[fi], fav ? Color::WHITE : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
+        }
+        if (stp.size() > (size_t) (rows * 2)) it.printf(784, cy - 36, F_SUB[fi], amber, TextAlign::TOP_RIGHT, "+%d more", (int) stp.size() - rows * 2);
+      };
+
+      // ---- train 1 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t1_scheduled_departure).state; exp = id(stn_t1_expected_departure).state; stat = id(stn_t1_status).state; plat = id(stn_t1_platform).state; pchg = id(stn_t1_platform_changed).state; calls = id(stn_t1_calling_points).state; dreason = id(stn_t1_delay_reason).state; creason = id(stn_t1_cancellation_reason).state; oper = id(stn_t1_operator).state; delaym = id(stn_t1_delay_minutes).state; stops = id(stn_t1_stops).state; sarr = id(stn_t1_scheduled_arrival).state; earr = id(stn_t1_estimated_arrival).state; pprev = id(stn_t1_previous_platform).state; break;
+        }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 1) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 1;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 1;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 2 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t2_scheduled_departure).state; exp = id(stn_t2_expected_departure).state; stat = id(stn_t2_status).state; plat = id(stn_t2_platform).state; pchg = id(stn_t2_platform_changed).state; calls = id(stn_t2_calling_points).state; dreason = id(stn_t2_delay_reason).state; creason = id(stn_t2_cancellation_reason).state; oper = id(stn_t2_operator).state; delaym = id(stn_t2_delay_minutes).state; stops = id(stn_t2_stops).state; sarr = id(stn_t2_scheduled_arrival).state; earr = id(stn_t2_estimated_arrival).state; pprev = id(stn_t2_previous_platform).state; break;
+        }
+        if (id(demo_mode).state) { stat = "delayed"; dreason = "This service has been delayed by a late running train in front of this one"; }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 2) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 2;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 2;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 3 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t3_scheduled_departure).state; exp = id(stn_t3_expected_departure).state; stat = id(stn_t3_status).state; plat = id(stn_t3_platform).state; pchg = id(stn_t3_platform_changed).state; calls = id(stn_t3_calling_points).state; dreason = id(stn_t3_delay_reason).state; creason = id(stn_t3_cancellation_reason).state; oper = id(stn_t3_operator).state; delaym = id(stn_t3_delay_minutes).state; stops = id(stn_t3_stops).state; sarr = id(stn_t3_scheduled_arrival).state; earr = id(stn_t3_estimated_arrival).state; pprev = id(stn_t3_previous_platform).state; break;
+        }
+        if (id(demo_mode).state) { stat = "cancelled"; creason = "Due to a shortage of train crew"; }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 3) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 3;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 3;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 4 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t4_scheduled_departure).state; exp = id(stn_t4_expected_departure).state; stat = id(stn_t4_status).state; plat = id(stn_t4_platform).state; pchg = id(stn_t4_platform_changed).state; calls = id(stn_t4_calling_points).state; dreason = id(stn_t4_delay_reason).state; creason = id(stn_t4_cancellation_reason).state; oper = id(stn_t4_operator).state; delaym = id(stn_t4_delay_minutes).state; stops = id(stn_t4_stops).state; sarr = id(stn_t4_scheduled_arrival).state; earr = id(stn_t4_estimated_arrival).state; pprev = id(stn_t4_previous_platform).state; break;
+        }
+        if (id(demo_mode).state) { plat = "2"; pchg = "true"; }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 4) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 4;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 4;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 5 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t5_scheduled_departure).state; exp = id(stn_t5_expected_departure).state; stat = id(stn_t5_status).state; plat = id(stn_t5_platform).state; pchg = id(stn_t5_platform_changed).state; calls = id(stn_t5_calling_points).state; dreason = id(stn_t5_delay_reason).state; creason = id(stn_t5_cancellation_reason).state; oper = id(stn_t5_operator).state; delaym = id(stn_t5_delay_minutes).state; stops = id(stn_t5_stops).state; sarr = id(stn_t5_scheduled_arrival).state; earr = id(stn_t5_estimated_arrival).state; pprev = id(stn_t5_previous_platform).state; break;
+        }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 5) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 5;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 5;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 6 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t6_scheduled_departure).state; exp = id(stn_t6_expected_departure).state; stat = id(stn_t6_status).state; plat = id(stn_t6_platform).state; pchg = id(stn_t6_platform_changed).state; calls = id(stn_t6_calling_points).state; dreason = id(stn_t6_delay_reason).state; creason = id(stn_t6_cancellation_reason).state; oper = id(stn_t6_operator).state; delaym = id(stn_t6_delay_minutes).state; stops = id(stn_t6_stops).state; sarr = id(stn_t6_scheduled_arrival).state; earr = id(stn_t6_estimated_arrival).state; pprev = id(stn_t6_previous_platform).state; break;
+        }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 6) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 6;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 6;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 7 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t7_scheduled_departure).state; exp = id(stn_t7_expected_departure).state; stat = id(stn_t7_status).state; plat = id(stn_t7_platform).state; pchg = id(stn_t7_platform_changed).state; calls = id(stn_t7_calling_points).state; dreason = id(stn_t7_delay_reason).state; creason = id(stn_t7_cancellation_reason).state; oper = id(stn_t7_operator).state; delaym = id(stn_t7_delay_minutes).state; stops = id(stn_t7_stops).state; sarr = id(stn_t7_scheduled_arrival).state; earr = id(stn_t7_estimated_arrival).state; pprev = id(stn_t7_previous_platform).state; break;
+        }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 7) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 7;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 7;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 8 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t8_scheduled_departure).state; exp = id(stn_t8_expected_departure).state; stat = id(stn_t8_status).state; plat = id(stn_t8_platform).state; pchg = id(stn_t8_platform_changed).state; calls = id(stn_t8_calling_points).state; dreason = id(stn_t8_delay_reason).state; creason = id(stn_t8_cancellation_reason).state; oper = id(stn_t8_operator).state; delaym = id(stn_t8_delay_minutes).state; stops = id(stn_t8_stops).state; sarr = id(stn_t8_scheduled_arrival).state; earr = id(stn_t8_estimated_arrival).state; pprev = id(stn_t8_previous_platform).state; break;
+        }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 8) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 8;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 8;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 9 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t9_scheduled_departure).state; exp = id(stn_t9_expected_departure).state; stat = id(stn_t9_status).state; plat = id(stn_t9_platform).state; pchg = id(stn_t9_platform_changed).state; calls = id(stn_t9_calling_points).state; dreason = id(stn_t9_delay_reason).state; creason = id(stn_t9_cancellation_reason).state; oper = id(stn_t9_operator).state; delaym = id(stn_t9_delay_minutes).state; stops = id(stn_t9_stops).state; sarr = id(stn_t9_scheduled_arrival).state; earr = id(stn_t9_estimated_arrival).state; pprev = id(stn_t9_previous_platform).state; break;
+        }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 9) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 9;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 9;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+      // ---- train 10 ----
+      if (slot < count) {
+        std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
+        switch (si) {
+          case 0: sched = id(stn_t10_scheduled_departure).state; exp = id(stn_t10_expected_departure).state; stat = id(stn_t10_status).state; plat = id(stn_t10_platform).state; pchg = id(stn_t10_platform_changed).state; calls = id(stn_t10_calling_points).state; dreason = id(stn_t10_delay_reason).state; creason = id(stn_t10_cancellation_reason).state; oper = id(stn_t10_operator).state; delaym = id(stn_t10_delay_minutes).state; stops = id(stn_t10_stops).state; sarr = id(stn_t10_scheduled_arrival).state; earr = id(stn_t10_estimated_arrival).state; pprev = id(stn_t10_previous_platform).state; break;
+        }
+        std::string reason = (stat == "cancelled") ? creason : dreason;
+        bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
+            && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
+          std::string dest = departure::destination(calls, DMAX);
+          bool late = (stat == "delayed");
+          if (detail) {
+            if (id(detail_train) == 10) {
+              draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
+            }
+          } else if (view != 0) {
+            if (slot == 0) {
+              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
+              id(slot_train)[0] = 10;
+              slot++;
+            }
+          } else {
+          id(slot_train)[slot] = 10;
+          int y = 6 + slot * H + pad;
+          int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+          bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
+          if (leave_mins < 0 && !cancelled && mins >= 0 && mins >= walk) leave_mins = mins - walk;
+          Color c0 = soon ? grey : amber;
+          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (departure::in_list(favs, sched)) {
+            int ux, uy, uw, uh;
+            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          }
+          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          if (id(show_platform).state && departure::valid(plat) && !cancelled) {
+            it.printf(PX, y, fr, departure::truthy(pchg) ? orange : c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+          }
+          char cd[16];
+          if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
+          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          if (cancelled)
+            it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (countdown)
+            it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
+          else if (late && departure::valid(exp))
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+          else
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          // scrolling sub-line: reason (orange/red) then "Calling at ..."
+          if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
+          std::string head;
+          if (late && departure::valid(delaym) && delaym != "0") head = "Delayed " + delaym + " min";
+          if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
+          if (!head.empty()) head += "   -   ";
+          std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
+          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          int bx, by, bw, bh, tw;
+          it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          bool scroll = bw > SW && id(scroll_enabled).state;
+          if (bw > SW && !scroll) {
+            size_t keep = (head.size() + tail.size()) * (SW - 44) / bw;
+            if (keep <= head.size()) { head.resize(keep); head += "..."; tail = ""; }
+            else { tail.resize(keep - head.size()); tail += "..."; }
+            it.get_text_bounds(0, 0, (head + tail).c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          }
+          it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
+          int hw = bw - tw;
+          Color rc = cancelled ? red : orange;
+          int sy = y + SUBOFF;
+          // favourite stop: drawn in white
+          int hend = 0;
+          int hpos = departure::find_stop(tail, fstop, hend);
+          std::string pre, seg, post;
+          int wpre = 0, wseg = 0;
+          if (hpos >= 0) {
+            pre = tail.substr(0, hpos);
+            seg = tail.substr(hpos, hend - hpos);
+            post = tail.substr(hend);
+            int sbx, sby, sbh;
+            if (!pre.empty()) { it.get_text_bounds(0, 0, pre.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wpre, &sbh); }
+            it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
+          }
+          auto drawsub = [&](int x) {
+            if (!head.empty()) it.printf(x, sy, fs, rc, "%s", head.c_str());
+            if (tail.empty()) return;
+            if (hpos < 0) {
+              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+            } else {
+              int tx = x + hw;
+              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              it.printf(tx + wpre, sy, fs, Color::WHITE, "%s", seg.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+            }
+          };
+          it.start_clipping(DX, sy - 2, 784, sy + SUBH + 2);
+          if (!scroll) {
+            drawsub(DX);
+          } else {
+            int cyc = bw + 120;
+            int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            drawsub(DX - off);
+            drawsub(DX - off + cyc);
+          }
+          it.end_clipping();
+          slot++;
+          }
+        }
+      }
+
+      {
+        // publish "minutes until you must leave" to HA (only when it changes)
+        int lv = (walk > 0 && leave_mins >= 0) ? leave_mins : -1;
+        if (!detail && view == 0 && (!id(leave_in_s).has_state() || (int) id(leave_in_s).state != lv)) id(leave_in_s).publish_state(lv);
+      }
+
+      if (detail && !dfound) id(ui_screen) = 0;      // the train has gone: back to the list
+
+      // nothing to show: say why
+      if (slot == 0 && !detail) {
+        std::string l1, l2;
+        bool big = false;
+        if (!wifi_ok) { l1 = "Connecting to Wi-Fi..."; }
+        else if (!api_ok || (dms == 0 && millis() < 120000)) { l1 = "Waiting for Home Assistant..."; }
+        else if (!filt.empty()) { l1 = "No trains calling at"; l2 = filt; }
+        else { l1 = "No more trains"; l2 = "tonight"; big = true; }
+        if (big) {
+          // nothing more today: big clock with the message underneath
+          draw_bigclock();
+          it.printf(400, 300, F_ROWL[fi], amber, TextAlign::CENTER, "No more trains tonight");
+        } else {
+          it.printf(400, 140, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l1.c_str());
+          if (!l2.empty()) it.printf(400, 205, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l2.c_str());
+        }
+      }
+
+      // footer: station left, status/info in the middle, clock right
+      const int fy = 418;
+      std::string info;
+      Color infoc = amber;
+      uint32_t age_min = dms ? (millis() - dms) / 60000 : 0;
+      if (detail) { info = "Tap to go back"; infoc = amber; }
+      else if (!wifi_ok) { info = "No Wi-Fi"; infoc = red; }
+      else if (!api_ok) { info = "No Home Assistant"; infoc = red; }
+      else if (dms != 0 && age_min >= 15) {
+        char ab[32];
+        snprintf(ab, sizeof(ab), "Data %d min old", (int) age_min);
+        info = ab;
+        infoc = red;
+      }
+      else if (id(disruption_banner).state && departure::valid(disr) && disr != "Normal" && disr != "No service") {
+        info = disr;
+        infoc = (disr.find("ajor") != std::string::npos || disr.find("ritical") != std::string::npos || disr.find("evere") != std::string::npos) ? red : orange;
+      }
+      else if (walk > 0 && leave_mins >= 0) {
+        char lb[32];
+        if (leave_mins <= 0) snprintf(lb, sizeof(lb), "Leave now");
+        else snprintf(lb, sizeof(lb), "Leave in %d min", leave_mins);
+        info = lb;
+        infoc = green;
+      }
+      if (info.size() > 24) info.resize(24);
+      std::string foot = STATION_NAMES[si];
+      if (info.empty() && !filt.empty()) foot += " > " + filt;
+      if (foot.size() > 26) foot.resize(26);
+      int fx = 20;
+      if (id(show_logo).state) {
+        // simple train icon, 56x35 (replace with your own drawing if you like)
+        int lx = 20, ly = fy + 4;
+        it.filled_rectangle(lx + 4, ly + 2, 48, 22, amber);                 // body
+        it.filled_rectangle(lx + 8, ly + 6, 12, 9, Color(0, 0, 0));          // windows
+        it.filled_rectangle(lx + 22, ly + 6, 12, 9, Color(0, 0, 0));
+        it.filled_rectangle(lx + 36, ly + 6, 12, 9, Color(0, 0, 0));
+        it.filled_rectangle(lx + 4, ly + 19, 48, 3, Color(0, 0, 0));         // stripe
+        it.filled_rectangle(lx + 10, ly + 26, 8, 6, amber);                  // wheels
+        it.filled_rectangle(lx + 38, ly + 26, 8, 6, amber);
+        it.filled_rectangle(lx, ly + 33, 56, 2, amber);                      // rail
+        fx = 20 + 56 + 14;
+      }
+      it.printf(fx, fy, F_SUB[fi], amber, "%s", foot.c_str());
+      if (!info.empty())
+        it.printf(610, fy + 14, F_SUB[fi], infoc, TextAlign::CENTER_RIGHT, "%s", info.c_str());
+      if (tv) {
+        char cb[24];
+        int hh = now.hour;
+        const char *ap = "";
+        if (id(clock_12h).state) { ap = hh >= 12 ? "pm" : "am"; hh = hh % 12; if (hh == 0) hh = 12; }
+        if (id(show_seconds).state) snprintf(cb, sizeof(cb), "%02d:%02d:%02d%s", hh, now.minute, now.second, ap);
+        else snprintf(cb, sizeof(cb), "%02d:%02d%s", hh, now.minute, ap);
+        it.printf(784, fy - 4, F_CLK[fi], amber, TextAlign::TOP_RIGHT, "%s", cb);
+      }
