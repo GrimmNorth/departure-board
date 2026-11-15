@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.1 - 2026-11-15 (beta)
+- Settings page titles in the highlight colour
+
 ## 1.7.0 - 2026-11-15 (beta)
 - Custom logo: set a PNG address in Home Assistant
 
