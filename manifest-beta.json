@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.7.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.8.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "e4d262a05ead9892ecd50695ace6ccb2",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.7.1.ota.bin",
-        "summary": "Settings page titles in the highlight colour"
+        "md5": "c40c445bf45534046d92b4f7c7ec6066",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.8.0.ota.bin",
+        "summary": "Dot-matrix style backgrounds: row bands or LED grid"
       }
     }
   ]

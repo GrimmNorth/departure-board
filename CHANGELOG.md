@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.8.0 - 2026-11-15 (beta)
+- Dot-matrix style backgrounds: row bands or LED grid
+
 ## 1.7.1 - 2026-11-15 (beta)
 - Settings page titles in the highlight colour
 
