@@ -62,7 +62,9 @@ variables:
   label_in: !input station_name
   stations: "{{ [first_station] + (extra if extra is list else ([extra] if extra else [])) }}"
   num_ent: "{{ device_entities(board_id) | select('match', 'number\\.') | select('search', 'station_number') | first | default('') }}"
-  pick: "{{ states(num_ent) | int(1) if num_ent != '' else 1 }}"
+  # a switch on the board sends its new number with the signal; otherwise read the board's setting
+  pick: >-
+    {% if trigger is defined and trigger.platform == 'event' and trigger.event.data.number is defined %}{{ trigger.event.data.number | int(1) }}{% elif num_ent != '' %}{{ states(num_ent) | int(1) }}{% else %}1{% endif %}
   idx: "{{ pick - 1 if 1 <= pick <= (stations | count) else 0 }}"
   station_id: "{{ stations[idx] }}"
   label: "{{ label_in if idx == 0 else '' }}"
