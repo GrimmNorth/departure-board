@@ -3917,7 +3917,14 @@ display:
       cmp_tall = cmp_tall_now;
       if (detail && !dfound) id(ui_screen) = 0;      // the train has gone: back to the list
 
-      if (switching && !detail) it.printf(400, 180, F_ROWL[fi], amber, TextAlign::CENTER, "Switching station...");
+      if (switching && !detail) {
+        it.printf(400, 175, F_ROWL[fi], amber, TextAlign::CENTER, "Switching station or route");
+        if (id(stn_count) > 1) {
+          char sb[24];
+          snprintf(sb, sizeof(sb), "%d of %d", (int) id(stn_num).state, (int) id(stn_count));
+          it.printf(400, 235, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", sb);
+        }
+      }
       // nothing to show: say why
       if (slot == 0 && !detail && elig == 0) {
         std::string l1, l2;
