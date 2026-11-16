@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.16.1 - 2026-11-16 (beta)
+- Page animation now visible; white column headings; display frame time sensor
+
+## 1.16.1 - 2026-11-16 (beta)
 - Page animation reworked so it shows on the panel: rows appear one after another from the top, each sliding up into place
 - New diagnostic sensor: Display frame time (how long a screen redraw takes)
 - Column headings are white (dark on Daylight), sit higher, and no longer have a line underneath
