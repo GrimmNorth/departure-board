@@ -3,6 +3,7 @@
 ## Unreleased
 - Compact layout fixed: the next train now shows at the top (it was missing and the rows below overlapped)
 - Calm and Compact: only the next train scrolls (the first train on later pages no longer does)
+- Second lines (operator and calling points) use a softer version of the theme colour in every layout, so the main line stands out; the High contrast theme keeps full brightness
 
 ## 1.15.0 - 2026-11-16 (beta)
 - New Layout setting: Classic, Calm and Compact

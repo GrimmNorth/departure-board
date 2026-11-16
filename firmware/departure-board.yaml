@@ -1566,6 +1566,9 @@ display:
         pages = pin ? (elig_prev - 1 + per - 1) / per : (elig_prev + per - 1) / per;
       // ---- layout: 0 Classic, 1 Calm (only the first train scrolls), 2 Compact (one line per train) ----
       const int lay = id(layout_select).active_index().value_or(0);
+      // softer version of the main colour for second lines (70% text, 30% band); High contrast keeps full strength
+      const bool hi_con = id(theme_select).active_index().value_or(0) == 4;
+      const Color sub_col = hi_con ? amber : Color((amber.r * 7 + band_col.r * 3) / 10, (amber.g * 7 + band_col.g * 3) / 10, (amber.b * 7 + band_col.b * 3) / 10);
       static std::vector<uint8_t> cmp_tall(10, 0);           // last frame: train needs a reason line
       std::vector<uint8_t> cmp_tall_now(10, 0);
       int cmp_page[10], cmp_y[10], cmp_ry[10], cmp_bot[10];
@@ -2058,6 +2061,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2100,6 +2104,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -2155,16 +2160,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2214,6 +2219,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2256,6 +2262,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -2311,16 +2318,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2370,6 +2377,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2412,6 +2420,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -2467,16 +2476,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2526,6 +2535,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2568,6 +2578,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -2623,16 +2634,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2681,6 +2692,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2723,6 +2735,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -2778,16 +2791,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2836,6 +2849,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2878,6 +2892,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -2933,16 +2948,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2991,6 +3006,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3033,6 +3049,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -3088,16 +3105,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3146,6 +3163,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3188,6 +3206,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -3243,16 +3262,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3301,6 +3320,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3343,6 +3363,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -3398,16 +3419,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3456,6 +3477,7 @@ display:
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3498,6 +3520,7 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
@@ -3553,16 +3576,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
