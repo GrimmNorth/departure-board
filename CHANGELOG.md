@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.19.1 - 2026-11-16
+- Arrival times on routes are now dimmed like the rest of the second line (dimmed orange when late)
+- Fixed: at a busy station the board could say "No more trains tonight" in the daytime when every train it had just left before the next update arrived. It now says "Waiting for new train times" (and suggests a route)
+
 ## 1.19.0 - 2026-11-16 (beta)
 - Station messages in the footer and arrival times on routes
 
