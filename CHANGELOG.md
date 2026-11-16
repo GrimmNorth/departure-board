@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.20.0 - 2026-11-16 (beta)
+- Hold a train to make it a favourite, last train label, update notice, track logo
+
+## 1.20.0 - 2026-11-16 (beta)
 - Press and hold a train to make it a favourite (or hold again to remove it); a short message confirms it
 - "Last train" on the second line of the evening's last train
 - Update ready: an orange dot by the clock, and the Status page shows the new version

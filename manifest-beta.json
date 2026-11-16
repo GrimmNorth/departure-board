@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.19.1",
+  "version": "1.20.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.19.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.20.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "d65410f1f634841922dd55b2a4e81bfd",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.19.1.ota.bin",
-        "summary": "Dimmed arrival times; clearer screen at busy stations"
+        "md5": "f7495250722fe14f0935221327528946",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.20.0.ota.bin",
+        "summary": "Hold a train to make it a favourite, last train label, update notice, track logo"
       }
     }
   ]
