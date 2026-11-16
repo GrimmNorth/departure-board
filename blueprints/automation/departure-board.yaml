@@ -3,9 +3,11 @@ blueprint:
   author: GrimmNorth
   description: >-
     Sends your National Rail departures (from the My Rail Commute integration) to your
-    UK Departure Board every minute. Pick your board and your station.
-    Add more stations to switch between them: tap the station name at the bottom of the board,
+    UK Departure Board every minute. Pick your board and your station or route.
+    Add more stations or routes to switch between them: tap the station name at the bottom of the board,
     or change the board's "Station number" in Home Assistant.
+    At a busy station, 10 trains may only cover the next few minutes: add a My Rail Commute route
+    instead (e.g. Manchester Piccadilly to Leeds) to get the next 10 trains to where you are going.
     Set up My Rail Commute with 10 services for the best result, and set its
     Departed train grace period (Configure > Disruption) to 1 minute so departed
     trains don't take up places on the board.
@@ -21,15 +23,18 @@ blueprint:
           filter:
             - integration: esphome
     station:
-      name: Station
-      description: Your station, from the My Rail Commute integration.
+      name: Station or route
+      description: >-
+        Your station ("Departures from ...") or a route (e.g. "Manchester Piccadilly to Leeds"),
+        from the My Rail Commute integration. A route shows only trains to that destination, which
+        suits busy stations.
       selector:
         device:
           filter:
             - integration: my_rail_commute
     more_stations:
-      name: More stations (optional)
-      description: Extra stations to switch between. Station 1 is the one above, then these in order.
+      name: More stations or routes (optional)
+      description: Extra stations or routes to switch between. Station 1 is the one above, then these in order.
       default: []
       selector:
         device:
@@ -37,8 +42,11 @@ blueprint:
           filter:
             - integration: my_rail_commute
     station_name:
-      name: Station name on the board
-      description: Wording for the first station at the bottom of the board. Leave empty to use the station's name (e.g. "York").
+      name: Names on the board (optional)
+      description: >-
+        Short names for the bottom of the board, in the same order as your stations, separated by
+        commas, e.g. "Brough, To Hull, To Leeds". Leave a name out (e.g. "Brough, , To Leeds") or
+        the whole box empty to use each station's own name (e.g. "York").
       default: ""
       selector:
         text:
@@ -68,8 +76,10 @@ variables:
   pick: >-
     {% if trigger is defined and trigger.platform == 'event' and trigger.event.data.number is defined %}{{ trigger.event.data.number | int(1) }}{% elif num_ent != '' %}{{ states(num_ent) | int(1) }}{% else %}1{% endif %}
   idx: "{{ pick - 1 if 1 <= pick <= (stations | count) else 0 }}"
+  # one name per station, comma separated (a single name still names station 1, as before)
+  names: "{{ (label_in | string).split(',') | map('trim') | list if label_in else [] }}"
   station_id: "{{ stations[idx] }}"
-  label: "{{ label_in if idx == 0 else '' }}"
+  label: "{{ names[idx] if idx < (names | count) else '' }}"
   svc: "{{ device_attr(board_id, 'name') | slugify }}"
   ents: "{{ device_entities(station_id) }}"
   status_ent: "{{ ents | select('search', '_status$') | first | default('') }}"
