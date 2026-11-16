@@ -31,6 +31,7 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 - Tap a train for its detail page: status and expected time, platform and operator, countdown, delay reason, arrival time, and the calling points as a route line with times. Tap anywhere to close.
 - **Themes:** Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Settings > Display > Theme on the board, or the theme setting in Home Assistant.
 - **Background:** *Rows* (default) puts each line on a faint unlit band like a real LED board; *Dot matrix* adds the grid of unlit dots; *Plain* turns it off. Set it in Home Assistant.
+- **Layout** (Settings > Display): *Classic* (every train on two lines, all scrolling), *Calm* (only the first train scrolls; later trains show the operator, or the delay reason in orange) or *Compact* (the next train on two lines, the rest on one line each with a reason line under any late or cancelled train, so 7 or 8 trains fit).
 - Tap the clock (bottom right) for settings: display, trains, extras (highlight stop, disruption banner, logo, focus mode, clock screen, footer colour), screen (night dimming, screen off), status.
 - **Focus mode** (Settings > Extras) shows just the next train with a big countdown, labelled 1st, with its delay reason and any platform change, and the 2nd and 3rd trains along the bottom. If you set a walking time, it skips trains you can no longer catch.
 - All the same switches and numbers appear in Home Assistant under the device.
