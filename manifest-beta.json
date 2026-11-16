@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.14.0",
+  "version": "1.14.1",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.14.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.14.1.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "e73fb7f03985396fe1fe30ee994f2c84",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.14.0.ota.bin",
-        "summary": "Focus mode shows 1st, 2nd and 3rd trains, delay reasons and platform changes; new footer colour setting"
+        "md5": "655542ac5b5d9dd9bf4f8ea7c861cb6d",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.14.1.ota.bin",
+        "summary": "Focus mode layout fixed: no overlapping lines, tidier spacing"
       }
     }
   ]

@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.14.1 - 2026-11-16 (beta)
+- Focus mode layout fixed: no overlapping lines, tidier spacing
+
+## 1.14.1 - 2026-11-16 (beta)
 - Focus mode layout fixed: bands hug the text, lines evenly spaced, the 2nd/3rd strip no longer overlaps the footer, and a short destination leaves room for a long one
 
 ## 1.14.0 - 2026-11-16 (beta)
