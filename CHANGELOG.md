@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.18.0 - 2026-11-16 (beta)
+- Fixed: the column heading showed boxes for some letters on a route (e.g. "Destination (to Leeds only)")
+- Clearer message while changing station: "Switching station or route", with "3 of 5" underneath
+- Help page in settings listing the touch controls; the footer says "Tap the clock for help" until settings are first opened (which opens Help)
+- Swipe left or right to change station or route; on a train's details, tap the sides (or swipe) for the previous or next train
+- A tapped train's row is outlined briefly before its details open
+- Settings close by themselves after a minute without a tap
+- Clearer status screens: what is happening and what to do (including the board's address when Home Assistant is not connected), with moving dots while waiting
+
 ## 1.17.0 - 2026-11-16 (beta)
 - Faster drawing with Rows and Dot matrix; routes show the destination in the heading and real train destinations
 
