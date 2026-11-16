@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.18.0 - 2026-11-16 (beta)
 - Fixed: the column heading showed boxes for some letters on a route (e.g. "Destination (to Leeds only)")
 - Clearer message while changing station: "Switching station or route", with "3 of 5" underneath
 - Help page in settings listing the touch controls; the footer says "Tap the clock for help" until settings are first opened (which opens Help)
