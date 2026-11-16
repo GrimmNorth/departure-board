@@ -11,7 +11,7 @@ You need the CrowPanel above, Home Assistant 2026.11 or newer, and the **My Rail
 1. **Flash.** Open the install page in Chrome or Edge on a computer, plug the board in by USB, click Install.
 2. **Wi-Fi.** When the install finishes the page asks for your Wi-Fi details. (Fallback: join the board's own Wi-Fi, `Departure-Board`, from a phone and pick your home network.)
 3. **Home Assistant.** Settings > Devices & services: add the discovered ESPHome device. No key needed. If it isn't discovered, use Add integration > ESPHome and enter the board's IP address (see your router).
-4. **My Rail Commute.** Install it from **Settings > Marketplace** ([open it in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&repository=my-rail-commute&category=integration)), then add your station with **10 services**.
+4. **My Rail Commute.** Install it from **Settings > Marketplace** ([open it in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&repository=my-rail-commute&category=integration)), then add your station with **10 services**. Afterwards open the station's **Configure > Disruption** settings and set **Departed train grace period** to **1 minute** (the default is 5). My Rail Commute keeps departed trains in its list for that long, and they use up places that would otherwise show upcoming trains, so with 5 minutes the board often shows only 8.
 5. **Connect them.** Use the *Import blueprint* button on the install page, then Settings > Automations & scenes > Blueprints > UK Departure Board > Create automation. Pick your board and your station, then Save. Add *More stations* if you want to switch between several. (The footer shows the station's name; type something in *Station name on the board* only if you want different wording.)
 
 Updates appear in Home Assistant as an Update button on the board's device page.
@@ -46,6 +46,7 @@ The board shows a small train icon at the bottom left (switch it off with *Show 
 
 ### Troubleshooting
 - **Board shows no trains or says it is waiting:** the automation from step 5 sends the data once a minute. Check it exists and is switched on (Settings > Automations), that you picked the right board and station, and that My Rail Commute has trains. Run the automation by hand with the three-dots menu > Run actions.
+- **Fewer than 10 trains:** set My Rail Commute's *Departed train grace period* to 1 minute (station > Configure > Disruption), as in step 4. Quiet stations can also run out of trains inside the 2-hour window My Rail Commute looks ahead, which is its maximum.
 - **One automation per board:** two automations sending to the same board make it flick between stations. Add extra stations to the one automation instead.
 - **Board says "No trains calling at ...":** a destination filter is set (common if the board was flashed over an older build). Clear it in Home Assistant under the board's "destination filter" text entity.
 - **No update appears:** the board checks for updates when it starts and then every 6 hours. Press the board's *restart* button on its device page to make it check straight away.

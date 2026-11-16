@@ -6,7 +6,9 @@ blueprint:
     UK Departure Board every minute. Pick your board and your station.
     Add more stations to switch between them: tap the station name at the bottom of the board,
     or change the board's "Station number" in Home Assistant.
-    Set up My Rail Commute with 10 services for the best result.
+    Set up My Rail Commute with 10 services for the best result, and set its
+    Departed train grace period (Configure > Disruption) to 1 minute so departed
+    trains don't take up places on the board.
     Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
