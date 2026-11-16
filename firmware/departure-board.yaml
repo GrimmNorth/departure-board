@@ -277,6 +277,15 @@ globals:
   - id: logo_tfl_ok        # custom TfL logo downloaded and ready to draw
     type: bool
     initial_value: "false"
+  - id: logo_tfl_light     # the custom TfL logo is white / light on transparent (drawn whole)
+    type: bool
+    initial_value: "false"
+  - id: upd_icon_x         # left edge of the footer update icon's tap area (-1 = not shown)
+    type: int
+    initial_value: "-1"
+  - id: upd_installing     # "Install now" pressed: the board is downloading the update
+    type: bool
+    initial_value: "false"
   - id: msg_text           # National Rail station messages, one per line; sent by the blueprint
     type: std::string
     initial_value: '""'
@@ -321,6 +330,11 @@ time:
 # Decides every 2 seconds whether the screen should be normal, dimmed for the night,
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
+  # "Install now" on the update screen: a moment to draw "Installing", then install over the internet
+  - id: fw_install
+    then:
+      - delay: 500ms
+      - lambda: 'id(fw_update).perform();'
   # Press and hold a train: its departure time is added to (or removed from) Favourite trains
   - id: fav_hold
     parameters:
@@ -510,7 +524,7 @@ touchscreen:
           }
           int x = touch.x, y = touch.y;
           id(last_fresh) = now;
-          if (id(ui_screen) == 0 || id(ui_screen) == 2 || id(ui_screen) == 3) {
+          if (id(ui_screen) == 0 || id(ui_screen) == 2 || id(ui_screen) == 3 || id(ui_screen) == 4) {
             // main screen, train details and station messages: decided when the finger lifts, so a sideways swipe can be told from a tap
             id(tap_x0) = x; id(tap_y0) = y; id(tap_xl) = x; id(tap_yl) = y;
             id(tap_pending) = true;
@@ -648,6 +662,15 @@ touchscreen:
             for (int i = 0; i < n && i < 10; i++) if (id(elig_list)[i] == id(detail_train)) cur = i;
             if (cur >= 0 && cur + d >= 0 && cur + d < n) id(detail_train) = id(elig_list)[cur + d];
           };
+          if (id(ui_screen) == 4) {
+            // update screen: "Install now" (left button) or close
+            if (!id(upd_installing) && y >= 420 && x >= 120 && x < 380 && id(fw_update).state == update::UPDATE_STATE_AVAILABLE) {
+              id(upd_installing) = true;
+              id(fw_install).execute();
+            } else if (!id(upd_installing)) id(ui_screen) = 0;
+            id(main_display).update();
+            return;
+          }
           if (id(ui_screen) == 3) {
             // station messages: swipe or tap the sides for the previous / next one, the middle closes
             auto step_msg = [](int d) { int k = id(msg_idx) + d; if (k >= 0 && k < id(msg_n)) id(msg_idx) = k; };
@@ -683,7 +706,8 @@ touchscreen:
               return;
             }
             // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
-            if (y >= 410 && id(msg_icon_x) >= 0 && x >= id(msg_icon_x) && x < id(msg_icon_x) + 64) { id(ui_screen) = 3; id(msg_idx) = 0; }
+            if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
+            else if (y >= 410 && id(msg_icon_x) >= 0 && x >= id(msg_icon_x) && x < id(msg_icon_x) + 64) { id(ui_screen) = 3; id(msg_idx) = 0; }
             else if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = id(help_seen) ? 0 : 6; id(help_seen) = true; }
             else if (y < 406) {
               // tap a train for its details
@@ -717,6 +741,12 @@ light:
     name: "Backlight"
     id: backlight
     restore_mode: ALWAYS_ON
+    on_state:
+      - lambda: |-
+          // daytime only (night / idle dimming change the backlight too): keep the Brightness slider in step
+          if (id(dim_state) != 0 || !id(backlight).current_values.is_on()) return;
+          const float pct = std::round(id(backlight).current_values.get_brightness() * 100.0f);
+          if (!id(brightness_num).has_state() || std::fabs(id(brightness_num).state - pct) >= 1.0f) id(brightness_num).publish_state(pct);
 
 font:
   - file: "gfonts://DotGothic16"
@@ -802,13 +832,33 @@ number:
     id: page_secs
     optimistic: true
     restore_value: true
-    initial_value: 10
+    initial_value: 15
     min_value: 5
     max_value: 30
     step: 1
     unit_of_measurement: "s"
     mode: box
     entity_category: config
+  - platform: template
+    name: "Brightness"
+    id: brightness_num
+    icon: mdi:brightness-6
+    min_value: 10
+    max_value: 100
+    step: 5
+    mode: slider
+    unit_of_measurement: "%"
+    optimistic: true
+    on_value:
+      - lambda: |-
+          // the daytime brightness; applied now unless the board is dimmed for the night or idle
+          id(day_brightness) = x / 100.0f;
+          if (id(dim_state) != 0 || !id(backlight).current_values.is_on()) return;
+          if (std::fabs(id(backlight).current_values.get_brightness() - x / 100.0f) < 0.005f) return;
+          auto c = id(backlight).turn_on();
+          c.set_brightness(x / 100.0f);
+          c.set_transition_length(0);
+          c.perform();
   - platform: template
     name: "Night brightness"
     id: night_level
@@ -818,7 +868,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     restore_value: true
-    initial_value: 20
+    initial_value: 30
   - platform: template
     name: "Idle dim after"
     id: idle_minutes
@@ -897,7 +947,7 @@ switch:
     name: "Pin next train"
     id: pin_next
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: RESTORE_DEFAULT_OFF
     entity_category: config
   - platform: template
     name: "Night dimming"
@@ -948,7 +998,7 @@ switch:
     name: "Disruption banner"
     id: disruption_banner
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: RESTORE_DEFAULT_OFF
   - platform: template
     name: "Focus mode"
     id: focus_mode
@@ -958,17 +1008,17 @@ switch:
     name: "Fade cancelled trains"
     id: fade_cancelled
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: RESTORE_DEFAULT_ON
   - platform: template
     name: "Column headings"
     id: col_headings
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: RESTORE_DEFAULT_ON
   - platform: template
     name: "Page animation"
     id: page_anim
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: RESTORE_DEFAULT_ON
   - platform: template
     name: "TfL line colours"
     id: tfl_colours
@@ -983,7 +1033,7 @@ switch:
     name: "Show logo"
     id: show_logo
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: RESTORE_DEFAULT_ON
   - platform: template
     name: "Demo mode"
     id: demo_mode
@@ -992,7 +1042,7 @@ switch:
 
 text:
   - platform: template
-    name: "Logo image"
+    name: "National Rail board logo image"
     id: logo_url
     mode: text
     min_length: 0
@@ -1075,7 +1125,7 @@ select:
     id: bg_style
     optimistic: true
     restore_value: true
-    initial_option: "Rows"
+    initial_option: "Dot matrix"
     options: ["Plain", "Rows", "Dot matrix"]
   - platform: template
     name: "Theme"
@@ -1106,14 +1156,14 @@ select:
     id: layout_select
     optimistic: true
     restore_value: true
-    initial_option: "Classic"
+    initial_option: "Calm"
     options: ["Classic", "Calm", "Compact"]
   - platform: template
     name: "Footer colour"
     id: footer_colour
     optimistic: true
     restore_value: true
-    initial_option: "Theme"
+    initial_option: "White"
     options: ["Theme", "White"]
   - platform: template
     name: "Font"
@@ -1801,8 +1851,8 @@ display:
             R = 2; band(R); lab(R, "Tap the clock"); val(R, amber, "These settings");
             R = 3; band(R); lab(R, "Train details"); val(R, amber, "Tap sides: prev / next");
             R = 4; band(R); lab(R, "Screen off at night"); val(R, amber, "Tap once to wake");
-            R = 5; band(R); lab(R, "Home Assistant"); val(R, amber, "More on device page");
-            R = 6; band(R); lab(R, "Orange i in footer"); val(R, amber, "Station messages");
+            R = 5; band(R); lab(R, "Orange arrow in footer"); val(R, amber, "Update ready: tap it");
+            R = 6; band(R); lab(R, "Orange i in footer"); val(R, amber, "Messages, line status");
             R = 7; band(R); lab(R, "Hold a train"); val(R, amber, "Make it a favourite");
           }
           const char *BTN[3] = {"< Back", "Next >", "Close"};
@@ -1814,6 +1864,38 @@ display:
           }
           return;
         }
+      }
+
+      // ---------------- update screen (tap the arrow in the footer) ----------------
+      if (id(ui_screen) == 4 && !id(upd_installing) &&
+          (millis() - id(last_touch_any) > 60000 || id(fw_update).state != update::UPDATE_STATE_AVAILABLE)) id(ui_screen) = 0;
+      if (id(ui_screen) == 4) {
+        font::Font *mf = id(f_row_0);
+        it.filled_rectangle(10, 4, 780, 44, band_col);
+        it.circle(34, 26, 16, orange);
+        it.circle(34, 26, 15, orange);
+        it.filled_triangle(34, 16, 26, 26, 42, 26, orange);
+        it.filled_rectangle(31, 26, 7, 10, orange);
+        it.printf(66, 26, mf, amber, TextAlign::CENTER_LEFT, "Update ready");
+        const char *nv = id(fw_update).update_info.latest_version.c_str();
+        if (id(upd_installing)) {
+          it.printf(24, 80, mf, amber, "Installing %s...", nv);
+          it.printf(24, 124, mf, amber, "The board restarts by itself when it");
+          it.printf(24, 168, mf, amber, "has finished. Please don't unplug it.");
+        } else {
+          it.printf(24, 80, mf, amber, "Version %s is ready.", nv);
+          it.printf(24, 124, mf, sub_col, "You have %s.", ESPHOME_PROJECT_VERSION);
+          it.printf(24, 190, mf, amber, "Install it now, or from Home Assistant:");
+          it.printf(24, 234, mf, amber, "Settings > Updates, or its device page.");
+          const char *BTN[2] = {"Install now", "Close"};
+          for (int b = 0; b < 2; b++) {
+            const int bx = 120 + b * 300;
+            it.filled_rectangle(bx, 426, 260, 46, band_col);
+            it.rectangle(bx, 426, 260, 46, b == 0 ? orange : amber);
+            it.printf(bx + 130, 449, mf, b == 0 ? orange : amber, TextAlign::CENTER, "%s", BTN[b]);
+          }
+        }
+        return;
       }
 
       // ---------------- station message screen (tap the "i" in the footer) ----------------
@@ -2534,7 +2616,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -2583,7 +2665,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -2756,7 +2838,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -2805,7 +2887,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -2978,7 +3060,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -3027,7 +3109,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -3200,7 +3282,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -3249,7 +3331,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -3421,7 +3503,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -3470,7 +3552,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -3642,7 +3724,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -3691,7 +3773,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -3863,7 +3945,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -3912,7 +3994,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4084,7 +4166,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -4133,7 +4215,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4305,7 +4387,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -4354,7 +4436,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4526,7 +4608,7 @@ display:
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
-            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
             const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
@@ -4575,7 +4657,7 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
             const int sh = atoi(sched.substr(0, 2).c_str());
             const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
             const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4842,7 +4924,18 @@ display:
       if (id(show_logo).state && (id(src_tfl) ? id(logo_tfl_ok) : id(logo_ok))) {
         // custom logo from Home Assistant, centred in the 56x35 logo space
         auto *lg = id(src_tfl) ? id(custom_logo_tfl) : id(custom_logo);
-        it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, footc, bg_col);
+        if (id(src_tfl)) {
+          // TfL logo in the footer colour: its coloured parts (a roundel's ring and bar) in the footer colour and
+          // its white parts (the lettering) left in the background colour; an all-white logo is drawn whole
+          const int ox = 20 + (56 - lg->get_width()) / 2, oy = fy + 4 + (35 - lg->get_height()) / 2;
+          for (int py = 0; py < lg->get_height(); py++)
+            for (int px = 0; px < lg->get_width(); px++) {
+              const Color c = lg->get_pixel(px, py);
+              if (c.w < 128) continue;                                   // transparent
+              const bool light = (c.r * 30 + c.g * 59 + c.b * 11) / 100 > 190;
+              it.draw_pixel_at(ox + px, oy + py, (light && !id(logo_tfl_light)) ? bg_col : footc);
+            }
+        } else it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, footc, bg_col);
         fx = 20 + 56 + 14;
       } else if (id(show_logo).state) {
         int lx = 20, ly = fy + 4;
@@ -4884,7 +4977,6 @@ display:
         clk_left = kbx;
         it.printf(784, fb, F_CLK[fi], amber, TextAlign::BASELINE_RIGHT, "%s", cb);
       }
-      if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE && !switching) it.filled_circle(785, fy + 8, 4, orange);   // update ready
       id(msg_icon_x) = -1;
       if (id(msg_n) > 0 && !detail && !switching) {
         const int icx = clk_left - 34, icy = fb - 11;
@@ -4901,6 +4993,17 @@ display:
         }
         id(msg_icon_x) = icx - 30;
         clk_left = icx - 20;
+      }
+      id(upd_icon_x) = -1;
+      if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE && !detail && !switching) {
+        // update ready: an up arrow in a circle, left of the clock (and of the message icon)
+        const int ucx = clk_left - 34, ucy = fb - 11;
+        it.circle(ucx, ucy, 16, orange);
+        it.circle(ucx, ucy, 15, orange);
+        it.filled_triangle(ucx, ucy - 10, ucx - 8, ucy, ucx + 8, ucy, orange);
+        it.filled_rectangle(ucx - 3, ucy, 7, 10, orange);
+        id(upd_icon_x) = ucx - 30;
+        clk_left = ucx - 20;
       }
       int info_left = clk_left;
       if (!info.empty()) {
@@ -4932,11 +5035,22 @@ image:
     id: custom_logo_tfl
     url: "http://homeassistant.local:8123/local/departure-board-tfl-logo.png"   # replaced by the TfL logo image setting
     format: PNG
-    type: BINARY
+    type: RGB565          # read in colour, drawn in the footer colour (see the logo drawing)
     transparency: chroma_key
     resize: 56x35
     buffer_size: 16384
     on_download_finished:
-      - lambda: 'id(logo_tfl_ok) = true;'
+      - lambda: |-
+          // an all-light logo (white on transparent) is drawn whole; a coloured one has its light parts cut out
+          auto *lg = id(custom_logo_tfl);
+          int dark = 0, light = 0;
+          for (int py = 0; py < lg->get_height(); py++)
+            for (int px = 0; px < lg->get_width(); px++) {
+              const Color c = lg->get_pixel(px, py);
+              if (c.w < 128) continue;
+              if ((c.r * 30 + c.g * 59 + c.b * 11) / 100 > 190) light++; else dark++;
+            }
+          id(logo_tfl_light) = dark * 10 < light;      // almost no dark pixels
+          id(logo_tfl_ok) = true;
     on_error:
       - lambda: 'id(logo_tfl_ok) = false;'

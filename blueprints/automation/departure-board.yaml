@@ -13,7 +13,7 @@ blueprint:
     trains don't take up places on the board.
     London Underground and DLR stations can be added too, from the London TfL integration (HACS):
     they count down ("Due", "3 min") and show where each train is now.
-    Use one automation per board.
+    Up to 5 stations in total. Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:
@@ -36,7 +36,9 @@ blueprint:
             - integration: my_rail_commute
     more_stations:
       name: More stations or routes (optional)
-      description: Extra stations or routes to switch between. Station 1 is the one above, then these in order.
+      description: >-
+        Extra stations or routes to switch between. Station 1 is the one above, then these in order.
+        The board takes up to 5 stations in total, including any Tube / DLR stations below.
       default: []
       selector:
         device:
@@ -48,6 +50,8 @@ blueprint:
       description: >-
         Tube or DLR stations from the London TfL integration (install it from HACS). They come after the
         stations above, in order. Pick the station's main sensor (not the "All" or "Scheduled" one).
+        Several lines at the same station (one London TfL entry each) are merged and count as one station.
+        The board takes up to 5 stations in total.
       default: []
       selector:
         entity:
