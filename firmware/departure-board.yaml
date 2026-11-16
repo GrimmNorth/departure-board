@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.15.0"
+    version: "1.13.1"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -193,6 +193,9 @@ globals:
   - id: slot_ybot          # bottom edge of each row on screen (for taps)
     type: int[10]
     initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+  - id: anim_until         # redraw quickly until this time (page animation)
+    type: uint32_t
+    initial_value: "0"
   - id: last_period        # auto station: -1 unknown, 0 before switch time, 1 after
     type: int
     initial_value: "-1"
@@ -242,6 +245,8 @@ script:
             int e = id(night_end).hour * 60 + id(night_end).minute;
             inwin = (s <= e) ? (nowm >= s && nowm < e) : (nowm >= s || nowm < e);
           }
+          if (id(night_sun).state && (id(ha_sun).state == "below_horizon" || id(ha_sun).state == "above_horizon"))
+            inwin = id(ha_sun).state == "below_horizon";
           bool night_active = id(night_dimming).state && inwin;
           bool idle_active = id(idle_minutes).state > 0 &&
                              (ms - id(last_touch_any)) > (uint32_t) (id(idle_minutes).state * 60000.0f);
@@ -273,6 +278,9 @@ script:
           c.perform();
 
 interval:
+  - interval: 40ms           # smooth page animation: redraw fast only while it runs
+    then:
+      - lambda: 'if (id(anim_until) != 0 && millis() < id(anim_until)) id(main_display).update();'
   - interval: 2s
     then:
       - script.execute: update_dim
@@ -361,8 +369,8 @@ touchscreen:
             id(ui_screen) = 0;                  // any tap closes the detail view
           } else {
             if (y >= 424) {
-              if (x < 270) id(settings_page) = (id(settings_page) + 5 - 1) % 5;   // BACK
-              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 5;    // NEXT
+              if (x < 270) id(settings_page) = (id(settings_page) + 6 - 1) % 6;   // BACK
+              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 6;    // NEXT
               else id(ui_screen) = 0;                                                  // CLOSE
             } else if (y >= 50 && y < 418) {
               int row = (y - 50) / 46;
@@ -443,10 +451,12 @@ touchscreen:
                 case 3:
                   switch (row) {
                     case 0: if (plus || minus) { float b = id(backlight).current_values.get_brightness() + (plus ? 0.1f : -0.1f); if (b < 0.1f) b = 0.1f; if (b > 1.0f) b = 1.0f; auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform(); } break;
-                    case 1: id(night_dimming).toggle(); break;
+                    case 1: if (!id(night_dimming).state) { id(night_sun).turn_off(); id(night_dimming).turn_on(); }   // Off -> Set times -> Sunset -> Off
+                            else if (!id(night_sun).state) id(night_sun).turn_on();
+                            else { id(night_sun).turn_off(); id(night_dimming).turn_off(); } break;
                     case 2: if (plus || minus) { float v = id(night_level).state + (plus ? 5 : -5); if (v < 1) v = 1; if (v > 100) v = 100; auto c = id(night_level).make_call(); c.set_value(v); c.perform(); } break;
-                    case 3: if (plus || minus) { int h = (id(night_start).hour + (plus ? 1 : 23)) % 24; auto c = id(night_start).make_call(); c.set_time(h, id(night_start).minute, 0); c.perform(); } break;
-                    case 4: if (plus || minus) { int h = (id(night_end).hour + (plus ? 1 : 23)) % 24; auto c = id(night_end).make_call(); c.set_time(h, id(night_end).minute, 0); c.perform(); } break;
+                    case 3: if (id(night_dimming).state && id(night_sun).state) break; if (plus || minus) { int h = (id(night_start).hour + (plus ? 1 : 23)) % 24; auto c = id(night_start).make_call(); c.set_time(h, id(night_start).minute, 0); c.perform(); } break;
+                    case 4: if (id(night_dimming).state && id(night_sun).state) break; if (plus || minus) { int h = (id(night_end).hour + (plus ? 1 : 23)) % 24; auto c = id(night_end).make_call(); c.set_time(h, id(night_end).minute, 0); c.perform(); } break;
                     case 5: id(night_screen_off).toggle(); break;
                     case 6: if (plus || minus) { float v = id(idle_minutes).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(idle_minutes).make_call(); c.set_value(v); c.perform(); } break;
                     case 7: if (plus || minus) { float v = id(idle_level).state + (plus ? 5 : -5); if (v < 5) v = 5; if (v > 100) v = 100; auto c = id(idle_level).make_call(); c.set_value(v); c.perform(); } break;
@@ -454,7 +464,12 @@ touchscreen:
                   break;
                 case 4:
                   switch (row) {
+                    case 0: id(fade_cancelled).toggle(); break;
+                    case 1: id(col_headings).toggle(); break;
+                    case 2: id(page_anim).toggle(); break;
                   }
+                  break;
+                case 5:
                   break;
               }
             }
@@ -497,6 +512,10 @@ font:
     id: f_big_0
     size: 144
     glyphs: "0123456789: apmDueinh"
+  - file: "gfonts://DotGothic16"
+    id: f_hdr_0
+    size: 16
+    glyphs: "TDEPaeilmnopstx "
 
 color:
   - id: band_col
@@ -720,6 +739,26 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF   # on = one big view of just the next train
   - platform: template
+    name: "Fade cancelled trains"
+    id: fade_cancelled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Column headings"
+    id: col_headings
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Page animation"
+    id: page_anim
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
+    name: "Night follows sun"
+    id: night_sun
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
     name: "Show logo"
     id: show_logo
     optimistic: true
@@ -848,6 +887,10 @@ select:
     options: ["DotGothic"]
 
 text_sensor:
+  - platform: homeassistant
+    id: ha_sun
+    entity_id: sun.sun
+    internal: true
   - platform: template
     id: station_ts
     internal: true
@@ -1424,12 +1467,12 @@ display:
           char buf[40];
           const bool wifi_ok = wifi::global_wifi_component->is_connected();
           const bool api_ok = api::global_api_server->is_connected();
-          static const char *PAGE_NAMES[5] = {"Display", "Trains", "Extras", "Screen", "Status"};
+          static const char *PAGE_NAMES[6] = {"Display", "Trains", "Extras", "Screen", "Style", "Status"};
           it.printf(20, 25, id(f_row_0), hilite, TextAlign::CENTER_LEFT, "Settings");
           { int hx, hy, hw, hh; it.get_text_bounds(20, 25, "Settings", id(f_row_0), TextAlign::CENTER_LEFT, &hx, &hy, &hw, &hh);
             it.printf(20 + hw + 24, 25, id(f_row_0), amber, TextAlign::CENTER_LEFT, "%s", PAGE_NAMES[id(settings_page)]); }
-          for (int d = 0; d < 5; d++) {                         // page dots
-            int dx = 776 - (5 - 1 - d) * 24;
+          for (int d = 0; d < 6; d++) {                         // page dots
+            int dx = 776 - (6 - 1 - d) * 24;
             if (d == id(settings_page)) it.filled_circle(dx, 25, 7, hilite); else it.circle(dx, 25, 6, grey);
           }
           if (id(settings_page) == 0) {
@@ -1462,15 +1505,20 @@ display:
           }
           else if (id(settings_page) == 3) {
             R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
-            R = 1; band(R); lab(R, "Night dimming"); onoff(R, id(night_dimming).state);
+            R = 1; band(R); lab(R, "Night dimming"); if (!id(night_dimming).state) val(R, grey, "Off"); else cyc(R, id(night_sun).state ? "Sunset" : "Set times");
             R = 2; band(R); lab(R, "Night brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(night_level).state); pm(R, buf);
-            R = 3; band(R); lab(R, "Night starts"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf);
-            R = 4; band(R); lab(R, "Night ends"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf);
+            R = 3; band(R); lab(R, "Night starts"); if (id(night_dimming).state && id(night_sun).state) val(R, grey, "Sunset"); else { snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf); }
+            R = 4; band(R); lab(R, "Night ends"); if (id(night_dimming).state && id(night_sun).state) val(R, grey, "Sunrise"); else { snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf); }
             R = 5; band(R); lab(R, "Night screen off"); onoff(R, id(night_screen_off).state);
             R = 6; band(R); lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
             R = 7; band(R); lab(R, "Idle brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(idle_level).state); pm(R, buf);
           }
           else if (id(settings_page) == 4) {
+            R = 0; band(R); lab(R, "Fade cancelled"); onoff(R, id(fade_cancelled).state);
+            R = 1; band(R); lab(R, "Column headings"); onoff(R, id(col_headings).state);
+            R = 2; band(R); lab(R, "Page animation"); onoff(R, id(page_anim).state);
+          }
+          else if (id(settings_page) == 5) {
             R = 0; band(R); lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
             R = 1; band(R); lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
             R = 2; band(R); lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "Connected" : "Offline");
@@ -1497,7 +1545,8 @@ display:
       if (count < 3) count = 3;
       if (count > 5) count = 5;
       if (L && count > 4) count = 4;            // large text only has room for 4 trains
-      const int H = 406 / count;                // pixel height of one train (two lines)
+      const int HDR = id(col_headings).state ? 26 : 0;   // room for column headings
+      const int H = (406 - HDR) / count;                // pixel height of one train (two lines)
       const int fi = 0;   // one font
       static std::map<std::string, uint32_t> pchg_seen;   // when each platform change was first shown
       font::Font *F_ROW[] = {id(f_row_0)};
@@ -1566,25 +1615,31 @@ display:
         pages = pin ? (elig_prev - 1 + per - 1) / per : (elig_prev + per - 1) / per;
       // ---- layout: 0 Classic, 1 Calm (only the first train scrolls), 2 Compact (one line per train) ----
       const int lay = id(layout_select).active_index().value_or(0);
+      // softer version of the main colour for second lines (70% text, 30% band); High contrast keeps full strength
+      const bool hi_con = id(theme_select).active_index().value_or(0) == 4;
+      const Color cxl_col = Color((amber.r * 45 + band_col.r * 55) / 100, (amber.g * 45 + band_col.g * 55) / 100, (amber.b * 45 + band_col.b * 55) / 100);
+      const Color sub_col = hi_con ? amber : Color((amber.r * 7 + band_col.r * 3) / 10, (amber.g * 7 + band_col.g * 3) / 10, (amber.b * 7 + band_col.b * 3) / 10);
       static std::vector<uint8_t> cmp_tall(10, 0);           // last frame: train needs a reason line
       std::vector<uint8_t> cmp_tall_now(10, 0);
       int cmp_page[10], cmp_y[10], cmp_ry[10], cmp_bot[10];
-      for (int i = 0; i < 10; i++) { cmp_page[i] = -1; cmp_y[i] = -1; cmp_ry[i] = -1; cmp_bot[i] = 0; }
+      const int C_NONE = -10000;                             // "no row" (real text tops can be slightly negative)
+      for (int i = 0; i < 10; i++) { cmp_page[i] = -1; cmp_y[i] = C_NONE; cmp_ry[i] = C_NONE; cmp_bot[i] = 0; }
       const int C_ROWB = (rB - rT) + 4;                      // band of a one-line row (letters + 2 px each side)
       const int C_SUBB = (sB - sT) + 4;                      // band of a reason line
-      const int C_Y0 = 6 + 4 - rT;                           // first train: top of its main line
+      const int C_Y0 = 6 + HDR + 4 - rT;                     // first train: top of its main line
       const int C_TOP = C_Y0 + SUBOFF + sB + 2 + 8;          // first one-line row, below the first train's band
       const int C_BOT = 412;                                 // the footer band starts at 419
       if (lay == 2 && view == 0 && !detail) {
         // the next train stays at the top; the others fill pages underneath it
-        int p = 0, used = 0;
-        for (int i = 1; i < elig_prev && i < 10; i++) {
+        int p = 0, used = 0, last = 0;
+        for (int i = 1; i < 10; i++) {
           int h = C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0);
           if (used > 0 && used + h > C_BOT - C_TOP) { p++; used = 0; }
           cmp_page[i] = p;
           used += h + 6;
+          if (i < elig_prev) last = p;
         }
-        pages = id(paging_on).state ? p + 1 : 1;
+        pages = id(paging_on).state ? last + 1 : 1;
       }
       const uint32_t page_ms = (uint32_t) (id(page_secs).state * 1000.0f);
       const int page = pages > 1 ? (int) ((millis() / page_ms) % pages) : 0;
@@ -1593,12 +1648,14 @@ display:
         cmp_y[0] = C_Y0;
         cmp_bot[0] = C_TOP - 4;
         int n = 0, sum = 0;
-        for (int i = 1; i < 10; i++) if (cmp_page[i] == page) { n++; sum += C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0); }
+        for (int i = 1; i < 10 && i < elig_prev; i++) if (cmp_page[i] == page) { n++; sum += C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0); }
         int gap = n > 0 ? (C_BOT - C_TOP - sum) / n : 0;   // spread the rows down the screen
         gap = std::max(6, std::min(gap, 14));
         int cy = C_TOP;
         for (int i = 1; i < 10; i++) {
           if (cmp_page[i] != page) continue;
+          int h = C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0);
+          if (cy + h > C_BOT) break;                          // no room left on this page
           cmp_y[i] = cy + 2 - rT;
           cy += C_ROWB;
           if (cmp_tall[i]) { cmp_ry[i] = cy + 1 + 2 - sT; cy += 1 + C_SUBB; }
@@ -1606,6 +1663,14 @@ display:
           cy += gap;
         }
       }
+      static int anim_page = -1;
+      static uint32_t anim_t0 = 0;
+      if (view == 0 && !detail && pages > 1 && page != anim_page) {
+        if (anim_page >= 0 && id(page_anim).state) { anim_t0 = millis(); id(anim_until) = anim_t0 + 300 + 60 * 9; }
+        anim_page = page;
+      }
+      if (pages <= 1) anim_page = -1;
+      const bool anim_active = view == 0 && !detail && anim_t0 != 0 && millis() - anim_t0 < 300 + 60 * 9;
       auto cmp_bands = [&]() {
         // first train: main and sub line bands, as in Classic
         int mt = C_Y0 + rT - 2, mb = C_Y0 + rB + 2, st = C_Y0 + SUBOFF + sT - 2, sb = C_Y0 + SUBOFF + sB + 2;
@@ -1613,9 +1678,9 @@ display:
         it.filled_rectangle(10, mt, 780, mb - mt, band_col);
         it.filled_rectangle(10, st, 780, sb - st, band_col);
         for (int i = 1; i < 10; i++) {
-          if (cmp_y[i] < 0) continue;
+          if (cmp_y[i] == C_NONE || i >= elig_prev) continue;
           it.filled_rectangle(10, cmp_y[i] + rT - 2, 780, C_ROWB, band_col);
-          if (cmp_ry[i] >= 0) it.filled_rectangle(10, cmp_ry[i] + sT - 2, 780, C_SUBB, band_col);
+          if (cmp_ry[i] != C_NONE) it.filled_rectangle(10, cmp_ry[i] + sT - 2, 780, C_SUBB, band_col);
         }
       };
       auto on_page = [&](int i) {
@@ -1638,13 +1703,13 @@ display:
         };
         if (lay == 2) cmp_bands();
         else for (int s = 0; s < count; s++) {
-          int y = 6 + s * H + pad;
+          int y = 6 + HDR + s * H + pad;
           int mt, mb, st, sb;
           ink(fr, y, mt, mb);
           ink(fs, y + SUBOFF, st, sb);
           if (mb > st - 3) { int mid = (mb + st) / 2; mb = mid - 1; st = mid + 2; }   // thin gap between the two lines
           // the bands fill the train's slot, leaving a 3 px gap to the next train
-          int top = 6 + s * H + 1, bottom = std::min(6 + (s + 1) * H - 2, 411);
+          int top = 6 + HDR + s * H + 1, bottom = std::min(6 + HDR + (s + 1) * H - 2, 411);
           mt = std::min(mt, top);
           sb = std::max(sb, bottom);
           it.filled_rectangle(10, mt, 780, mb - mt, band_col);
@@ -2023,6 +2088,14 @@ display:
         }
       };
 
+      if (HDR > 0 && view == 0 && !detail) {
+        font::Font *fh = id(f_hdr_0);
+        it.printf(TX, 9, fh, sub_col, "Time");
+        it.printf(DX, 9, fh, sub_col, "Destination");
+        if (id(show_platform).state) it.printf(PX, 9, fh, sub_col, TextAlign::TOP_RIGHT, "Plat");
+        it.printf(784, 9, fh, sub_col, TextAlign::TOP_RIGHT, "Expt");
+        it.filled_rectangle(10, 6 + HDR - 4, 780, 2, band_col);
+      }
       // ---- train 1 ----
       {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
@@ -2047,13 +2120,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(1, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 1;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2087,7 +2173,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2096,13 +2182,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -2151,16 +2239,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2173,6 +2261,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -2203,13 +2292,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(2, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 2;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2243,7 +2345,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2252,13 +2354,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -2307,16 +2411,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2329,6 +2433,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -2359,13 +2464,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(3, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 3;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2399,7 +2517,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2408,13 +2526,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -2463,16 +2583,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2485,6 +2605,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -2515,13 +2636,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(4, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 4;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2555,7 +2689,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2564,13 +2698,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -2619,16 +2755,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2641,6 +2777,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -2670,13 +2807,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(5, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 5;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2710,7 +2860,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2719,13 +2869,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -2774,16 +2926,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2796,6 +2948,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -2825,13 +2978,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(6, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 6;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -2865,7 +3031,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2874,13 +3040,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -2929,16 +3097,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -2951,6 +3119,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -2980,13 +3149,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(7, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 7;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3020,7 +3202,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3029,13 +3211,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -3084,16 +3268,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3106,6 +3290,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -3135,13 +3320,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(8, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 8;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3175,7 +3373,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3184,13 +3382,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -3239,16 +3439,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3261,6 +3461,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -3290,13 +3491,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(9, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 9;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3330,7 +3544,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3339,13 +3553,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -3394,16 +3610,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3416,6 +3632,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
@@ -3445,13 +3662,26 @@ display:
             }
           } else if (view != 0) {
             focus_add(10, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 10;
-          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
-          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + HDR + slot * H + pad;
+          // page animation: the text slides up into its row, one row after another (the pinned top train stays)
+          int aoff = 0;
+          const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
+            int el = (int) (millis() - anim_t0) - 60 * slot;
+            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            p = 1.f - (1.f - p) * (1.f - p);
+            aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
+          }
+          y += aoff;
+          if (aoff > 0) it.start_clipping(0, arow_top, 800, id(slot_ybot)[slot]);
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
+          Color c0s = soon ? grey : sub_col;
+          if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
@@ -3485,7 +3715,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3494,13 +3724,15 @@ display:
               msg = reason;                                   // the time column already shows the delay
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
+              mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
-            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
+            if (aoff > 0) it.end_clipping();
             slot++;
           } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
@@ -3549,16 +3781,16 @@ display:
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
                 it.printf(x, sy, fs, rc, "%s", l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0, "%s", l2.c_str());
+              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0, "%s", tail.c_str());
+              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0, "%s", pre.c_str());
+              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
               it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0, "%s", post.c_str());
+              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3571,6 +3803,7 @@ display:
             drawsub(DX - off + cyc);
           }
           it.end_clipping();
+          if (aoff > 0) it.end_clipping();
           slot++;
           }
           }
