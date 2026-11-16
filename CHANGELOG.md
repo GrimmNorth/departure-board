@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2.0.2 - 2026-11-16 (beta)
+- Demo boards, screenshots, Tube detail page
+
+## 2.0.2 - 2026-11-16 (beta)
 - Train details: the column headings show here too (when they are on)
 - Tube train details: the countdown or "Arriving", the line colour, where the train is now, the next two trains from the same platform and the line's status ("Good service" or the delay)
 - Demo mode is now a choice: Off, National Rail (a made-up York board showing every feature) or London Underground (a made-up Green Park board). Home Assistant's data waits while it is on
