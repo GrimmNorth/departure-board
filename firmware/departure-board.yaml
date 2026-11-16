@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.14.0"
+    version: "1.13.1"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1662,121 +1662,151 @@ display:
           it.printf(400, 350, F_SUB[fi], sc, TextAlign::CENTER, "%s", l2.c_str());
           return;
         }
-        int bx, by, bw, bh;
         auto width = [&](const std::string &s, font::Font *f) {
           if (s.empty()) return 0;
           int x0, y0, w0, h0;
           it.get_text_bounds(0, 0, s.c_str(), f, TextAlign::TOP_LEFT, &x0, &y0, &w0, &h0);
           return w0;
         };
+        // everything below is placed by the letters' own height (ink), so bands hug the text like the list
+        auto band_at = [&](font::Font *f, int ytop) { int t, b; ink_of(f, t, b); fband(ytop + t - 5, b - t + 10); };
         // line 1: "1st  13:52  Hull" on a band, the ordinal in grey
         {
           font::Font *f = F_ROWL[fi];
+          int t, b;
+          ink_of(f, t, b);
+          const int ytop = 44 - (t + b) / 2;
           const std::string ord = "1st  ";
           std::string rest = sched + "  ";
           const int wo = width(ord, f), wr = width(rest, f);
           fit(dest, f, 760 - wo - wr);
           rest += dest;
           const int w = wo + width(rest, f);
-          it.get_text_bounds(400, 45, rest.c_str(), f, TextAlign::CENTER, &bx, &by, &bw, &bh);
-          fband(by - 2, bh + 4);
+          band_at(f, ytop);
           const int x0 = 400 - w / 2;
-          it.printf(x0, 45, f, grey, TextAlign::CENTER_LEFT, "%s", ord.c_str());
-          it.printf(x0 + wo, 45, f, amber, TextAlign::CENTER_LEFT, "%s", rest.c_str());
+          it.printf(x0, ytop, f, grey, TextAlign::TOP_LEFT, "%s", ord.c_str());
+          it.printf(x0 + wo, ytop, f, amber, TextAlign::TOP_LEFT, "%s", rest.c_str());
         }
         // the countdown
         if (cancelled) {
-          it.printf(400, 180, F_ROWL[fi], red, TextAlign::CENTER, "Cancelled");
+          it.printf(400, 165, F_ROWL[fi], red, TextAlign::CENTER, "Cancelled");
         } else {
           char cb[24];
           if (mins < 0) snprintf(cb, sizeof(cb), "--");
           else if (mins <= 1) snprintf(cb, sizeof(cb), "Due");
           else if (mins < 60) snprintf(cb, sizeof(cb), "%d min", mins);
           else snprintf(cb, sizeof(cb), "%dh %02dm", mins / 60, mins % 60);
-          it.printf(400, 180, F_BIG[fi], sc, TextAlign::CENTER, "%s", cb);
+          it.printf(400, 165, F_BIG[fi], sc, TextAlign::CENTER, "%s", cb);
         }
-        int y = 274;
-        // status: "On time", "Delayed 4 min - expt 13:56", "Cancelled"
-        {
-          std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
-          if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
-          if (late && departure::valid(exp) && exp.find(':') != std::string::npos) st += " - expt " + exp;
-          fit(st, F_ROW[fi], 760);
-          it.printf(400, y, F_ROW[fi], sc, TextAlign::CENTER, "%s", st.c_str());
-          y += 38;
+
+        // the lines under the countdown: status, reason (if any), platform/operator
+        font::Font *fs2 = F_SUB[fi];
+        font::Font *fr2 = F_ROW[fi];
+        int sT, sB, rT, rB;
+        ink_of(fs2, sT, sB);
+        ink_of(fr2, rT, rB);
+        std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
+        if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
+        if (late && departure::valid(exp) && exp.find(':') != std::string::npos) st += " - expt " + exp;
+        fit(st, fr2, 760);
+        const bool has_reason = departure::valid(t.reason) && (late || cancelled);
+        std::string pl;
+        if (!cancelled && bus) pl = "Replacement bus";
+        else if (!cancelled && departure::valid(plat)) {
+          pl = "Platform " + plat;
+          if (departure::truthy(t.pchg) && departure::valid(t.pprev) && t.pprev != plat) pl += " (was " + t.pprev + ")";
         }
-        // reason, scrolling when it is too long to fit
-        if (departure::valid(t.reason) && (late || cancelled)) {
-          font::Font *f = F_SUB[fi];
+        const bool changed = !pl.empty() && !bus && departure::truthy(t.pchg);
+        std::string op = departure::valid(t.oper) ? t.oper : std::string("");
+        const bool has_pl = !pl.empty() || !op.empty();
+
+        // the strip of following trains sits at the bottom, just above the footer
+        const int strip_top = 410 - sB;                       // ink bottom at 410; the footer band starts at 419
+        const int area_bot = (t2 != nullptr) ? strip_top + sT - 5 - 6 : 410;
+        const int area_top = 244;
+        const int gap = 12;
+        const int hr = rB - rT, hs = sB - sT;
+        const int n_sub = (has_reason ? 1 : 0) + (has_pl ? 1 : 0);
+        const int block = hr + n_sub * (gap + hs);
+        int ink_y = area_top + std::max(0, (area_bot - area_top - block) / 2);   // ink top of the first line
+
+        it.printf(400, ink_y - rT, fr2, sc, TextAlign::TOP_CENTER, "%s", st.c_str());
+        ink_y += hr + gap;
+        if (has_reason) {
           std::string rs = t.reason;
-          int rw = width(rs, f);
+          const int ytop = ink_y - sT;
+          const int rw = width(rs, fs2);
           if (rw <= 760) {
-            it.printf(400, y, f, sc, TextAlign::CENTER, "%s", rs.c_str());
+            it.printf(400, ytop, fs2, sc, TextAlign::TOP_CENTER, "%s", rs.c_str());
           } else if (!id(scroll_enabled).state) {
-            fit(rs, f, 760);
-            it.printf(400, y, f, sc, TextAlign::CENTER, "%s", rs.c_str());
+            fit(rs, fs2, 760);
+            it.printf(400, ytop, fs2, sc, TextAlign::TOP_CENTER, "%s", rs.c_str());
           } else {
-            it.get_text_bounds(20, y, rs.c_str(), f, TextAlign::CENTER_LEFT, &bx, &by, &bw, &bh);
             const int cyc = rw + 120;
             const int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
-            it.start_clipping(20, by - 2, 780, by + bh + 2);
-            it.printf(20 - off, y, f, sc, TextAlign::CENTER_LEFT, "%s", rs.c_str());
-            it.printf(20 - off + cyc, y, f, sc, TextAlign::CENTER_LEFT, "%s", rs.c_str());
+            it.start_clipping(20, ytop + sT - 3, 780, ytop + sB + 3);
+            it.printf(20 - off, ytop, fs2, sc, TextAlign::TOP_LEFT, "%s", rs.c_str());
+            it.printf(20 - off + cyc, ytop, fs2, sc, TextAlign::TOP_LEFT, "%s", rs.c_str());
             it.end_clipping();
           }
-          y += 38;
+          ink_y += hs + gap;
         }
-        // platform (orange when it has changed) and operator
-        {
-          font::Font *f = F_SUB[fi];
-          std::string pl;
-          if (!cancelled && bus) pl = "Replacement bus";
-          else if (!cancelled && departure::valid(plat)) {
-            pl = "Platform " + plat;
-            if (departure::truthy(t.pchg) && departure::valid(t.pprev) && t.pprev != plat) pl += " (was " + t.pprev + ")";
-          }
-          const bool changed = !pl.empty() && !bus && departure::truthy(t.pchg);
-          std::string op = departure::valid(t.oper) ? t.oper : std::string("");
-          std::string gap = (!pl.empty() && !op.empty()) ? "   " : "";
-          fit(op, f, 760 - width(pl + gap, f));
-          const int w = width(pl + gap, f) + width(op, f);
-          if (w > 0) {
-            const int x0 = 400 - w / 2;
-            if (!pl.empty()) it.printf(x0, y, f, changed ? orange : amber, TextAlign::CENTER_LEFT, "%s", pl.c_str());
-            if (!op.empty()) it.printf(x0 + width(pl + gap, f), y, f, amber, TextAlign::CENTER_LEFT, "%s", op.c_str());
-          }
+        if (has_pl) {
+          const int ytop = ink_y - sT;
+          std::string sep = (!pl.empty() && !op.empty()) ? "   " : "";
+          fit(op, fs2, 760 - width(pl + sep, fs2));
+          const int wp = width(pl + sep, fs2);
+          const int x0 = 400 - (wp + width(op, fs2)) / 2;
+          if (!pl.empty()) it.printf(x0, ytop, fs2, changed ? orange : amber, TextAlign::TOP_LEFT, "%s", pl.c_str());
+          if (!op.empty()) it.printf(x0 + wp, ytop, fs2, amber, TextAlign::TOP_LEFT, "%s", op.c_str());
         }
+
         // the 2nd and 3rd trains, on a band above the footer
         if (t2 != nullptr) {
-          font::Font *f = F_SUB[fi];
-          const int sy = 395;
           const FocusTrain *nx[2] = {t2, t3};
           const char *ords[2] = {"2nd ", "3rd "};
-          std::string txt[2];
-          int wo[2] = {0, 0}, wt[2] = {0, 0};
-          const std::string sep = "    ";
-          const int ws = width(sep, f);
-          const int half = (t3 != nullptr) ? (760 - ws) / 2 : 760;
+          const std::string sep = "   ";
+          const int ws = (t3 != nullptr) ? width(sep, fs2) : 0;
+          std::string head[2], dst[2];
+          int wo[2] = {0, 0}, wh[2] = {0, 0}, wd[2] = {0, 0};
+          int fixed = ws;
           for (int k = 0; k < 2; k++) {
             if (nx[k] == nullptr) continue;
-            std::string d = departure::destination(nx[k]->calls, 40);
-            txt[k] = nx[k]->sched + " ";
-            wo[k] = width(ords[k], f);
-            fit(d, f, half - wo[k] - width(txt[k], f));
-            txt[k] += d;
-            wt[k] = width(txt[k], f);
+            head[k] = nx[k]->sched + " ";
+            dst[k] = departure::destination(nx[k]->calls, 40);
+            wo[k] = width(ords[k], fs2);
+            wh[k] = width(head[k], fs2);
+            wd[k] = width(dst[k], fs2);
+            fixed += wo[k] + wh[k];
           }
-          const int w = wo[0] + wt[0] + (t3 != nullptr ? ws + wo[1] + wt[1] : 0);
-          it.get_text_bounds(400, sy, txt[0].c_str(), f, TextAlign::CENTER, &bx, &by, &bw, &bh);
-          fband(by - 2, bh + 4);
+          // share the room: a short destination leaves the rest for a long one
+          const int avail = 760 - fixed;
+          int cap[2] = {avail, 0};
+          if (t3 != nullptr) {
+            if (wd[0] + wd[1] <= avail) { cap[0] = wd[0]; cap[1] = wd[1]; }
+            else if (wd[0] <= avail / 2) { cap[0] = wd[0]; cap[1] = avail - wd[0]; }
+            else if (wd[1] <= avail / 2) { cap[1] = wd[1]; cap[0] = avail - wd[1]; }
+            else { cap[0] = avail / 2; cap[1] = avail - avail / 2; }
+          }
+          int w = ws;
+          for (int k = 0; k < 2; k++) {
+            if (nx[k] == nullptr) continue;
+            fit(dst[k], fs2, cap[k]);
+            wd[k] = width(dst[k], fs2);
+            w += wo[k] + wh[k] + wd[k];
+          }
+          band_at(fs2, strip_top);
           int x = 400 - w / 2;
           for (int k = 0; k < 2; k++) {
             if (nx[k] == nullptr) continue;
             if (k == 1) x += ws;
-            it.printf(x, sy, f, grey, TextAlign::CENTER_LEFT, "%s", ords[k]);
+            it.printf(x, strip_top, fs2, grey, TextAlign::TOP_LEFT, "%s", ords[k]);
             x += wo[k];
-            it.printf(x, sy, f, nx[k]->cancelled ? red : amber, TextAlign::CENTER_LEFT, "%s", txt[k].c_str());
-            x += wt[k];
+            const Color c = nx[k]->cancelled ? red : amber;
+            it.printf(x, strip_top, fs2, c, TextAlign::TOP_LEFT, "%s", head[k].c_str());
+            x += wh[k];
+            it.printf(x, strip_top, fs2, c, TextAlign::TOP_LEFT, "%s", dst[k].c_str());
+            x += wd[k];
           }
         }
       };
