@@ -89,6 +89,9 @@ variables:
   origin_name: "{% set v = state_attr(status_ent, 'origin_name') if status_ent != '' else none %}{{ v if v else '' }}"
   route_to: "{% set v = state_attr(status_ent, 'destination_name') if status_ent != '' else none %}{{ v if v else '' }}"
   all_trains: "{% set v = state_attr(summary_ent, 'all_trains') if summary_ent != '' else none %}{{ v if v is list else [] }}"
+  # National Rail station messages (engineering works, strikes...), one per line, without the web links
+  messages: >-
+    {% set ns = namespace(out=[]) %}{% set raw = state_attr(summary_ent, 'nrcc_messages') if summary_ent != '' else none %}{% for m in (raw if raw is list else []) %}{% if m is mapping %}{% set v = m.get('Value', m.get('value', '')) %}{% else %}{% set v = m %}{% endif %}{% set v = (v | string) | regex_replace('<[^>]*>', '') | replace('&amp;', '&') | replace('&quot;', '"') | replace('&#39;', "'") | replace('&lt;', '<') | replace('&gt;', '>') | replace('&nbsp;', ' ') | regex_replace('[‘’]', "'") | regex_replace('[“”]', '"') | regex_replace('[–—]', '-') | regex_replace('[^\x20-\x7E]', ' ') | regex_replace('\s+', ' ') | trim | truncate(400, true, '...') %}{% if v %}{% set ns.out = ns.out + [v] %}{% endif %}{% endfor %}{{ ns.out | join('\n') }}
 
 actions:
   - action: "esphome.{{ svc }}_update_status"
@@ -107,6 +110,14 @@ actions:
         continue_on_error: true
         data:
           to: "{{ route_to }}"
+  # station messages for the "i" in the footer. Only boards with a "Station messages" sensor have this action.
+  - if:
+      - "{{ device_entities(board_id) | select('search', '_station_messages$') | list | count > 0 }}"
+    then:
+      - action: "esphome.{{ svc }}_update_messages"
+        continue_on_error: true
+        data:
+          msgs: "{{ messages }}"
   - repeat:
       for_each: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
       sequence:
