@@ -64,6 +64,10 @@ The board shows a small railway track logo at the bottom left (switch it off wit
 
 Tube and DLR stations show a tunnel logo instead. To use your own logo for those (a roundel, say), set **TfL board logo image** the same way; the board switches between the two logos as you change station. It is drawn in the footer colour like the National Rail one, but a normal coloured logo works too: its coloured parts (a roundel's ring and bar) are drawn in the footer colour and its white parts (the lettering) are cut out. Keep the background transparent.
 
+### Demo boards and screenshots
+- **Demo mode** (in Home Assistant): *National Rail* shows a made-up York board with a delayed train, a cancellation, a platform change and a station message; *London Underground* shows a made-up Green Park board with three lines, an arriving train and a line status message. The times move with the clock, and data from Home Assistant waits until you set it back to *Off*, when your own trains return straight away. Handy for trying themes and layouts, or for showing the board off.
+- **Screenshots:** open `http://<your board's IP address>/screenshot.bmp` in a browser on your network for an exact copy of what is on the screen (the address is on the board's *Screenshot* sensor in Home Assistant). Better than a photo for sharing or reporting a problem.
+
 ### Troubleshooting
 - **Board shows no trains or says it is waiting:** the automation from step 5 sends the data once a minute. Check it exists and is switched on (Settings > Automations), that you picked the right board and station, and that My Rail Commute has trains. Run the automation by hand with the three-dots menu > Run actions.
 - **Fewer than 10 trains:** set My Rail Commute's *Departed train grace period* to 1 minute (station > Configure > Disruption), as in step 4. Quiet stations can also run out of trains inside the 2-hour window My Rail Commute looks ahead, which is its maximum.

@@ -58,6 +58,7 @@ api:
         msgs: string
       then:
         - lambda: |-
+            if (id(demo_kind) != 0) return;   // a demo board is showing
             if (id(msg_text) == msgs && id(msg_count_s).has_state()) return;
             int n = 0;
             bool any = false;
@@ -78,6 +79,7 @@ api:
         kind: string
       then:
         - lambda: |-
+            if (id(demo_kind) != 0) return;   // a demo board is showing
             const bool t = (kind == "tfl");
             if (t != id(src_tfl) || !id(src_ts).has_state()) {
               id(src_tfl) = t;
@@ -89,6 +91,7 @@ api:
         to: string
       then:
         - lambda: |-
+            if (id(demo_kind) != 0) return;   // a demo board is showing
             if (id(route_to) != to || !id(route_ts).has_state()) { id(route_to) = to; id(route_ts).publish_state(to); }
     # Called by the Home Assistant blueprint (about once a minute).
     - action: update_status
@@ -97,6 +100,7 @@ api:
         status: string
       then:
         - lambda: |-
+            if (id(demo_kind) != 0) return;   // a demo board is showing
             id(station_ts).publish_state(station);
             id(stn_status).publish_state(status);
             id(data_ms_stn) = millis();
@@ -119,6 +123,7 @@ api:
         calls: string[]
       then:
         - lambda: |-
+            if (id(demo_kind) != 0) return;   // a demo board is showing
             std::string cp = "[";
             for (size_t i = 0; i < calls.size(); i++) { if (i) cp += ", "; cp += "\"" + calls[i] + "\""; }
             cp += "]";
@@ -286,6 +291,9 @@ globals:
   - id: upd_installing     # "Install now" pressed: the board is downloading the update
     type: bool
     initial_value: "false"
+  - id: demo_kind          # demo board: 0 off, 1 National Rail (York), 2 London Underground (Green Park)
+    type: int
+    initial_value: "0"
   - id: msg_text           # National Rail station messages, one per line; sent by the blueprint
     type: std::string
     initial_value: '""'
@@ -330,6 +338,60 @@ time:
 # Decides every 2 seconds whether the screen should be normal, dimmed for the night,
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
+  # fills the board with a made-up station, every train's time counted from now
+  - id: demo_fill
+    then:
+      - lambda: |-
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) return;
+          const int nowmin = now.hour * 60 + now.minute;
+          auto hm = [&](int off) { int m = ((nowmin + off) % 1440 + 1440) % 1440; char b[6]; snprintf(b, sizeof(b), "%02d:%02d", m / 60, m % 60); return std::string(b); };
+          auto pub = [&](int n, const std::string &sched, const std::string &expct, const std::string &plat, const std::string &pchg,
+                         const std::string &stat, const std::string &dr, const std::string &cr, const std::string &oper, const std::string &dm,
+                         const std::string &pprev, const std::string &stops, const std::string &cp) {
+            switch (n) { case 1: id(stn_t1_scheduled_departure).publish_state(sched); id(stn_t1_expected_departure).publish_state(expct); id(stn_t1_platform).publish_state(plat); id(stn_t1_platform_changed).publish_state(pchg); id(stn_t1_status).publish_state(stat); id(stn_t1_delay_reason).publish_state(dr); id(stn_t1_cancellation_reason).publish_state(cr); id(stn_t1_operator).publish_state(oper); id(stn_t1_delay_minutes).publish_state(dm); id(stn_t1_scheduled_arrival).publish_state(std::string()); id(stn_t1_estimated_arrival).publish_state(std::string()); id(stn_t1_previous_platform).publish_state(pprev); id(stn_t1_stops).publish_state(stops); id(stn_t1_calling_points).publish_state(cp); break; case 2: id(stn_t2_scheduled_departure).publish_state(sched); id(stn_t2_expected_departure).publish_state(expct); id(stn_t2_platform).publish_state(plat); id(stn_t2_platform_changed).publish_state(pchg); id(stn_t2_status).publish_state(stat); id(stn_t2_delay_reason).publish_state(dr); id(stn_t2_cancellation_reason).publish_state(cr); id(stn_t2_operator).publish_state(oper); id(stn_t2_delay_minutes).publish_state(dm); id(stn_t2_scheduled_arrival).publish_state(std::string()); id(stn_t2_estimated_arrival).publish_state(std::string()); id(stn_t2_previous_platform).publish_state(pprev); id(stn_t2_stops).publish_state(stops); id(stn_t2_calling_points).publish_state(cp); break; case 3: id(stn_t3_scheduled_departure).publish_state(sched); id(stn_t3_expected_departure).publish_state(expct); id(stn_t3_platform).publish_state(plat); id(stn_t3_platform_changed).publish_state(pchg); id(stn_t3_status).publish_state(stat); id(stn_t3_delay_reason).publish_state(dr); id(stn_t3_cancellation_reason).publish_state(cr); id(stn_t3_operator).publish_state(oper); id(stn_t3_delay_minutes).publish_state(dm); id(stn_t3_scheduled_arrival).publish_state(std::string()); id(stn_t3_estimated_arrival).publish_state(std::string()); id(stn_t3_previous_platform).publish_state(pprev); id(stn_t3_stops).publish_state(stops); id(stn_t3_calling_points).publish_state(cp); break; case 4: id(stn_t4_scheduled_departure).publish_state(sched); id(stn_t4_expected_departure).publish_state(expct); id(stn_t4_platform).publish_state(plat); id(stn_t4_platform_changed).publish_state(pchg); id(stn_t4_status).publish_state(stat); id(stn_t4_delay_reason).publish_state(dr); id(stn_t4_cancellation_reason).publish_state(cr); id(stn_t4_operator).publish_state(oper); id(stn_t4_delay_minutes).publish_state(dm); id(stn_t4_scheduled_arrival).publish_state(std::string()); id(stn_t4_estimated_arrival).publish_state(std::string()); id(stn_t4_previous_platform).publish_state(pprev); id(stn_t4_stops).publish_state(stops); id(stn_t4_calling_points).publish_state(cp); break; case 5: id(stn_t5_scheduled_departure).publish_state(sched); id(stn_t5_expected_departure).publish_state(expct); id(stn_t5_platform).publish_state(plat); id(stn_t5_platform_changed).publish_state(pchg); id(stn_t5_status).publish_state(stat); id(stn_t5_delay_reason).publish_state(dr); id(stn_t5_cancellation_reason).publish_state(cr); id(stn_t5_operator).publish_state(oper); id(stn_t5_delay_minutes).publish_state(dm); id(stn_t5_scheduled_arrival).publish_state(std::string()); id(stn_t5_estimated_arrival).publish_state(std::string()); id(stn_t5_previous_platform).publish_state(pprev); id(stn_t5_stops).publish_state(stops); id(stn_t5_calling_points).publish_state(cp); break; case 6: id(stn_t6_scheduled_departure).publish_state(sched); id(stn_t6_expected_departure).publish_state(expct); id(stn_t6_platform).publish_state(plat); id(stn_t6_platform_changed).publish_state(pchg); id(stn_t6_status).publish_state(stat); id(stn_t6_delay_reason).publish_state(dr); id(stn_t6_cancellation_reason).publish_state(cr); id(stn_t6_operator).publish_state(oper); id(stn_t6_delay_minutes).publish_state(dm); id(stn_t6_scheduled_arrival).publish_state(std::string()); id(stn_t6_estimated_arrival).publish_state(std::string()); id(stn_t6_previous_platform).publish_state(pprev); id(stn_t6_stops).publish_state(stops); id(stn_t6_calling_points).publish_state(cp); break; case 7: id(stn_t7_scheduled_departure).publish_state(sched); id(stn_t7_expected_departure).publish_state(expct); id(stn_t7_platform).publish_state(plat); id(stn_t7_platform_changed).publish_state(pchg); id(stn_t7_status).publish_state(stat); id(stn_t7_delay_reason).publish_state(dr); id(stn_t7_cancellation_reason).publish_state(cr); id(stn_t7_operator).publish_state(oper); id(stn_t7_delay_minutes).publish_state(dm); id(stn_t7_scheduled_arrival).publish_state(std::string()); id(stn_t7_estimated_arrival).publish_state(std::string()); id(stn_t7_previous_platform).publish_state(pprev); id(stn_t7_stops).publish_state(stops); id(stn_t7_calling_points).publish_state(cp); break; case 8: id(stn_t8_scheduled_departure).publish_state(sched); id(stn_t8_expected_departure).publish_state(expct); id(stn_t8_platform).publish_state(plat); id(stn_t8_platform_changed).publish_state(pchg); id(stn_t8_status).publish_state(stat); id(stn_t8_delay_reason).publish_state(dr); id(stn_t8_cancellation_reason).publish_state(cr); id(stn_t8_operator).publish_state(oper); id(stn_t8_delay_minutes).publish_state(dm); id(stn_t8_scheduled_arrival).publish_state(std::string()); id(stn_t8_estimated_arrival).publish_state(std::string()); id(stn_t8_previous_platform).publish_state(pprev); id(stn_t8_stops).publish_state(stops); id(stn_t8_calling_points).publish_state(cp); break; case 9: id(stn_t9_scheduled_departure).publish_state(sched); id(stn_t9_expected_departure).publish_state(expct); id(stn_t9_platform).publish_state(plat); id(stn_t9_platform_changed).publish_state(pchg); id(stn_t9_status).publish_state(stat); id(stn_t9_delay_reason).publish_state(dr); id(stn_t9_cancellation_reason).publish_state(cr); id(stn_t9_operator).publish_state(oper); id(stn_t9_delay_minutes).publish_state(dm); id(stn_t9_scheduled_arrival).publish_state(std::string()); id(stn_t9_estimated_arrival).publish_state(std::string()); id(stn_t9_previous_platform).publish_state(pprev); id(stn_t9_stops).publish_state(stops); id(stn_t9_calling_points).publish_state(cp); break; case 10: id(stn_t10_scheduled_departure).publish_state(sched); id(stn_t10_expected_departure).publish_state(expct); id(stn_t10_platform).publish_state(plat); id(stn_t10_platform_changed).publish_state(pchg); id(stn_t10_status).publish_state(stat); id(stn_t10_delay_reason).publish_state(dr); id(stn_t10_cancellation_reason).publish_state(cr); id(stn_t10_operator).publish_state(oper); id(stn_t10_delay_minutes).publish_state(dm); id(stn_t10_scheduled_arrival).publish_state(std::string()); id(stn_t10_estimated_arrival).publish_state(std::string()); id(stn_t10_previous_platform).publish_state(pprev); id(stn_t10_stops).publish_state(stops); id(stn_t10_calling_points).publish_state(cp); break; default: break; }
+          };
+          auto calls = [](std::initializer_list<const char *> l) { std::string c = "["; bool f = true; for (auto *s : l) { if (!f) c += ", "; c += "\"" + std::string(s) + "\""; f = false; } return c + "]"; };
+          const bool tfl = id(demo_kind) == 2;
+          id(src_tfl) = tfl;
+          id(src_ts).publish_state(tfl ? "London TfL" : "National Rail");
+          id(route_to) = ""; id(route_ts).publish_state("");
+          id(station_ts).publish_state(tfl ? "Green Park" : "York");
+          id(stn_status).publish_state(tfl ? "" : "Minor");
+          const std::string msg = tfl ? "Jubilee line: Minor delays due to an earlier signal failure. Tickets are being accepted on local buses."
+                                      : "Engineering works: buses replace trains between York and Leeds on Sunday. Please check before you travel.";
+          if (id(msg_text) != msg) { id(msg_text) = msg; id(msg_n) = 1; id(msg_idx) = 0; id(msg_new_ms) = millis(); id(msg_count_s).publish_state(1); }
+          if (!tfl) {
+            auto st = [&](std::initializer_list<std::pair<const char *, int>> l) { std::string r; for (auto &p : l) { if (!r.empty()) r += ", "; r += std::string(p.first) + " " + hm(p.second); } return r; };
+            pub(1, hm(2), hm(2), "3", "", "on_time", "", "", "Northern", "0", "", st({{"Church Fenton", 14}, {"Leeds", 26}}), calls({"Church Fenton", "Leeds"}));
+            pub(2, hm(6), hm(14), "5", "", "delayed", "This train has been delayed by a signalling fault", "", "LNER", "8", "", st({{"Doncaster", 34}, {"Peterborough", 63}, {"London Kings Cross", 120}}), calls({"Doncaster", "Peterborough", "London Kings Cross"}));
+            pub(3, hm(11), hm(11), "8", "true", "on_time", "", "", "TransPennine Express", "0", "7", st({{"Malton", 36}, {"Seamer", 55}, {"Scarborough", 61}}), calls({"Malton", "Seamer", "Scarborough"}));
+            pub(4, hm(15), hm(15), "9", "", "cancelled", "", "This train has been cancelled because of a shortage of train crew", "Northern", "0", "", st({{"Selby", 37}, {"Howden", 50}, {"Hull", 75}}), calls({"Selby", "Howden", "Hull"}));
+            pub(5, hm(19), hm(19), "4", "", "on_time", "", "", "TransPennine Express", "0", "", st({{"Leeds", 43}, {"Huddersfield", 63}, {"Manchester Piccadilly", 99}, {"Manchester Airport", 117}}), calls({"Leeds", "Huddersfield", "Manchester Piccadilly", "Manchester Airport"}));
+            pub(6, hm(24), hm(24), "9", "", "on_time", "", "", "LNER", "0", "", st({{"Darlington", 54}, {"Durham", 71}, {"Newcastle", 84}}), calls({"Darlington", "Durham", "Newcastle"}));
+            pub(7, hm(31), hm(31), "10", "", "on_time", "", "", "Northern", "0", "", st({{"Leeds", 58}, {"Bradford Interchange", 80}, {"Blackpool North", 170}}), calls({"Leeds", "Bradford Interchange", "Blackpool North"}));
+            pub(8, hm(37), hm(41), "3", "", "delayed", "This train has been delayed by a late running train in front of this one", "", "LNER", "4", "", st({{"Newcastle", 101}, {"Berwick-upon-Tweed", 147}, {"Edinburgh", 192}}), calls({"Newcastle", "Berwick-upon-Tweed", "Edinburgh"}));
+            pub(9, "", "", "", "", "", "", "", "", "", "", "", "[]");
+            pub(10, "", "", "", "", "", "", "", "", "", "", "", "[]");
+          } else {
+            struct T { int off; const char *dest, *plat, *line, *dir, *loc, *col; };
+            const T tt[10] = {
+              {0, "Brixton", "4", "Victoria line", "Southbound", "At Platform", "#0098D4"},
+              {1, "Stanmore", "6", "Jubilee line", "Northbound", "Left Westminster", "#A0A5A9"},
+              {2, "Cockfosters", "2", "Piccadilly line", "Eastbound", "At Hyde Park Corner", "#003688"},
+              {3, "Walthamstow Central", "3", "Victoria line", "Northbound", "Between Victoria and Green Park", "#0098D4"},
+              {5, "Heathrow T5", "1", "Piccadilly line", "Westbound", "At Piccadilly Circus", "#003688"},
+              {6, "Stratford", "5", "Jubilee line", "Southbound", "At Bond Street", "#A0A5A9"},
+              {8, "Brixton", "4", "Victoria line", "Southbound", "At Oxford Circus", "#0098D4"},
+              {10, "Uxbridge", "1", "Piccadilly line", "Westbound", "At Leicester Square", "#003688"},
+              {11, "Stanmore", "6", "Jubilee line", "Northbound", "Between Waterloo and Westminster", "#A0A5A9"},
+              {13, "Cockfosters", "2", "Piccadilly line", "Eastbound", "At Knightsbridge", "#003688"}};
+            for (int k = 0; k < 10; k++) {
+              const T &t = tt[k];
+              pub(k + 1, hm(t.off), hm(t.off), t.plat, "", k == 0 ? "arriving" : "on_time", "", "", std::string(t.line) + " - " + t.dir + " - " + t.loc, "", t.col, "", calls({t.dest}));
+            }
+          }
+          id(data_ms_stn) = millis();
   # "Install now" on the update screen: a moment to draw "Installing", then install over the internet
   - id: fw_install
     then:
@@ -438,6 +500,62 @@ script:
           c.perform();
 
 interval:
+  # start the board's small web server once on Wi-Fi, for screenshots (the setup hotspot uses it too)
+  - interval: 10s
+    then:
+      - lambda: |-
+          static bool started = false;
+          if (!wifi::global_wifi_component->is_connected()) return;
+          if (!started) {
+            started = true;
+            struct ShotBuf : public mipi_rgb::MipiRgb {
+              static uint16_t *get(mipi_rgb::MipiRgb *d) { return d->*(&ShotBuf::buffer_); }
+            };
+            struct Shot : public AsyncWebHandler {
+              bool canHandle(AsyncWebServerRequest *request) const override {
+                char ub[AsyncWebServerRequest::URL_BUF_SIZE];
+                return request->url_to(ub) == "/screenshot.bmp";
+              }
+              void handleRequest(AsyncWebServerRequest *request) override {
+                httpd_req_t *r = *request;
+                uint16_t *fb = ShotBuf::get(id(main_display));
+                const int W = id(main_display).get_width(), H = id(main_display).get_height();
+                if (fb == nullptr || W <= 0 || H <= 0) { httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Screen not ready"); return; }
+                const uint32_t row = W * 3, size = 54 + row * H;
+                uint8_t h[54] = {0};
+                auto put32 = [&](int at, uint32_t v) { h[at] = v; h[at + 1] = v >> 8; h[at + 2] = v >> 16; h[at + 3] = v >> 24; };
+                h[0] = 'B'; h[1] = 'M'; put32(2, size); put32(10, 54); put32(14, 40); put32(18, W); put32(22, H);
+                h[26] = 1; h[28] = 24; put32(34, row * H);
+                httpd_resp_set_type(r, "image/bmp");
+                httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+                if (httpd_resp_send_chunk(r, (const char *) h, sizeof(h)) != ESP_OK) return;
+                std::vector<uint8_t> line(row);
+                for (int y = H - 1; y >= 0; y--) {               // a BMP stores the bottom row first
+                  const uint16_t *p = fb + y * W;
+                  for (int x = 0; x < W; x++) {
+                    const uint16_t v = __builtin_bswap16(p[x]);    // the display keeps each pixel big-endian
+                    const uint8_t R = (v >> 11) & 31, G = (v >> 5) & 63, B = v & 31;
+                    line[x * 3] = (B << 3) | (B >> 2); line[x * 3 + 1] = (G << 2) | (G >> 4); line[x * 3 + 2] = (R << 3) | (R >> 2);
+                  }
+                  if (httpd_resp_send_chunk(r, (const char *) line.data(), row) != ESP_OK) return;
+                }
+                httpd_resp_send_chunk(r, nullptr, 0);
+              }
+            };
+            web_server_base::global_web_server_base->add_handler(new Shot());
+            web_server_base::global_web_server_base->init();
+          }
+          const std::string ip = id(wifi_ip_ts).state;
+          const std::string url = ip.empty() ? std::string("") : "http://" + ip + "/screenshot.bmp";
+          if (!id(shot_ts).has_state() || id(shot_ts).state != url) id(shot_ts).publish_state(url);
+  # demo boards: keep the made-up times moving with the clock
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(demo_kind) != 0;'
+          then:
+            - script.execute: demo_fill
   - interval: 40ms           # smooth page animation: redraw fast only while it runs
     then:
       - lambda: |-
@@ -1034,11 +1152,6 @@ switch:
     id: show_logo
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-  - platform: template
-    name: "Demo mode"
-    id: demo_mode
-    optimistic: true
-    restore_mode: ALWAYS_OFF   # shows a fake delayed and cancelled train, for testing colours
 
 text:
   - platform: template
@@ -1104,6 +1217,28 @@ text:
     initial_value: ""     # departure times to underline, e.g. "07:42, 08:15"
 
 select:
+  - platform: template
+    name: "Demo mode"
+    id: demo_select
+    icon: mdi:presentation-play
+    optimistic: true
+    options: ["Off", "National Rail", "London Underground"]
+    initial_option: "Off"
+    entity_category: config
+    on_value:
+      - lambda: 'id(demo_kind) = (int) i;'
+      - if:
+          condition:
+            lambda: 'return i > 0;'
+          then:
+            - script.execute: demo_fill
+          else:
+            # back to real trains: ask Home Assistant to send them straight away
+            - lambda: 'id(src_tfl) = false; id(msg_text) = ""; id(msg_n) = 0; id(msg_count_s).publish_state(0);'
+            - homeassistant.event:
+                event: esphome.departure_board_station
+                data:
+                  number: !lambda 'return to_string((int) id(stn_num).state);'
   - platform: template
     name: "Update channel"
     id: update_channel
@@ -1175,6 +1310,12 @@ select:
     options: ["DotGothic"]
 
 text_sensor:
+  - platform: template
+    id: shot_ts
+    name: "Screenshot"
+    icon: mdi:monitor-screenshot
+    entity_category: diagnostic
+    update_interval: never
   - platform: template
     id: src_ts
     name: "Data source"
@@ -2414,10 +2555,24 @@ display:
         const bool bus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
 
         // line 1: time, destination, platform, status - the same columns as the list
-        int y = 6 - hT + 6;
+        int y = 6 + HDR - hT + 6;                    // below the column headings, when they are on
         bandline(y, fh);
         Color sc = cancelled ? red : (late ? orange : green);
         std::string st = cancelled ? std::string("Cancelled") : ((late && departure::valid(exp)) ? exp : (late ? std::string("Delayed") : std::string("On time")));
+        // Tube: the line and direction, and where the train is now ("At Platform", "Between X and Y")
+        std::string tline = oper, tloc;
+        if (id(src_tfl)) {
+          const size_t a = oper.find(" - ");
+          const size_t b = a == std::string::npos ? std::string::npos : oper.find(" - ", a + 3);
+          if (b != std::string::npos) { tline = oper.substr(0, b); tloc = oper.substr(b + 3); }
+          if (!cancelled) {
+            const std::string sn = id(station_ts).state;
+            const bool arr = tloc == "At Platform" || (!sn.empty() && (tloc.rfind("At " + sn, 0) == 0 || tloc.rfind("Approaching " + sn, 0) == 0));
+            const int tm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+            st = arr ? std::string("Arriving") : (tm <= 1 ? std::string("Due") : to_string(tm) + " min");
+            sc = green;
+          }
+        }
         std::string pl = cancelled ? std::string("") : (bus ? std::string("Bus") : (departure::valid(plat) ? plat : std::string("")));
         int plw = 0;
         if (!pl.empty()) it.get_text_bounds(0, 0, pl.c_str(), fh, TextAlign::TOP_LEFT, &bx, &by, &plw, &bh);
@@ -2427,7 +2582,93 @@ display:
         it.printf(130, y, fh, amber, "%s", dd.c_str());
         if (!pl.empty()) it.printf(610, y, fh, departure::truthy(pchg) ? orange : amber, TextAlign::TOP_RIGHT, "%s", pl.c_str());
         it.printf(784, y, fh, sc, TextAlign::TOP_RIGHT, "%s", st.c_str());
+        if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+          int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb2 = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+          const int mx = std::max(cr, std::max(cg, cb2));
+          if (mx == 0) { cr = cg = cb2 = 200; } else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb2 = cb2 * 150 / mx; }
+          it.filled_rectangle(10, y + hT - 4, 5, (hB - hT + 8) * 2 + 3, Color(cr, cg, cb2));
+        }
         y += (hB - hT + 8) + 3;
+        if (id(src_tfl)) {
+          auto wrap2 = [&](const std::string &txt, int x, int &yy, Color c) {      // up to two lines
+            std::string rem = txt;
+            for (int ln = 0; ln < 2 && !rem.empty(); ln++) {
+              std::string line;
+              size_t p = 0, next = std::string::npos;
+              while (true) {
+                size_t e = rem.find(' ', p);
+                if (e == std::string::npos) e = rem.size();
+                std::string cand = rem.substr(0, e);
+                it.get_text_bounds(0, 0, cand.c_str(), fd, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+                if (bw > 784 - x && !line.empty()) break;
+                line = cand; next = e + 1;
+                if (e >= rem.size()) break;
+                p = e + 1;
+              }
+              rem = (next < rem.size()) ? rem.substr(next) : "";
+              if (ln == 1 && !rem.empty()) line += " ...";
+              fit(line, fd, 784 - x);
+              it.printf(x, yy, fd, c, "%s", line.c_str());
+              yy += LHB;
+            }
+          };
+          // line 2: the line and direction
+          bandline(y, fd);
+          std::string tl = tline;
+          fit(tl, fd, 784 - 130);
+          it.printf(130, y, fd, sub_col, "%s", tl.c_str());
+          y += LHB + 14;
+          // where the train is now
+          if (!tloc.empty() && !cancelled) {
+            it.printf(18, y, fd, grey, "Now");
+            wrap2(tloc, 130, y, amber);
+            y += 10;
+          }
+          // the next trains from the same platform
+          if (departure::valid(plat)) {
+            const std::string *S[10] = {&id(stn_t1_scheduled_departure).state, &id(stn_t2_scheduled_departure).state, &id(stn_t3_scheduled_departure).state, &id(stn_t4_scheduled_departure).state, &id(stn_t5_scheduled_departure).state, &id(stn_t6_scheduled_departure).state, &id(stn_t7_scheduled_departure).state, &id(stn_t8_scheduled_departure).state, &id(stn_t9_scheduled_departure).state, &id(stn_t10_scheduled_departure).state};
+            const std::string *E[10] = {&id(stn_t1_expected_departure).state, &id(stn_t2_expected_departure).state, &id(stn_t3_expected_departure).state, &id(stn_t4_expected_departure).state, &id(stn_t5_expected_departure).state, &id(stn_t6_expected_departure).state, &id(stn_t7_expected_departure).state, &id(stn_t8_expected_departure).state, &id(stn_t9_expected_departure).state, &id(stn_t10_expected_departure).state};
+            const std::string *P[10] = {&id(stn_t1_platform).state, &id(stn_t2_platform).state, &id(stn_t3_platform).state, &id(stn_t4_platform).state, &id(stn_t5_platform).state, &id(stn_t6_platform).state, &id(stn_t7_platform).state, &id(stn_t8_platform).state, &id(stn_t9_platform).state, &id(stn_t10_platform).state};
+            const std::string *C[10] = {&id(stn_t1_calling_points).state, &id(stn_t2_calling_points).state, &id(stn_t3_calling_points).state, &id(stn_t4_calling_points).state, &id(stn_t5_calling_points).state, &id(stn_t6_calling_points).state, &id(stn_t7_calling_points).state, &id(stn_t8_calling_points).state, &id(stn_t9_calling_points).state, &id(stn_t10_calling_points).state};
+            int shown = 0;
+            bool past_this = false;
+            for (int i = 0; i < 10 && shown < 2; i++) {
+              if (!departure::valid(*S[i]) || *P[i] != plat) continue;
+              if (!past_this) { if (*S[i] == sched && *C[i] == calls) past_this = true; continue; }
+              if (departure::departed(E[i]->empty() ? *S[i] : *E[i], nowmin, grace)) continue;
+              if (shown == 0) { it.printf(18, y, fd, grey, "Then from platform %s", plat.c_str()); y += LHB; }
+              const int tm = departure::minutes_until(E[i]->empty() ? *S[i] : *E[i], nowmin);
+              char cd[16];
+              if (tm <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", tm);
+              int cdw;
+              it.get_text_bounds(0, 0, cd, fd, TextAlign::TOP_LEFT, &bx, &by, &cdw, &bh);
+              std::string dn = departure::destination(*C[i], 60);
+              fit(dn, fd, 784 - cdw - 24 - 130);
+              it.printf(18, y, fd, amber, "%s", S[i]->c_str());
+              it.printf(130, y, fd, amber, "%s", dn.c_str());
+              it.printf(784, y, fd, green, TextAlign::TOP_RIGHT, "%s", cd);
+              y += LHB;
+              shown++;
+            }
+            if (shown) y += 10;
+          }
+          // the line's status (from the London Underground integration, sent as messages)
+          std::string lname = tline.substr(0, tline.find(" - "));
+          std::string key = lname.substr(0, lname.find(' '));
+          std::string found;
+          {
+            std::string cur;
+            for (char ch : id(msg_text) + "\n") {
+              if (ch == '\n') { if (!key.empty() && cur.find(key) != std::string::npos) { found = cur; break; } cur.clear(); }
+              else cur += ch;
+            }
+          }
+          if (y < 400 && !lname.empty()) {
+            if (!found.empty()) wrap2(found, 18, y, orange);
+            else it.printf(18, y, fd, green, "%s: Good service", lname.c_str());
+          }
+          return;
+        }
 
         // line 2: operator, countdown on the right
         char cb[24] = "";
@@ -2544,7 +2785,7 @@ display:
         }
       };
 
-      if (HDR > 0 && view == 0 && !detail) {
+      if (HDR > 0 && view == 0) {
         font::Font *fh = id(f_hdr_0);
         const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
         const int hy = 5;                                                            // letters well clear of the line
@@ -2785,7 +3026,6 @@ display:
         switch (si) {
           case 0: sched = id(stn_t2_scheduled_departure).state; exp = id(stn_t2_expected_departure).state; stat = id(stn_t2_status).state; plat = id(stn_t2_platform).state; pchg = id(stn_t2_platform_changed).state; calls = id(stn_t2_calling_points).state; dreason = id(stn_t2_delay_reason).state; creason = id(stn_t2_cancellation_reason).state; oper = id(stn_t2_operator).state; delaym = id(stn_t2_delay_minutes).state; stops = id(stn_t2_stops).state; sarr = id(stn_t2_scheduled_arrival).state; earr = id(stn_t2_estimated_arrival).state; pprev = id(stn_t2_previous_platform).state; break;
         }
-        if (id(demo_mode).state) { stat = "delayed"; dreason = "This service has been delayed by a late running train in front of this one"; }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
@@ -3007,7 +3247,6 @@ display:
         switch (si) {
           case 0: sched = id(stn_t3_scheduled_departure).state; exp = id(stn_t3_expected_departure).state; stat = id(stn_t3_status).state; plat = id(stn_t3_platform).state; pchg = id(stn_t3_platform_changed).state; calls = id(stn_t3_calling_points).state; dreason = id(stn_t3_delay_reason).state; creason = id(stn_t3_cancellation_reason).state; oper = id(stn_t3_operator).state; delaym = id(stn_t3_delay_minutes).state; stops = id(stn_t3_stops).state; sarr = id(stn_t3_scheduled_arrival).state; earr = id(stn_t3_estimated_arrival).state; pprev = id(stn_t3_previous_platform).state; break;
         }
-        if (id(demo_mode).state) { stat = "cancelled"; creason = "Due to a shortage of train crew"; }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
@@ -3229,7 +3468,6 @@ display:
         switch (si) {
           case 0: sched = id(stn_t4_scheduled_departure).state; exp = id(stn_t4_expected_departure).state; stat = id(stn_t4_status).state; plat = id(stn_t4_platform).state; pchg = id(stn_t4_platform_changed).state; calls = id(stn_t4_calling_points).state; dreason = id(stn_t4_delay_reason).state; creason = id(stn_t4_cancellation_reason).state; oper = id(stn_t4_operator).state; delaym = id(stn_t4_delay_minutes).state; stops = id(stn_t4_stops).state; sarr = id(stn_t4_scheduled_arrival).state; earr = id(stn_t4_estimated_arrival).state; pprev = id(stn_t4_previous_platform).state; break;
         }
-        if (id(demo_mode).state) { plat = "2"; pchg = "true"; }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
@@ -4927,7 +5165,7 @@ display:
         if (id(src_tfl)) {
           // TfL logo in the footer colour: its coloured parts (a roundel's ring and bar) in the footer colour and
           // its white parts (the lettering) left in the background colour; an all-white logo is drawn whole
-          const int ox = 20 + (56 - lg->get_width()) / 2, oy = fy + 4 + (35 - lg->get_height()) / 2;
+          const int ox = 20 + (56 - lg->get_width()) / 2, oy = fy + 7 + (35 - lg->get_height()) / 2;
           for (int py = 0; py < lg->get_height(); py++)
             for (int px = 0; px < lg->get_width(); px++) {
               const Color c = lg->get_pixel(px, py);
@@ -4935,10 +5173,10 @@ display:
               const bool light = (c.r * 30 + c.g * 59 + c.b * 11) / 100 > 190;
               it.draw_pixel_at(ox + px, oy + py, (light && !id(logo_tfl_light)) ? bg_col : footc);
             }
-        } else it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, footc, bg_col);
+        } else it.image(20 + (56 - lg->get_width()) / 2, fy + 7 + (35 - lg->get_height()) / 2, lg, footc, bg_col);
         fx = 20 + 56 + 14;
       } else if (id(show_logo).state) {
-        int lx = 20, ly = fy + 4;
+        int lx = 20, ly = fy + 7;
         if (id(src_tfl)) {
           // tunnel, 56x35: an arch with the track running into the distance
           for (int py = 0; py <= 24; py++)
