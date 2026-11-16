@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- Much faster drawing with the Rows and Dot matrix backgrounds: the bands and LED grid are written in bulk instead of pixel by pixel, so scrolling, page animation and taps are smoother
+- Routes (e.g. Brough to Hull): the footer shows the station, the column heading says "Destination (to Hull only)", and each train shows its real final destination; the board's Calling at filter also shows in the heading
+- New "Route" diagnostic sensor
+- Blueprint: stations or routes, and short names for every station ("Names on the board")
+
 ## 1.16.1 - 2026-11-16 (beta)
 - Page animation now visible; white column headings; display frame time sensor
 
