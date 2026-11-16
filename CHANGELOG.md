@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.13.1 - 2026-11-16 (stable)
+Everything since 1.5.0, now on the stable channel:
+- Six colour themes, and dot-matrix style row bands (Rows / Dot matrix / Plain)
+- Paging through all trains, with an optional pinned next train
+- Switch between several stations: tap the station name, or set Station number in Home Assistant
+- Custom logo from a PNG address
+- Redesigned train detail page and settings screens
+- Startup animation; calmer delay colours; normal case instead of capitals
+- Platform number flashes when it changes; factory reset button
+- DotGothic text drawn crisply, with layout measured from the letters
+- Shorter entity names in Home Assistant (settings return to defaults once on this update)
+
 ## 1.13.1 - 2026-11-16 (beta)
 - Redesigned train detail page in the board style
 

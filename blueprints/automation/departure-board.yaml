@@ -36,7 +36,7 @@ blueprint:
             - integration: my_rail_commute
     station_name:
       name: Station name on the board
-      description: Wording for the first station at the bottom of the board. Leave empty to use the station's name (e.g. "Brough").
+      description: Wording for the first station at the bottom of the board. Leave empty to use the station's name (e.g. "York").
       default: ""
       selector:
         text:
