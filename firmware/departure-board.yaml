@@ -173,6 +173,40 @@ globals:
   - id: touch_down
     type: bool
     initial_value: "false"
+  - id: tap_pending        # a touch on the main screen or train details, decided when the finger lifts
+    type: bool
+    initial_value: "false"
+  - id: tap_x0
+    type: int
+    initial_value: "0"
+  - id: tap_y0
+    type: int
+    initial_value: "0"
+  - id: tap_xl             # where the finger was last seen (for swipes)
+    type: int
+    initial_value: "0"
+  - id: tap_yl
+    type: int
+    initial_value: "0"
+  - id: elig_list          # train numbers in the order they are listed (for stepping through details)
+    type: int[10]
+    initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+  - id: elig_count
+    type: int
+    initial_value: "0"
+  - id: flash_slot         # tap feedback: row outlined briefly before its details open
+    type: int
+    initial_value: "-1"
+  - id: flash_until
+    type: uint32_t
+    initial_value: "0"
+  - id: pending_detail
+    type: int
+    initial_value: "0"
+  - id: help_seen          # the first tap on the clock opens Help; the footer hint shows until then
+    type: bool
+    restore_value: true
+    initial_value: "false"
   - id: last_event
     type: uint32_t
     initial_value: "0"
@@ -373,30 +407,14 @@ touchscreen:
           }
           int x = touch.x, y = touch.y;
           id(last_fresh) = now;
-          if (id(ui_screen) == 0) {
-            // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
-            if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = 0; }
-            else if (y < 406) {
-              // tap a train for its details
-              int sl = -1;
-              if (id(focus_mode).state) sl = 0;
-              else for (int i = 0; i < 10; i++) { if (id(slot_train)[i] == 0) break; if (y < id(slot_ybot)[i]) { sl = i; break; } }
-              int tn = sl >= 0 ? id(slot_train)[sl] : 0;
-              if (tn > 0) { id(detail_train) = tn; id(ui_screen) = 2; }
-            }
-            else if (id(stn_count) > 1) {   // tap the footer = next station
-              int nx = (int) id(stn_num).state + 1;
-              if (nx > id(stn_count)) nx = 1;
-              auto c = id(stn_num).make_call();
-              c.set_value(nx);
-              c.perform();
-            }
-          } else if (id(ui_screen) == 2) {
-            id(ui_screen) = 0;                  // any tap closes the detail view
+          if (id(ui_screen) == 0 || id(ui_screen) == 2) {
+            // main screen and train details: decided when the finger lifts, so a sideways swipe can be told from a tap
+            id(tap_x0) = x; id(tap_y0) = y; id(tap_xl) = x; id(tap_yl) = y;
+            id(tap_pending) = true;
           } else {
             if (y >= 424) {
-              if (x < 270) id(settings_page) = (id(settings_page) + 6 - 1) % 6;   // BACK
-              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 6;    // NEXT
+              if (x < 270) id(settings_page) = (id(settings_page) + 7 - 1) % 7;   // BACK
+              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 7;    // NEXT
               else id(ui_screen) = 0;                                                  // CLOSE
             } else if (y >= 50 && y < 418) {
               int row = (y - 50) / 46;
@@ -497,13 +515,71 @@ touchscreen:
                   break;
                 case 5:
                   break;
+                case 6:
+                  break;
               }
             }
           }
           id(main_display).update();
+    on_update:
+      - lambda: |-
+          if (id(tap_pending) && !touches.empty()) { id(tap_xl) = touches[0].x; id(tap_yl) = touches[0].y; }
     on_release:
       - lambda: |-
           id(touch_down) = false;
+          if (!id(tap_pending)) return;
+          id(tap_pending) = false;
+          const int x = id(tap_x0), y = id(tap_y0);
+          const int dx = id(tap_xl) - x, dy = id(tap_yl) - y;
+          const bool swipe = std::abs(dx) > 100 && std::abs(dy) < 80;
+          id(last_fresh) = millis();
+          // step to the next (+1) or previous (-1) train on the details page
+          auto step_train = [](int d) {
+            int n = id(elig_count), cur = -1;
+            for (int i = 0; i < n && i < 10; i++) if (id(elig_list)[i] == id(detail_train)) cur = i;
+            if (cur >= 0 && cur + d >= 0 && cur + d < n) id(detail_train) = id(elig_list)[cur + d];
+          };
+          if (id(ui_screen) == 2) {
+            if (swipe) step_train(dx < 0 ? 1 : -1);
+            else if (x < 267) step_train(-1);
+            else if (x > 533) step_train(1);
+            else id(ui_screen) = 0;
+            id(main_display).update();
+            return;
+          }
+          if (swipe) {
+            // swipe left = next station or route, right = previous
+            if (id(stn_count) > 1) {
+              int nx = (int) id(stn_num).state + (dx < 0 ? 1 : -1);
+              if (nx > id(stn_count)) nx = 1;
+              if (nx < 1) nx = id(stn_count);
+              auto c = id(stn_num).make_call();
+              c.set_value(nx);
+              c.perform();
+            }
+            return;
+          }
+            // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
+            if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = id(help_seen) ? 0 : 6; id(help_seen) = true; }
+            else if (y < 406) {
+              // tap a train for its details
+              int sl = -1;
+              if (id(focus_mode).state) sl = 0;
+              else for (int i = 0; i < 10; i++) { if (id(slot_train)[i] == 0) break; if (y < id(slot_ybot)[i]) { sl = i; break; } }
+              int tn = sl >= 0 ? id(slot_train)[sl] : 0;
+              if (tn > 0) {
+                if (id(focus_mode).state) { id(detail_train) = tn; id(ui_screen) = 2; }
+                else { id(flash_slot) = sl; id(flash_until) = millis() + 250; id(pending_detail) = tn; id(main_display).update(); }
+              }
+            }
+            else if (id(stn_count) > 1) {   // tap the footer = next station
+              int nx = (int) id(stn_num).state + 1;
+              if (nx > id(stn_count)) nx = 1;
+              auto c = id(stn_num).make_call();
+              c.set_value(nx);
+              c.perform();
+            }
+          id(main_display).update();
 
 output:
   - platform: ledc
@@ -1475,6 +1551,7 @@ display:
       }
 
       // ---------------- settings screen (tap the clock to open) ----------------
+      if (id(ui_screen) == 1 && millis() - id(last_touch_any) > 60000) id(ui_screen) = 0;   // settings close after a minute
       if (id(ui_screen) == 1) {
         if (millis() - id(last_fresh) > 30000) {
           id(ui_screen) = 0;                    // close after 30 s without a touch
@@ -1505,12 +1582,12 @@ display:
           char buf[40];
           const bool wifi_ok = wifi::global_wifi_component->is_connected();
           const bool api_ok = api::global_api_server->is_connected();
-          static const char *PAGE_NAMES[6] = {"Display", "Trains", "Extras", "Screen", "Style", "Status"};
+          static const char *PAGE_NAMES[7] = {"Display", "Trains", "Extras", "Screen", "Style", "Status", "Help"};
           it.printf(20, 25, id(f_row_0), hilite, TextAlign::CENTER_LEFT, "Settings");
           { int hx, hy, hw, hh; it.get_text_bounds(20, 25, "Settings", id(f_row_0), TextAlign::CENTER_LEFT, &hx, &hy, &hw, &hh);
             it.printf(20 + hw + 24, 25, id(f_row_0), amber, TextAlign::CENTER_LEFT, "%s", PAGE_NAMES[id(settings_page)]); }
-          for (int d = 0; d < 6; d++) {                         // page dots
-            int dx = 776 - (6 - 1 - d) * 24;
+          for (int d = 0; d < 7; d++) {                         // page dots
+            int dx = 776 - (7 - 1 - d) * 24;
             if (d == id(settings_page)) it.filled_circle(dx, 25, 7, hilite); else it.circle(dx, 25, 6, grey);
           }
           if (id(settings_page) == 0) {
@@ -1565,6 +1642,15 @@ display:
             R = 5; band(R); lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
             R = 6; band(R); lab(R, "Firmware"); snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf);
             R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
+          }
+          else if (id(settings_page) == 6) {
+            R = 0; band(R); lab(R, "Tap a train"); val(R, amber, "Its details and stops");
+            R = 1; band(R); lab(R, "Tap station name"); val(R, amber, "Next station or route");
+            R = 2; band(R); lab(R, "Swipe sideways"); val(R, amber, "Change station or route");
+            R = 3; band(R); lab(R, "Tap the clock"); val(R, amber, "These settings");
+            R = 4; band(R); lab(R, "Train details"); val(R, amber, "Tap sides: prev / next");
+            R = 5; band(R); lab(R, "Screen off at night"); val(R, amber, "Tap once to wake");
+            R = 6; band(R); lab(R, "Home Assistant"); val(R, amber, "More on device page");
           }
           const char *BTN[3] = {"< Back", "Next >", "Close"};
           for (int b = 0; b < 3; b++) {
@@ -2182,6 +2268,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 1;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2355,6 +2442,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 2;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2528,6 +2616,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 3;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2701,6 +2790,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 4;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2873,6 +2963,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 5;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3045,6 +3136,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 6;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3217,6 +3309,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 7;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3389,6 +3482,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 8;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3561,6 +3655,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 9;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3733,6 +3828,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) id(elig_list)[eidx] = 10;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3914,6 +4010,7 @@ display:
       }
 
       elig_prev = elig;
+      id(elig_count) = elig;
       cmp_tall = cmp_tall_now;
       if (detail && !dfound) id(ui_screen) = 0;      // the train has gone: back to the list
 
@@ -3923,6 +4020,18 @@ display:
           char sb[24];
           snprintf(sb, sizeof(sb), "%d of %d", (int) id(stn_num).state, (int) id(stn_count));
           it.printf(400, 235, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", sb);
+        }
+      }
+      if (id(flash_slot) >= 0 && view == 0 && !detail) {
+        if (millis() < id(flash_until)) {
+          const int sl = id(flash_slot);
+          const int top = sl > 0 ? id(slot_ybot)[sl - 1] : 6 + HDR;
+          const int bot = id(slot_ybot)[sl];
+          if (bot > top) { it.rectangle(10, top, 780, bot - top, hilite); it.rectangle(11, top + 1, 778, bot - top - 2, hilite); }
+        } else {
+          id(flash_slot) = -1;
+          if (id(pending_detail) > 0) { id(detail_train) = id(pending_detail); id(ui_screen) = 2; id(last_fresh) = millis(); }
+          id(pending_detail) = 0;
         }
       }
       // nothing to show: say why
@@ -3979,7 +4088,7 @@ display:
       std::string info;
       Color infoc = amber;
       uint32_t age_min = dms ? (millis() - dms) / 60000 : 0;
-      if (detail) { info = "Tap to close"; infoc = amber; }
+      if (detail) { info = "< Prev  Close  Next >"; infoc = amber; }
       else if (!wifi_ok) { info = "No Wi-Fi"; infoc = red; }
       else if (!api_ok) { info = "No Home Assistant"; infoc = red; }
       else if (dms != 0 && age_min >= 5) {
@@ -3998,6 +4107,10 @@ display:
         else snprintf(lb, sizeof(lb), "Leave in %d min", leave_mins);
         info = lb;
         infoc = green;
+      }
+      else if (!id(help_seen) && view == 0) {
+        info = "Tap the clock for help";
+        infoc = sub_col;
       }
       else if (pages > 1) {
         char pb[24];
