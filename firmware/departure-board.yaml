@@ -360,8 +360,9 @@ touchscreen:
             id(ui_screen) = 0;                  // any tap closes the detail view
           } else {
             if (y >= 424) {
-              if (x < 400) id(settings_page) = (id(settings_page) + 1) % 5;   // NEXT
-              else id(ui_screen) = 0;                                          // CLOSE
+              if (x < 270) id(settings_page) = (id(settings_page) + 5 - 1) % 5;   // BACK
+              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 5;    // NEXT
+              else id(ui_screen) = 0;                                                  // CLOSE
             } else if (y >= 50 && y < 418) {
               int row = (y - 50) / 46;
               bool plus = x > 640;
@@ -1396,62 +1397,77 @@ display:
             it.printf(740, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "+");
             it.printf(645, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "%s", v);
           };
-          auto onoff = [&](int row, bool on) { val(row, on ? green : red, on ? "On" : "Off"); };
+          auto onoff = [&](int row, bool on) { val(row, on ? green : grey, on ? "On" : "Off"); };
+          auto cyc = [&](int row, const char *s) {        // a value you tap to change: text plus a small arrow
+            int cy = 50 + row * 46 + 21;
+            it.printf(752, cy, id(f_row_0), amber, TextAlign::CENTER_RIGHT, "%s", s);
+            it.filled_triangle(764, cy - 7, 764, cy + 7, 774, cy, grey);
+          };
+          auto band = [&](int row) { it.filled_rectangle(10, 50 + row * 46 - 2, 780, 44, band_col); };
           char buf[40];
           const bool wifi_ok = wifi::global_wifi_component->is_connected();
           const bool api_ok = api::global_api_server->is_connected();
           static const char *PAGE_NAMES[5] = {"Display", "Trains", "Extras", "Screen", "Status"};
-          it.printf(20, 25, id(f_row_0), hilite, TextAlign::CENTER_LEFT, "Settings %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
+          it.printf(20, 25, id(f_row_0), hilite, TextAlign::CENTER_LEFT, "Settings");
+          { int hx, hy, hw, hh; it.get_text_bounds(20, 25, "Settings", id(f_row_0), TextAlign::CENTER_LEFT, &hx, &hy, &hw, &hh);
+            it.printf(20 + hw + 24, 25, id(f_row_0), amber, TextAlign::CENTER_LEFT, "%s", PAGE_NAMES[id(settings_page)]); }
+          for (int d = 0; d < 5; d++) {                         // page dots
+            int dx = 776 - (5 - 1 - d) * 24;
+            if (d == id(settings_page)) it.filled_circle(dx, 25, 7, hilite); else it.circle(dx, 25, 6, grey);
+          }
           if (id(settings_page) == 0) {
-            R = 0; lab(R, "Theme"); val(R, amber, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
-            R = 1; lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
-            R = 2; lab(R, "Text size"); val(R, amber, id(text_large).state ? "Large" : "Normal");
-            R = 3; lab(R, "Scroll speed"); val(R, amber, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
-            R = 4; lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
-            R = 5; lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
-            R = 6; lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
+            R = 0; band(R); lab(R, "Theme"); cyc(R, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
+            R = 1; band(R); lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
+            R = 2; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
+            R = 3; band(R); lab(R, "Scroll speed"); cyc(R, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
+            R = 4; band(R); lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
+            R = 5; band(R); lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
+            R = 6; band(R); lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
           }
           else if (id(settings_page) == 1) {
-            R = 0; lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
-            R = 1; lab(R, "Calling at"); { std::string f = id(dest_filter).state; val(R, f.empty() ? red : green, f.empty() ? "Off" : f.c_str()); }
-            R = 2; lab(R, "Hide cancelled"); onoff(R, id(hide_cancelled).state);
-            R = 3; lab(R, "Show platform"); onoff(R, id(show_platform).state);
-            R = 4; lab(R, "Paging"); onoff(R, id(paging_on).state);
-            R = 5; lab(R, "Pin next train"); onoff(R, id(pin_next).state);
-            R = 6; lab(R, "Departed grace"); snprintf(buf, sizeof(buf), "%d min", (int) id(departed_grace).state); pm(R, buf);
-            R = 7; lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
+            R = 0; band(R); lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
+            R = 1; band(R); lab(R, "Calling at"); { std::string f = id(dest_filter).state; val(R, f.empty() ? grey : green, f.empty() ? "Off" : f.c_str()); }
+            R = 2; band(R); lab(R, "Hide cancelled"); onoff(R, id(hide_cancelled).state);
+            R = 3; band(R); lab(R, "Show platform"); onoff(R, id(show_platform).state);
+            R = 4; band(R); lab(R, "Paging"); onoff(R, id(paging_on).state);
+            R = 5; band(R); lab(R, "Pin next train"); onoff(R, id(pin_next).state);
+            R = 6; band(R); lab(R, "Departed grace"); snprintf(buf, sizeof(buf), "%d min", (int) id(departed_grace).state); pm(R, buf);
+            R = 7; band(R); lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
           }
           else if (id(settings_page) == 2) {
-            R = 0; lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; val(R, f.empty() ? red : green, f.empty() ? "Off" : f.c_str()); }
-            R = 1; lab(R, "Disruption banner"); onoff(R, id(disruption_banner).state);
-            R = 2; lab(R, "Show logo"); onoff(R, id(show_logo).state);
-            R = 3; lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
-            R = 4; lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
+            R = 0; band(R); lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; val(R, f.empty() ? grey : green, f.empty() ? "Off" : f.c_str()); }
+            R = 1; band(R); lab(R, "Disruption banner"); onoff(R, id(disruption_banner).state);
+            R = 2; band(R); lab(R, "Show logo"); onoff(R, id(show_logo).state);
+            R = 3; band(R); lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
+            R = 4; band(R); lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
           }
           else if (id(settings_page) == 3) {
-            R = 0; lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
-            R = 1; lab(R, "Night dimming"); onoff(R, id(night_dimming).state);
-            R = 2; lab(R, "Night brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(night_level).state); pm(R, buf);
-            R = 3; lab(R, "Night starts"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf);
-            R = 4; lab(R, "Night ends"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf);
-            R = 5; lab(R, "Night screen off"); onoff(R, id(night_screen_off).state);
-            R = 6; lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
-            R = 7; lab(R, "Idle brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(idle_level).state); pm(R, buf);
+            R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
+            R = 1; band(R); lab(R, "Night dimming"); onoff(R, id(night_dimming).state);
+            R = 2; band(R); lab(R, "Night brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(night_level).state); pm(R, buf);
+            R = 3; band(R); lab(R, "Night starts"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf);
+            R = 4; band(R); lab(R, "Night ends"); snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf);
+            R = 5; band(R); lab(R, "Night screen off"); onoff(R, id(night_screen_off).state);
+            R = 6; band(R); lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
+            R = 7; band(R); lab(R, "Idle brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(idle_level).state); pm(R, buf);
           }
           else if (id(settings_page) == 4) {
-            R = 0; lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
-            R = 1; lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
-            R = 2; lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "Connected" : "Offline");
-            R = 3; lab(R, "Data age"); if (dms == 0) val(R, amber, "No data yet"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 5 ? red : green, buf); }
-            R = 4; lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
-            R = 5; lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
-            R = 6; lab(R, "Firmware"); snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf);
-            R = 7; lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
+            R = 0; band(R); lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
+            R = 1; band(R); lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
+            R = 2; band(R); lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "Connected" : "Offline");
+            R = 3; band(R); lab(R, "Data age"); if (dms == 0) val(R, amber, "No data yet"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 5 ? red : green, buf); }
+            R = 4; band(R); lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
+            R = 5; band(R); lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
+            R = 6; band(R); lab(R, "Firmware"); snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf);
+            R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
           }
-          it.rectangle(60, 426, 300, 46, amber);
-          it.printf(210, 449, id(f_row_0), amber, TextAlign::CENTER, "Next >");
-          it.rectangle(440, 426, 300, 46, amber);
-          it.printf(590, 449, id(f_row_0), amber, TextAlign::CENTER, "Close");
+          const char *BTN[3] = {"< Back", "Next >", "Close"};
+          for (int b = 0; b < 3; b++) {
+            int bx = 20 + b * 260;
+            it.filled_rectangle(bx, 426, 240, 46, band_col);
+            it.rectangle(bx, 426, 240, 46, amber);
+            it.printf(bx + 120, 449, id(f_row_0), amber, TextAlign::CENTER, "%s", BTN[b]);
+          }
           return;
         }
       }
