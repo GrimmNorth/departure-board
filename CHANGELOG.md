@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.14.0 - 2026-11-16 (beta)
+- Focus mode: the train is labelled 1st, with the 2nd and 3rd trains along the bottom; shows the delay reason (scrolling if long) and highlights a platform change; skips trains you can no longer catch when a walking time is set
+- New Footer colour setting (Theme or White) for the logo and station name
+
 ## 1.13.1 - 2026-11-16 (stable)
 Everything since 1.5.0, now on the stable channel:
 - Six colour themes, and dot-matrix style row bands (Rows / Dot matrix / Plain)

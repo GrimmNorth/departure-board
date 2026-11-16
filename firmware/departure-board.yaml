@@ -435,6 +435,7 @@ touchscreen:
                     case 2: id(show_logo).toggle(); break;
                     case 3: id(focus_mode).toggle(); break;
                     case 4: if (plus || minus) { float v = id(clock_after).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(clock_after).make_call(); c.set_value(v); c.perform(); } break;
+                    case 5: id(footer_colour).make_call().select_next(true).perform(); break;
                   }
                   break;
                 case 3:
@@ -821,6 +822,13 @@ select:
     restore_value: true
     initial_option: "Medium"
     options: ["Slow", "Medium", "Fast"]
+  - platform: template
+    name: "Footer colour"
+    id: footer_colour
+    optimistic: true
+    restore_value: true
+    initial_option: "Theme"
+    options: ["Theme", "White"]
   - platform: template
     name: "Font"
     id: font_select
@@ -1440,6 +1448,7 @@ display:
             R = 2; band(R); lab(R, "Show logo"); onoff(R, id(show_logo).state);
             R = 3; band(R); lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
             R = 4; band(R); lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
+            R = 5; band(R); lab(R, "Footer colour"); cyc(R, id(footer_colour).active_index().value_or(0) == 1 ? "White" : "Theme");
           }
           else if (id(settings_page) == 3) {
             R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
@@ -1617,36 +1626,158 @@ display:
         std::string ds = now.strftime("%A %d %B");
         it.printf(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, "%s", ds.c_str());
       };
-      auto draw_next = [&](int vw, std::string sched, std::string exp, std::string plat, std::string calls,
-                           std::string oper, std::string delaym, bool cancelled, bool late) {
-        std::string dest = departure::destination(calls, 24);
-        int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+      // focus mode / clock screen: the trains are collected first, then the first one you can still catch is shown
+      struct FocusTrain {
+        int n;
+        std::string sched, exp, plat, pchg, pprev, calls, oper, delaym, reason;
+        bool cancelled, late;
+        int mins;
+      };
+      static std::vector<FocusTrain> focus;
+      focus.clear();
+      auto focus_add = [&](int n, const std::string &sched, const std::string &exp, const std::string &plat,
+                           const std::string &pchg, const std::string &pprev, const std::string &calls,
+                           const std::string &oper, const std::string &delaym, const std::string &reason,
+                           bool cancelled, bool late) {
+        if (focus.size() >= 10) return;
+        int m = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
+        focus.push_back(FocusTrain{n, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late, m});
+      };
+      auto fband = [&](int y0, int h) { if (bgs > 0) it.filled_rectangle(10, y0, 780, h, band_col); };     // theme row band behind a focus line (themes only)
+      auto draw_next = [&](int vw, const FocusTrain &t, const FocusTrain *t2, const FocusTrain *t3) {
+        std::string sched = t.sched, exp = t.exp, plat = t.plat, delaym = t.delaym;
+        const bool cancelled = t.cancelled, late = t.late;
+        const int mins = t.mins;
+        std::string dest = departure::destination(t.calls, 24);
         Color sc = cancelled ? red : (late ? orange : green);
         if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
-        std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
-        if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
-        std::string pl = (departure::valid(plat) && !cancelled) ? "Platform " + plat : "";
+        const bool bus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
         if (vw == 2) {
+          std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
+          if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
+          std::string pl = (departure::valid(plat) && !cancelled) ? "Platform " + plat : "";
           draw_bigclock();
           it.printf(400, 290, F_ROWL[fi], amber, TextAlign::CENTER, "%s  %s", sched.c_str(), dest.c_str());
           std::string l2 = pl.empty() ? st : pl + "   " + st;
           it.printf(400, 350, F_SUB[fi], sc, TextAlign::CENTER, "%s", l2.c_str());
+          return;
+        }
+        int bx, by, bw, bh;
+        auto width = [&](const std::string &s, font::Font *f) {
+          if (s.empty()) return 0;
+          int x0, y0, w0, h0;
+          it.get_text_bounds(0, 0, s.c_str(), f, TextAlign::TOP_LEFT, &x0, &y0, &w0, &h0);
+          return w0;
+        };
+        // line 1: "1st  13:52  Hull" on a band, the ordinal in grey
+        {
+          font::Font *f = F_ROWL[fi];
+          const std::string ord = "1st  ";
+          std::string rest = sched + "  ";
+          const int wo = width(ord, f), wr = width(rest, f);
+          fit(dest, f, 760 - wo - wr);
+          rest += dest;
+          const int w = wo + width(rest, f);
+          it.get_text_bounds(400, 45, rest.c_str(), f, TextAlign::CENTER, &bx, &by, &bw, &bh);
+          fband(by - 2, bh + 4);
+          const int x0 = 400 - w / 2;
+          it.printf(x0, 45, f, grey, TextAlign::CENTER_LEFT, "%s", ord.c_str());
+          it.printf(x0 + wo, 45, f, amber, TextAlign::CENTER_LEFT, "%s", rest.c_str());
+        }
+        // the countdown
+        if (cancelled) {
+          it.printf(400, 180, F_ROWL[fi], red, TextAlign::CENTER, "Cancelled");
         } else {
-          it.printf(400, 45, F_ROWL[fi], amber, TextAlign::CENTER, "%s  %s", sched.c_str(), dest.c_str());
-          if (cancelled) {
-            it.printf(400, 190, F_ROWL[fi], red, TextAlign::CENTER, "Cancelled");
+          char cb[24];
+          if (mins < 0) snprintf(cb, sizeof(cb), "--");
+          else if (mins <= 1) snprintf(cb, sizeof(cb), "Due");
+          else if (mins < 60) snprintf(cb, sizeof(cb), "%d min", mins);
+          else snprintf(cb, sizeof(cb), "%dh %02dm", mins / 60, mins % 60);
+          it.printf(400, 180, F_BIG[fi], sc, TextAlign::CENTER, "%s", cb);
+        }
+        int y = 274;
+        // status: "On time", "Delayed 4 min - expt 13:56", "Cancelled"
+        {
+          std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
+          if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
+          if (late && departure::valid(exp) && exp.find(':') != std::string::npos) st += " - expt " + exp;
+          fit(st, F_ROW[fi], 760);
+          it.printf(400, y, F_ROW[fi], sc, TextAlign::CENTER, "%s", st.c_str());
+          y += 38;
+        }
+        // reason, scrolling when it is too long to fit
+        if (departure::valid(t.reason) && (late || cancelled)) {
+          font::Font *f = F_SUB[fi];
+          std::string rs = t.reason;
+          int rw = width(rs, f);
+          if (rw <= 760) {
+            it.printf(400, y, f, sc, TextAlign::CENTER, "%s", rs.c_str());
+          } else if (!id(scroll_enabled).state) {
+            fit(rs, f, 760);
+            it.printf(400, y, f, sc, TextAlign::CENTER, "%s", rs.c_str());
           } else {
-            char cb[24];
-            if (mins < 0) snprintf(cb, sizeof(cb), "--");
-            else if (mins <= 1) snprintf(cb, sizeof(cb), "Due");
-            else if (mins < 60) snprintf(cb, sizeof(cb), "%d min", mins);
-            else snprintf(cb, sizeof(cb), "%dh %02dm", mins / 60, mins % 60);
-            it.printf(400, 190, F_BIG[fi], sc, TextAlign::CENTER, "%s", cb);
+            it.get_text_bounds(20, y, rs.c_str(), f, TextAlign::CENTER_LEFT, &bx, &by, &bw, &bh);
+            const int cyc = rw + 120;
+            const int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
+            it.start_clipping(20, by - 2, 780, by + bh + 2);
+            it.printf(20 - off, y, f, sc, TextAlign::CENTER_LEFT, "%s", rs.c_str());
+            it.printf(20 - off + cyc, y, f, sc, TextAlign::CENTER_LEFT, "%s", rs.c_str());
+            it.end_clipping();
           }
-          it.printf(400, 310, F_ROW[fi], sc, TextAlign::CENTER, "%s", st.c_str());
-          std::string l3 = pl;
-          if (departure::valid(oper)) l3 += (l3.empty() ? "" : "   ") + oper;
-          it.printf(400, 360, F_SUB[fi], amber, TextAlign::CENTER, "%s", l3.c_str());
+          y += 38;
+        }
+        // platform (orange when it has changed) and operator
+        {
+          font::Font *f = F_SUB[fi];
+          std::string pl;
+          if (!cancelled && bus) pl = "Replacement bus";
+          else if (!cancelled && departure::valid(plat)) {
+            pl = "Platform " + plat;
+            if (departure::truthy(t.pchg) && departure::valid(t.pprev) && t.pprev != plat) pl += " (was " + t.pprev + ")";
+          }
+          const bool changed = !pl.empty() && !bus && departure::truthy(t.pchg);
+          std::string op = departure::valid(t.oper) ? t.oper : std::string("");
+          std::string gap = (!pl.empty() && !op.empty()) ? "   " : "";
+          fit(op, f, 760 - width(pl + gap, f));
+          const int w = width(pl + gap, f) + width(op, f);
+          if (w > 0) {
+            const int x0 = 400 - w / 2;
+            if (!pl.empty()) it.printf(x0, y, f, changed ? orange : amber, TextAlign::CENTER_LEFT, "%s", pl.c_str());
+            if (!op.empty()) it.printf(x0 + width(pl + gap, f), y, f, amber, TextAlign::CENTER_LEFT, "%s", op.c_str());
+          }
+        }
+        // the 2nd and 3rd trains, on a band above the footer
+        if (t2 != nullptr) {
+          font::Font *f = F_SUB[fi];
+          const int sy = 395;
+          const FocusTrain *nx[2] = {t2, t3};
+          const char *ords[2] = {"2nd ", "3rd "};
+          std::string txt[2];
+          int wo[2] = {0, 0}, wt[2] = {0, 0};
+          const std::string sep = "    ";
+          const int ws = width(sep, f);
+          const int half = (t3 != nullptr) ? (760 - ws) / 2 : 760;
+          for (int k = 0; k < 2; k++) {
+            if (nx[k] == nullptr) continue;
+            std::string d = departure::destination(nx[k]->calls, 40);
+            txt[k] = nx[k]->sched + " ";
+            wo[k] = width(ords[k], f);
+            fit(d, f, half - wo[k] - width(txt[k], f));
+            txt[k] += d;
+            wt[k] = width(txt[k], f);
+          }
+          const int w = wo[0] + wt[0] + (t3 != nullptr ? ws + wo[1] + wt[1] : 0);
+          it.get_text_bounds(400, sy, txt[0].c_str(), f, TextAlign::CENTER, &bx, &by, &bw, &bh);
+          fband(by - 2, bh + 4);
+          int x = 400 - w / 2;
+          for (int k = 0; k < 2; k++) {
+            if (nx[k] == nullptr) continue;
+            if (k == 1) x += ws;
+            it.printf(x, sy, f, grey, TextAlign::CENTER_LEFT, "%s", ords[k]);
+            x += wo[k];
+            it.printf(x, sy, f, nx[k]->cancelled ? red : amber, TextAlign::CENTER_LEFT, "%s", txt[k].c_str());
+            x += wt[k];
+          }
         }
       };
       auto draw_detail = [&](std::string sched, std::string exp, std::string plat, std::string pchg, std::string calls,
@@ -1821,11 +1952,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 1;
-              slot++;
-            }
+            focus_add(1, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 1;
           int y = 6 + slot * H + pad;
@@ -1960,11 +2087,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 2;
-              slot++;
-            }
+            focus_add(2, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 2;
           int y = 6 + slot * H + pad;
@@ -2099,11 +2222,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 3;
-              slot++;
-            }
+            focus_add(3, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 3;
           int y = 6 + slot * H + pad;
@@ -2238,11 +2357,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 4;
-              slot++;
-            }
+            focus_add(4, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 4;
           int y = 6 + slot * H + pad;
@@ -2376,11 +2491,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 5;
-              slot++;
-            }
+            focus_add(5, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 5;
           int y = 6 + slot * H + pad;
@@ -2514,11 +2625,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 6;
-              slot++;
-            }
+            focus_add(6, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 6;
           int y = 6 + slot * H + pad;
@@ -2652,11 +2759,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 7;
-              slot++;
-            }
+            focus_add(7, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 7;
           int y = 6 + slot * H + pad;
@@ -2790,11 +2893,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 8;
-              slot++;
-            }
+            focus_add(8, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 8;
           int y = 6 + slot * H + pad;
@@ -2928,11 +3027,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 9;
-              slot++;
-            }
+            focus_add(9, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 9;
           int y = 6 + slot * H + pad;
@@ -3066,11 +3161,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            if (slot == 0) {
-              draw_next(view, sched, exp, plat, calls, oper, delaym, cancelled, late);
-              id(slot_train)[0] = 10;
-              slot++;
-            }
+            focus_add(10, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
           } else if (slot < count && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 10;
           int y = 6 + slot * H + pad;
@@ -3183,6 +3274,20 @@ display:
         }
       }
 
+      // focus mode / clock screen: skip trains too soon to walk to (if a walking time is set), then draw
+      if (view != 0 && !detail && !focus.empty()) {
+        size_t pick = 0;
+        for (size_t k = 0; k < focus.size(); k++) {
+          const FocusTrain &f = focus[k];
+          if (!(walk > 0 && !f.cancelled && f.mins >= 0 && f.mins < walk)) { pick = k; break; }
+        }
+        const FocusTrain *t2 = (pick + 1 < focus.size()) ? &focus[pick + 1] : nullptr;
+        const FocusTrain *t3 = (pick + 2 < focus.size()) ? &focus[pick + 2] : nullptr;
+        draw_next(view, focus[pick], t2, t3);
+        id(slot_train)[0] = focus[pick].n;
+        slot = 1;
+      }
+
       {
         // publish "minutes until you must leave" to HA (only when it changes)
         int lv = (walk > 0 && leave_mins >= 0) ? leave_mins : -1;
@@ -3244,25 +3349,26 @@ display:
         info = pb;
         infoc = amber;
       }
+      const Color footc = (id(footer_colour).active_index().value_or(0) == 1) ? (id(bg_col).r > 200 ? Color(26, 26, 26) : Color(255, 255, 255)) : amber;   // logo and station name (dark on Daylight)
       std::string foot = STATION_NAMES[si];
       if (info.empty() && !filt.empty()) foot += " > " + filt;
       int fx = 20;
       if (id(show_logo).state && id(logo_ok)) {
         // custom logo from Home Assistant, centred in the 56x35 logo space
         auto *lg = id(custom_logo);
-        it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, amber, bg_col);
+        it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, footc, bg_col);
         fx = 20 + 56 + 14;
       } else if (id(show_logo).state) {
         // simple train icon, 56x35 (replace with your own drawing if you like)
         int lx = 20, ly = fy + 4;
-        it.filled_rectangle(lx + 4, ly + 2, 48, 22, amber);                 // body
+        it.filled_rectangle(lx + 4, ly + 2, 48, 22, footc);                 // body
         it.filled_rectangle(lx + 8, ly + 6, 12, 9, bg_col);          // windows
         it.filled_rectangle(lx + 22, ly + 6, 12, 9, bg_col);
         it.filled_rectangle(lx + 36, ly + 6, 12, 9, bg_col);
         it.filled_rectangle(lx + 4, ly + 19, 48, 3, bg_col);         // stripe
-        it.filled_rectangle(lx + 10, ly + 26, 8, 6, amber);                  // wheels
-        it.filled_rectangle(lx + 38, ly + 26, 8, 6, amber);
-        it.filled_rectangle(lx, ly + 33, 56, 2, amber);                      // rail
+        it.filled_rectangle(lx + 10, ly + 26, 8, 6, footc);                  // wheels
+        it.filled_rectangle(lx + 38, ly + 26, 8, 6, footc);
+        it.filled_rectangle(lx, ly + 33, 56, 2, footc);                      // rail
         fx = 20 + 56 + 14;
       }
       // station, message and clock share one baseline; the clock is placed first, then the rest fits around it
@@ -3289,7 +3395,7 @@ display:
         it.printf(clk_left - 24, fb, F_SUB[fi], infoc, TextAlign::BASELINE_RIGHT, "%s", info.c_str());
       }
       fit(foot, F_SUB[fi], info_left - 20 - fx);
-      it.printf(fx, fb, F_SUB[fi], amber, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
+      it.printf(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
 
 image:
   # Custom logo: light pixels are drawn in the theme colour, dark/transparent ones are left out.
