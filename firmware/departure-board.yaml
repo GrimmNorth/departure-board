@@ -72,6 +72,17 @@ api:
             if (id(msg_idx) >= n) id(msg_idx) = 0;
             if (n == 0 && id(ui_screen) == 3) id(ui_screen) = 0;
             id(msg_count_s).publish_state(n);
+    # Called by the blueprint: where this station's trains come from, "rail" (National Rail) or "tfl" (London TfL)
+    - action: update_source
+      variables:
+        kind: string
+      then:
+        - lambda: |-
+            const bool t = (kind == "tfl");
+            if (t != id(src_tfl) || !id(src_ts).has_state()) {
+              id(src_tfl) = t;
+              id(src_ts).publish_state(t ? "London TfL" : "National Rail");
+            }
     # Called by the blueprint: the route's destination, or "" when the station shows all departures.
     - action: update_route
       variables:
@@ -260,6 +271,12 @@ globals:
   - id: fav_toast_until
     type: uint32_t
     initial_value: "0"
+  - id: src_tfl            # this station's trains come from London TfL (Tube / DLR): countdown, tunnel logo
+    type: bool
+    initial_value: "false"
+  - id: logo_tfl_ok        # custom TfL logo downloaded and ready to draw
+    type: bool
+    initial_value: "false"
   - id: msg_text           # National Rail station messages, one per line; sent by the blueprint
     type: std::string
     initial_value: '""'
@@ -452,6 +469,10 @@ interval:
             id(custom_logo)->set_url(id(logo_url).state);
             id(custom_logo)->update();
           }
+          if (!id(logo_tfl_ok) && !id(logo_tfl_url).state.empty() && wifi::global_wifi_component->is_connected()) {
+            id(custom_logo_tfl)->set_url(id(logo_tfl_url).state);
+            id(custom_logo_tfl)->update();
+          }
 i2c:
   - id: touch_i2c
     sda: GPIO19
@@ -593,6 +614,7 @@ touchscreen:
                     case 0: id(fade_cancelled).toggle(); break;
                     case 1: id(col_headings).toggle(); break;
                     case 2: id(page_anim).toggle(); break;
+                    case 3: id(tfl_colours).toggle(); break;
                   }
                   break;
                 case 5:
@@ -948,6 +970,11 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
   - platform: template
+    name: "TfL line colours"
+    id: tfl_colours
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON      # a bar in the line's colour on each Tube / DLR train
+  - platform: template
     name: "Night follows sun"
     id: night_sun
     optimistic: true
@@ -981,6 +1008,23 @@ text:
             lambda: 'return !x.empty();'
           then:
             - lambda: 'id(custom_logo)->set_url(x); id(custom_logo)->update();'
+  - platform: template
+    name: "TfL board logo image"
+    id: logo_tfl_url
+    mode: text
+    min_length: 0
+    max_length: 255
+    optimistic: true
+    restore_value: true
+    initial_value: ""     # web address of a PNG for Tube / DLR stations, e.g. http://homeassistant.local:8123/local/roundel.png
+    entity_category: config
+    on_value:
+      - lambda: 'id(logo_tfl_ok) = false;'
+      - if:
+          condition:
+            lambda: 'return !x.empty();'
+          then:
+            - lambda: 'id(custom_logo_tfl)->set_url(x); id(custom_logo_tfl)->update();'
   - platform: template
     name: "Destination filter"
     id: dest_filter
@@ -1081,6 +1125,12 @@ select:
     options: ["DotGothic"]
 
 text_sensor:
+  - platform: template
+    id: src_ts
+    name: "Data source"
+    icon: mdi:train-variant
+    entity_category: diagnostic
+    update_interval: never
   - platform: homeassistant
     id: ha_sun
     entity_id: sun.sun
@@ -1731,6 +1781,7 @@ display:
             R = 0; band(R); lab(R, "Fade cancelled"); onoff(R, id(fade_cancelled).state);
             R = 1; band(R); lab(R, "Column headings"); onoff(R, id(col_headings).state);
             R = 2; band(R); lab(R, "Page animation"); onoff(R, id(page_anim).state);
+            R = 3; band(R); lab(R, "TfL line colours"); onoff(R, id(tfl_colours).state);
           }
           else if (id(settings_page) == 5) {
             R = 0; band(R); lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
@@ -1789,8 +1840,9 @@ display:
           it.circle(34, 26, 15, orange);
           it.printf(34, 26, mf, orange, TextAlign::CENTER, "i");
           char hb[40];
-          if (nm > 1) snprintf(hb, sizeof(hb), "Station message  %d of %d", mi + 1, nm);
-          else snprintf(hb, sizeof(hb), "Station message");
+          const char *mt = id(src_tfl) ? "Line status" : "Station message";
+          if (nm > 1) snprintf(hb, sizeof(hb), "%s  %d of %d", mt, mi + 1, nm);
+          else snprintf(hb, sizeof(hb), "%s", mt);
           it.printf(66, 26, mf, amber, TextAlign::CENTER_LEFT, "%s", hb);
           // the message, wrapped to the width of the screen
           std::vector<std::string> lines;
@@ -2381,7 +2433,7 @@ display:
         const int per = rows * 2;
         const int npages = ((int) stp.size() + per - 1) / per;
         const int pg = npages > 1 ? (int) ((millis() / 8000) % npages) : 0;
-        it.printf(18, y, fd, grey, "Calling at");
+        it.printf(18, y, fd, grey, id(src_tfl) ? "Going to" : "Calling at");
         if (npages > 1) it.printf(784, y, fd, grey, TextAlign::TOP_RIGHT, "%d of %d", pg + 1, npages);
         y += LHB;
         int tmw;
@@ -2415,14 +2467,14 @@ display:
         const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
         const int hy = 5;                                                            // letters well clear of the line
         it.printf(TX, hy, fh, hc, "Time");
-        // "Destination (to Leeds only)" on a route, "Destination (calling at X)" with the board's own filter
+        // "Destination (all call at Leeds)" on a route or with the board's own "calling at" filter
         std::string dh = "Destination";
-        if (!filt.empty()) dh += " (calling at " + filt + ")";
-        else if (!id(route_to).empty()) dh += " (to " + id(route_to) + " only)";
+        if (!filt.empty()) dh += " (all call at " + filt + ")";
+        else if (!id(route_to).empty()) dh += " (all call at " + id(route_to) + ")";
         fit(dh, fh, (id(show_platform).state ? PX - 60 : 784 - 70) - DX);
         it.printf(DX, hy, fh, hc, "%s", dh.c_str());
         if (id(show_platform).state) it.printf(PX, hy, fh, hc, TextAlign::TOP_RIGHT, "Plat");
-        it.printf(784, hy, fh, hc, TextAlign::TOP_RIGHT, "Expt");
+        it.printf(784, hy, fh, hc, TextAlign::TOP_RIGHT, "Expected");
       }
       // ---- train 1 ----
       {
@@ -2477,6 +2529,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -2500,9 +2562,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -2562,7 +2626,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -2687,6 +2751,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -2710,9 +2784,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -2772,7 +2848,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -2897,6 +2973,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -2920,9 +3006,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -2982,7 +3070,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3107,6 +3195,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -3130,9 +3228,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -3192,7 +3292,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3316,6 +3416,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -3339,9 +3449,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -3401,7 +3513,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3525,6 +3637,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -3548,9 +3670,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -3610,7 +3734,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3734,6 +3858,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -3757,9 +3891,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -3819,7 +3955,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3943,6 +4079,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -3966,9 +4112,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -4028,7 +4176,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -4152,6 +4300,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -4175,9 +4333,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -4237,7 +4397,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -4361,6 +4521,16 @@ display:
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
           it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
+            // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
+            int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb));
+            if (mx == 0) { cr = cg = cb = 200; }
+            else if (mx < 200) { cr = cr * 200 / mx; cg = cg * 200 / mx; cb = cb * 200 / mx; }
+            const int bt = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
+            const int bh = id(slot_ybot)[slot] - bt - 6;
+            if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
+          }
           if (departure::in_list(favs, sched)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
@@ -4384,9 +4554,11 @@ display:
           }
           char cd[16];
           if (mins <= 1) snprintf(cd, sizeof(cd), "Due"); else snprintf(cd, sizeof(cd), "%d min", mins);
-          bool countdown = id(countdown_mode).state && mins >= 0 && mins < 60;
+          bool countdown = (id(countdown_mode).state || id(src_tfl)) && mins >= 0 && mins < 60;
           if (cancelled)
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
+          else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
+            it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late && departure::valid(exp))
@@ -4446,7 +4618,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -4667,17 +4839,34 @@ display:
         else if (!id(route_to).empty()) foot += " > " + id(route_to);
       }
       int fx = 20;
-      if (id(show_logo).state && id(logo_ok)) {
+      if (id(show_logo).state && (id(src_tfl) ? id(logo_tfl_ok) : id(logo_ok))) {
         // custom logo from Home Assistant, centred in the 56x35 logo space
-        auto *lg = id(custom_logo);
+        auto *lg = id(src_tfl) ? id(custom_logo_tfl) : id(custom_logo);
         it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, footc, bg_col);
         fx = 20 + 56 + 14;
       } else if (id(show_logo).state) {
-        // railway track, 56x35 (replace with your own drawing if you like)
         int lx = 20, ly = fy + 4;
-        for (int sx = 3; sx < 56; sx += 11) it.filled_rectangle(lx + sx, ly + 7, 4, 22, footc);   // sleepers
-        it.filled_rectangle(lx, ly + 11, 56, 3, footc);                      // rails
-        it.filled_rectangle(lx, ly + 22, 56, 3, footc);
+        if (id(src_tfl)) {
+          // tunnel, 56x35: an arch with the track running into the distance
+          for (int py = 0; py <= 24; py++)
+            for (int px = 4; px <= 52; px++) {
+              const int ddx = px - 28, ddy = py - 24, d2 = ddx * ddx + ddy * ddy;
+              if (d2 >= 20 * 20 && d2 < 24 * 24) it.draw_pixel_at(lx + px, ly + py, footc);
+            }
+          it.filled_rectangle(lx + 4, ly + 24, 4, 11, footc);                // the arch's sides
+          it.filled_rectangle(lx + 49, ly + 24, 4, 11, footc);
+          const int sly[3] = {20, 25, 30}, shw[3] = {6, 9, 12}, sh[3] = {2, 2, 3};
+          for (int k = 0; k < 3; k++) it.filled_rectangle(lx + 28 - shw[k], ly + sly[k], 2 * shw[k] + 1, sh[k], footc);   // sleepers
+          it.line(lx + 27, ly + 14, lx + 15, ly + 34, footc);                // rails
+          it.line(lx + 28, ly + 14, lx + 16, ly + 34, footc);
+          it.line(lx + 28, ly + 14, lx + 40, ly + 34, footc);
+          it.line(lx + 29, ly + 14, lx + 41, ly + 34, footc);
+        } else {
+          // railway track, 56x35
+          for (int sx = 3; sx < 56; sx += 11) it.filled_rectangle(lx + sx, ly + 7, 4, 22, footc);   // sleepers
+          it.filled_rectangle(lx, ly + 11, 56, 3, footc);                    // rails
+          it.filled_rectangle(lx, ly + 22, 56, 3, footc);
+        }
         fx = 20 + 56 + 14;
       }
       // station, message and clock share one baseline; the clock is placed first, then the rest fits around it
@@ -4738,3 +4927,16 @@ image:
       - lambda: 'id(logo_ok) = true;'
     on_error:
       - lambda: 'id(logo_ok) = false;'
+  # Custom logo for TfL (Tube / DLR) stations, set in the "TfL board logo image" setting
+  - platform: online_image
+    id: custom_logo_tfl
+    url: "http://homeassistant.local:8123/local/departure-board-tfl-logo.png"   # replaced by the TfL logo image setting
+    format: PNG
+    type: BINARY
+    transparency: chroma_key
+    resize: 56x35
+    buffer_size: 16384
+    on_download_finished:
+      - lambda: 'id(logo_tfl_ok) = true;'
+    on_error:
+      - lambda: 'id(logo_tfl_ok) = false;'
