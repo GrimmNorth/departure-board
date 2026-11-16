@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.16.1"
+    version: "1.13.1"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -52,6 +52,13 @@ api:
         - lambda: |-
             id(stn_count) = count < 1 ? 1 : (count > 5 ? 5 : count);
             if (id(stn_num).state > id(stn_count)) { auto c = id(stn_num).make_call(); c.set_value(1); c.perform(); }
+    # Called by the blueprint: the route's destination, or "" when the station shows all departures.
+    - action: update_route
+      variables:
+        to: string
+      then:
+        - lambda: |-
+            if (id(route_to) != to || !id(route_ts).has_state()) { id(route_to) = to; id(route_ts).publish_state(to); }
     # Called by the Home Assistant blueprint (about once a minute).
     - action: update_status
       variables:
@@ -190,6 +197,9 @@ globals:
   - id: slot_train         # which train is drawn in each row (for taps)
     type: int[10]
     initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+  - id: route_to           # destination of a My Rail Commute route ("" for all departures); sent by the blueprint
+    type: std::string
+    initial_value: '""'
   - id: slot_ybot          # bottom edge of each row on screen (for taps)
     type: int[10]
     initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
@@ -811,7 +821,7 @@ text:
     max_length: 40
     optimistic: true
     restore_value: true
-    initial_value: ""     # e.g. "Hull" = only trains calling at Hull
+    initial_value: ""     # e.g. "Leeds" = only trains calling at Leeds
   - platform: template
     name: "Favourite stop"
     id: fav_stop
@@ -820,7 +830,7 @@ text:
     max_length: 40
     optimistic: true
     restore_value: true
-    initial_value: ""     # a stop name to highlight on the board, e.g. "Hull"
+    initial_value: ""     # a stop name to highlight on the board, e.g. "Leeds"
   - platform: template
     name: "Favourite trains"
     id: fav_times
@@ -907,6 +917,12 @@ text_sensor:
     id: ha_sun
     entity_id: sun.sun
     internal: true
+  - platform: template
+    id: route_ts
+    name: "Route"
+    icon: mdi:map-marker-path
+    entity_category: diagnostic
+    update_interval: never
   - platform: template
     id: station_ts
     internal: true
@@ -1686,6 +1702,36 @@ display:
           cy += gap;
         }
       }
+      // ---- fast background: write the row bands and the LED grid straight into the display's frame copy ----
+      // (ESPHome otherwise draws them one pixel at a time, about half a second per frame); falls back if unavailable
+      struct FastBuf : public mipi_rgb::MipiRgb {
+        static uint16_t *get(mipi_rgb::MipiRgb *d) { return d->*(&FastBuf::buffer_); }
+      };
+      uint16_t *fbuf = (it.get_rotation() == display::DISPLAY_ROTATION_0_DEGREES) ? FastBuf::get(id(main_display)) : nullptr;
+      const int FBW = it.get_width(), FBH = it.get_height();
+      uint16_t v_band = 0, v_bg = 0;
+      if (fbuf != nullptr) {
+        // learn how the display stores each colour by drawing one corner pixel and reading it back
+        it.draw_pixel_at(0, 0, band_col); v_band = fbuf[0];
+        it.draw_pixel_at(0, 0, bg_col); v_bg = fbuf[0];
+      }
+      auto frect = [&](int x, int y, int w, int h) {            // one band, in the band colour
+        if (fbuf == nullptr) { it.filled_rectangle(x, y, w, h, band_col); return; }
+        const int x0 = std::max(0, x), x1 = std::min(FBW, x + w), y0 = std::max(0, y), y1 = std::min(FBH, y + h);
+        for (int yy = y0; yy < y1; yy++) if (x1 > x0) std::fill_n(fbuf + yy * FBW + x0, x1 - x0, v_band);
+      };
+      auto fgrid = [&]() {                                       // the dark gaps between LEDs
+        if (fbuf == nullptr) {
+          for (int x = 12; x < 790; x += 4) it.vertical_line(x, 0, 476, bg_col);
+          for (int y = 1; y < 476; y += 4) it.horizontal_line(10, y, 780, bg_col);
+          return;
+        }
+        for (int yy = 0; yy < 476 && yy < FBH; yy++) {
+          uint16_t *row = fbuf + yy * FBW;
+          if (yy % 4 == 1) std::fill_n(row + 10, 780, v_bg);
+          else for (int xx = 12; xx < 790; xx += 4) row[xx] = v_bg;
+        }
+      };
       static int anim_page = -1;
       static uint32_t anim_t0 = 0;
       if (view == 0 && !detail && pages > 1 && page != anim_page) {
@@ -1698,12 +1744,12 @@ display:
         // first train: main and sub line bands, as in Classic
         int mt = C_Y0 + rT - 2, mb = C_Y0 + rB + 2, st = C_Y0 + SUBOFF + sT - 2, sb = C_Y0 + SUBOFF + sB + 2;
         if (mb > st - 3) { int mid = (mb + st) / 2; mb = mid - 1; st = mid + 2; }
-        it.filled_rectangle(10, mt, 780, mb - mt, band_col);
-        it.filled_rectangle(10, st, 780, sb - st, band_col);
+        frect(10, mt, 780, mb - mt);
+        frect(10, st, 780, sb - st);
         for (int i = 1; i < 10; i++) {
           if (cmp_y[i] == C_NONE || i >= elig_prev) continue;
-          it.filled_rectangle(10, cmp_y[i] + rT - 2, 780, C_ROWB, band_col);
-          if (cmp_ry[i] != C_NONE) it.filled_rectangle(10, cmp_ry[i] + sT - 2, 780, C_SUBB, band_col);
+          frect(10, cmp_y[i] + rT - 2, 780, C_ROWB);
+          if (cmp_ry[i] != C_NONE) frect(10, cmp_ry[i] + sT - 2, 780, C_SUBB);
         }
       };
       auto on_page = [&](int i) {
@@ -1735,8 +1781,8 @@ display:
           int top = 6 + HDR + s * H + 1, bottom = std::min(6 + HDR + (s + 1) * H - 2, 411);
           mt = std::min(mt, top);
           sb = std::max(sb, bottom);
-          it.filled_rectangle(10, mt, 780, mb - mt, band_col);
-          it.filled_rectangle(10, st, 780, sb - st, band_col);
+          frect(10, mt, 780, mb - mt);
+          frect(10, st, 780, sb - st);
         }
         {
           const int fb = 418 + 34;                       // footer baseline
@@ -1744,11 +1790,10 @@ display:
           int fbm = fb + std::abs(F_SUB[fi]->get_descender()) + 5;
           ft = std::min(ft, 418 + 1);                     // room for the logo (418+4 .. 418+39)
           fbm = std::min(std::max(fbm, 418 + 42), 478);
-          it.filled_rectangle(10, ft, 780, fbm - ft, band_col);
+          frect(10, ft, 780, fbm - ft);
         }
         if (bgs == 2) {                                   // fine grid: the gaps between LEDs
-          for (int x = 12; x < 790; x += 4) it.vertical_line(x, 0, 476, bg_col);
-          for (int y = 1; y < 476; y += 4) it.horizontal_line(10, y, 780, bg_col);
+          fgrid();
         }
       }
 
@@ -1821,7 +1866,7 @@ display:
         };
         // everything below is placed by the letters' own height (ink), so bands hug the text like the list
         auto band_at = [&](font::Font *f, int ytop) { int t, b; ink_of(f, t, b); fband(ytop + t - 5, b - t + 10); };
-        // line 1: "1st  13:52  Hull" on a band, the ordinal in grey
+        // line 1: "1st  13:52  Leeds" on a band, the ordinal in grey
         {
           font::Font *f = F_ROWL[fi];
           int t, b;
@@ -2116,7 +2161,12 @@ display:
         const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
         const int hy = 5;                                                            // letters well clear of the line
         it.printf(TX, hy, fh, hc, "Time");
-        it.printf(DX, hy, fh, hc, "Destination");
+        // "Destination (to Leeds only)" on a route, "Destination (calling at X)" with the board's own filter
+        std::string dh = "Destination";
+        if (!filt.empty()) dh += " (calling at " + filt + ")";
+        else if (!id(route_to).empty()) dh += " (to " + id(route_to) + " only)";
+        fit(dh, fh, (id(show_platform).state ? PX - 60 : 784 - 70) - DX);
+        it.printf(DX, hy, fh, hc, "%s", dh.c_str());
         if (id(show_platform).state) it.printf(PX, hy, fh, hc, TextAlign::TOP_RIGHT, "Plat");
         it.printf(784, hy, fh, hc, TextAlign::TOP_RIGHT, "Expt");
       }
@@ -3922,7 +3972,10 @@ display:
       }
       const Color footc = (id(footer_colour).active_index().value_or(0) == 1) ? (id(bg_col).r > 200 ? Color(26, 26, 26) : Color(255, 255, 255)) : amber;   // logo and station name (dark on Daylight)
       std::string foot = STATION_NAMES[si];
-      if (info.empty() && !filt.empty()) foot += " > " + filt;
+      if (info.empty() && (HDR == 0 || view != 0)) {
+        if (!filt.empty()) foot += " > " + filt;
+        else if (!id(route_to).empty()) foot += " > " + id(route_to);
+      }
       int fx = 20;
       if (id(show_logo).state && id(logo_ok)) {
         // custom logo from Home Assistant, centred in the 56x35 logo space

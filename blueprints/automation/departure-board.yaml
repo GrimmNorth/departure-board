@@ -3,9 +3,11 @@ blueprint:
   author: GrimmNorth
   description: >-
     Sends your National Rail departures (from the My Rail Commute integration) to your
-    UK Departure Board every minute. Pick your board and your station.
-    Add more stations to switch between them: tap the station name at the bottom of the board,
+    UK Departure Board every minute. Pick your board and your station or route.
+    Add more stations or routes to switch between them: tap the station name at the bottom of the board,
     or change the board's "Station number" in Home Assistant.
+    At a busy station, 10 trains may only cover the next few minutes: add a My Rail Commute route
+    instead (e.g. Manchester Piccadilly to Leeds) to get the next 10 trains to where you are going.
     Set up My Rail Commute with 10 services for the best result, and set its
     Departed train grace period (Configure > Disruption) to 1 minute so departed
     trains don't take up places on the board.
@@ -21,15 +23,18 @@ blueprint:
           filter:
             - integration: esphome
     station:
-      name: Station
-      description: Your station, from the My Rail Commute integration.
+      name: Station or route
+      description: >-
+        Your station ("Departures from ...") or a route (e.g. "Manchester Piccadilly to Leeds"),
+        from the My Rail Commute integration. A route shows only trains to that destination, which
+        suits busy stations.
       selector:
         device:
           filter:
             - integration: my_rail_commute
     more_stations:
-      name: More stations (optional)
-      description: Extra stations to switch between. Station 1 is the one above, then these in order.
+      name: More stations or routes (optional)
+      description: Extra stations or routes to switch between. Station 1 is the one above, then these in order.
       default: []
       selector:
         device:
@@ -37,8 +42,11 @@ blueprint:
           filter:
             - integration: my_rail_commute
     station_name:
-      name: Station name on the board
-      description: Wording for the first station at the bottom of the board. Leave empty to use the station's name (e.g. "York").
+      name: Names on the board (optional)
+      description: >-
+        Usually leave this empty: the board uses each station's own name (e.g. "York").
+        To use different wording, type one name per station, in order, separated by commas
+        (e.g. "York, Leeds"); leave a name out (e.g. "York, , Leeds") to keep that station's own name.
       default: ""
       selector:
         text:
@@ -68,22 +76,37 @@ variables:
   pick: >-
     {% if trigger is defined and trigger.platform == 'event' and trigger.event.data.number is defined %}{{ trigger.event.data.number | int(1) }}{% elif num_ent != '' %}{{ states(num_ent) | int(1) }}{% else %}1{% endif %}
   idx: "{{ pick - 1 if 1 <= pick <= (stations | count) else 0 }}"
+  # one name per station, comma separated (a single name still names station 1, as before)
+  names: "{{ (label_in | string).split(',') | map('trim') | list if label_in else [] }}"
   station_id: "{{ stations[idx] }}"
-  label: "{{ label_in if idx == 0 else '' }}"
+  label: "{{ names[idx] if idx < (names | count) else '' }}"
   svc: "{{ device_attr(board_id, 'name') | slugify }}"
   ents: "{{ device_entities(station_id) }}"
   status_ent: "{{ ents | select('search', '_status$') | first | default('') }}"
   summary_ent: "{{ ents | select('search', '_summary$') | first | default('') }}"
   by_dest: "{{ state_attr(summary_ent, 'services_by_destination') }}"
+  # a My Rail Commute route (e.g. Manchester Piccadilly to Leeds) has a destination; "Departures from" does not
+  origin_name: "{% set v = state_attr(status_ent, 'origin_name') if status_ent != '' else none %}{{ v if v else '' }}"
+  route_to: "{% set v = state_attr(status_ent, 'destination_name') if status_ent != '' else none %}{{ v if v else '' }}"
+  all_trains: "{% set v = state_attr(summary_ent, 'all_trains') if summary_ent != '' else none %}{{ v if v is list else [] }}"
 
 actions:
   - action: "esphome.{{ svc }}_update_status"
     continue_on_error: true
     data:
       station: >-
-        {{ label if label | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True)) }}
+        {{ label if label | length > 0 else (origin_name if origin_name | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True))) }}
       status: >-
         {{ states(status_ent) if status_ent != '' else '' }}
+  # the route's destination for the board's "Destination (to ... only)" heading. Only boards with the
+  # route feature have the action (they also have a "Route" sensor); calling a missing action stops the automation.
+  - if:
+      - "{{ device_entities(board_id) | select('search', '_route$') | list | count > 0 }}"
+    then:
+      - action: "esphome.{{ svc }}_update_route"
+        continue_on_error: true
+        data:
+          to: "{{ route_to }}"
   - repeat:
       for_each: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
       sequence:
@@ -106,10 +129,12 @@ actions:
             sarr: "{% set v = state_attr(t, 'scheduled_arrival') %}{{ '' if v is none else v }}"
             earr: "{% set v = state_attr(t, 'estimated_arrival') %}{{ '' if v is none else v }}"
             pprev: "{% set v = state_attr(t, 'previous_platform') %}{{ '' if v is none else v }}"
-            calls: "{% set c = state_attr(t, 'calling_points') %}{{ c if c is list else [] }}"
+            # on a route the calling points stop at the route's end; add the train's real final destination
+            calls: >-
+              {% set c = state_attr(t, 'calling_points') %}{% set c = c if c is list else [] %}{% if route_to and sid %}{% set d = all_trains | selectattr('service_id', 'eq', sid) | map(attribute='destination') | first | default('') %}{% if d and (c | count == 0 or c[-1] != d) %}{% set c = c + [d] %}{% endif %}{% endif %}{{ c }}
             stops: >-
               {% set ns = namespace(out=[]) %}{% if by_dest and sid %}{% for dest in by_dest.values() %}{% for s in dest.services %}{% if s.service_id == sid %}{% for p in s.calling_point_details %}{% set tm = p.expected if (p.expected | regex_match('^[0-9]{2}:[0-9]{2}$')) else p.scheduled %}{% set ns.out = ns.out + [p.name ~ ' ' ~ tm] %}{% endfor %}{% endif %}{% endfor %}{% endfor %}{% endif %}{{ ns.out | join(', ') | truncate(250, true, '') }}
-  # tell the board how many stations there are (older firmware without this just ignores it)
+  # tell the board how many stations there are
   - action: "esphome.{{ svc }}_set_station_count"
     continue_on_error: true
     data:
