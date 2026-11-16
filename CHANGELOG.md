@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.15.0 - 2026-11-16 (beta)
 - New Layout setting: Classic (as before, default), Calm and Compact
 
 ## 1.14.1 - 2026-11-16 (beta)
