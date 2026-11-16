@@ -334,7 +334,7 @@ script:
   - id: fw_install
     then:
       - delay: 500ms
-      - lambda: 'id(fw_update).perform();'
+      - lambda: 'id(fw_update).perform(false);'
   # Press and hold a train: its departure time is added to (or removed from) Favourite trains
   - id: fav_hold
     parameters:
@@ -1884,7 +1884,7 @@ display:
           it.printf(24, 168, mf, amber, "has finished. Please don't unplug it.");
         } else {
           it.printf(24, 80, mf, amber, "Version %s is ready.", nv);
-          it.printf(24, 124, mf, sub_col, "You have %s.", ESPHOME_PROJECT_VERSION);
+          it.printf(24, 124, mf, grey, "You have %s.", ESPHOME_PROJECT_VERSION);
           it.printf(24, 190, mf, amber, "Install it now, or from Home Assistant:");
           it.printf(24, 234, mf, amber, "Settings > Updates, or its device page.");
           const char *BTN[2] = {"Install now", "Close"};
