@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.16.1",
+  "version": "1.17.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.16.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.17.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "8e7eb75aa623863060204831cefd9d4f",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.16.1.ota.bin",
-        "summary": "Page animation now visible; white column headings; display frame time sensor"
+        "md5": "b3bf3df443f2cc91f0d9deef8061bade",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.17.0.ota.bin",
+        "summary": "Faster drawing with Rows and Dot matrix; routes show the destination in the heading and real train destinations"
       }
     }
   ]

@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.17.0 - 2026-11-16 (beta)
+- Faster drawing with Rows and Dot matrix; routes show the destination in the heading and real train destinations
+
+## 1.17.0 - 2026-11-16 (beta)
 - Much faster drawing with the Rows and Dot matrix backgrounds: the bands and LED grid are written in bulk instead of pixel by pixel, so scrolling, page animation and taps are smoother
 - Routes (e.g. Manchester Piccadilly to Leeds): the footer shows the station, the column heading says "Destination (to Leeds only)", and each train shows its real final destination; the board's Calling at filter also shows in the heading
 - New "Route" diagnostic sensor
