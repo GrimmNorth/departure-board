@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.3 - 2026-11-16 (beta)
+- Screenshots as PNG (/screenshot.png), which Home Assistant cameras and GitHub can show; the Screenshot sensor now gives the PNG address (/screenshot.bmp still works)
+
 ## 2.0.2 - 2026-11-16 (beta)
 - Demo boards, screenshots, Tube detail page
 
