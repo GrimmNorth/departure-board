@@ -2091,7 +2091,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2247,7 +2247,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2403,7 +2403,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2559,7 +2559,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2714,7 +2714,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -2869,7 +2869,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3024,7 +3024,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3179,7 +3179,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3334,7 +3334,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
@@ -3489,7 +3489,7 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
-          if (lay != 0 && slot != 0) {
+          if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
             std::string msg;
