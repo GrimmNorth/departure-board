@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.1 - 2026-11-16 (beta)
+- New defaults for new boards (boards that already have settings keep them): Calm layout, Dot matrix background, white footer, column headings, fade cancelled trains, page animation and the logo on; pin next train and the disruption banner off; 15 s page interval; 30% night brightness
+- New "Brightness" slider in Home Assistant for the daytime brightness, next to Night brightness and Idle brightness; it stays in step with the board's Settings and the Backlight light
+- The "Logo image" setting is now called "National Rail board logo image" (next to "TfL board logo image"). Set your logo address again after updating, and delete the old "Logo image" entity from the board's device page
+- Help page: rows for the orange arrow (update ready) and the orange i (messages and line status)
+- Blueprint and README: the board takes up to 5 stations in total, including Tube stations
+- TfL board logo image: a coloured logo now works (it showed blank). It is drawn in the footer colour like the National Rail logo: coloured parts solid, white parts (lettering) cut out
+- Fixed: Tube stations no longer show "Last train" in the evening (TfL sends fewer trains, which looked like the end of service)
+- TfL line colours: only the darkest lines are brightened, so the Bakerloo line stays brown instead of looking amber
+- Update ready: an orange arrow icon in the footer instead of the small dot (next to the station message "i" when there is one). Tap it to see the new version and install it from the board
+
 ## 2.0.0 - 2026-11-16 (beta)
 - London Underground and DLR support
 
