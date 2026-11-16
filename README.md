@@ -31,12 +31,13 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 - Tap a train for its detail page: status and expected time, platform and operator, countdown, delay reason, arrival time, and the calling points as a route line with times. Tap anywhere to close.
 - **Themes:** Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Settings > Display > Theme on the board, or the theme setting in Home Assistant.
 - **Background:** *Rows* (default) puts each line on a faint unlit band like a real LED board; *Dot matrix* adds the grid of unlit dots; *Plain* turns it off. Set it in Home Assistant.
-- Tap the clock (bottom right) for settings: display, trains, extras (highlight stop, disruption banner, logo, focus mode, clock screen), screen (night dimming, screen off), status.
+- Tap the clock (bottom right) for settings: display, trains, extras (highlight stop, disruption banner, logo, focus mode, clock screen, footer colour), screen (night dimming, screen off), status.
+- **Focus mode** (Settings > Extras) shows just the next train with a big countdown, labelled 1st, with its delay reason and any platform change, and the 2nd and 3rd trains along the bottom. If you set a walking time, it skips trains you can no longer catch.
 - All the same switches and numbers appear in Home Assistant under the device.
 
 ### Custom logo
 The board shows a small train icon at the bottom left (switch it off with *Show logo*). To use your own logo instead:
-1. Make a PNG of your logo: **white (or light) on a transparent background**, ideally about 56 x 35 pixels (larger images are shrunk to fit). It is drawn in the theme colour.
+1. Make a PNG of your logo: **white (or light) on a transparent background**, ideally about 56 x 35 pixels (larger images are shrunk to fit). It is drawn in the theme colour, or in white if you set *Footer colour* to White.
 2. Put it where the board can download it, for example in Home Assistant's `www` folder (`/config/www/logo.png` is served as `http://homeassistant.local:8123/local/logo.png`; use your Home Assistant's IP address if `homeassistant.local` doesn't work).
 3. On the board's device page in Home Assistant, set **Logo image** to that address. The logo appears within a minute. Clear the setting to go back to the train icon.
 
