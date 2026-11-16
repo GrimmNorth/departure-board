@@ -2119,7 +2119,6 @@ display:
         it.printf(DX, hy, fh, hc, "Destination");
         if (id(show_platform).state) it.printf(PX, hy, fh, hc, TextAlign::TOP_RIGHT, "Plat");
         it.printf(784, hy, fh, hc, TextAlign::TOP_RIGHT, "Expt");
-        it.filled_rectangle(10, 6 + HDR - 4, 780, 2, band_col);
       }
       // ---- train 1 ----
       {
