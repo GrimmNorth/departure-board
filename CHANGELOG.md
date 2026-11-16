@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Fixed: the column heading showed boxes for some letters on a route (e.g. "Destination (to Leeds only)")
+
 ## 1.17.0 - 2026-11-16 (beta)
 - Faster drawing with Rows and Dot matrix; routes show the destination in the heading and real train destinations
 
