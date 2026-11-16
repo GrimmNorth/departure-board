@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.14.1"
+    version: "1.13.1"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -188,8 +188,11 @@ globals:
     type: int
     initial_value: "0"
   - id: slot_train         # which train is drawn in each row (for taps)
-    type: int[6]
-    initial_value: "{0, 0, 0, 0, 0, 0}"
+    type: int[10]
+    initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+  - id: slot_ybot          # bottom edge of each row on screen (for taps)
+    type: int[10]
+    initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
   - id: last_period        # auto station: -1 unknown, 0 before switch time, 1 after
     type: int
     initial_value: "-1"
@@ -341,12 +344,10 @@ touchscreen:
             if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = 0; }
             else if (y < 406) {
               // tap a train for its details
-              int cnt = (int) id(train_count).state;
-              if (cnt < 3) cnt = 3;
-              if (cnt > 5) cnt = 5;
-              if (id(text_large).state && cnt > 4) cnt = 4;
-              int sl = id(focus_mode).state ? 0 : (y - 6) / (406 / cnt);
-              int tn = (sl >= 0 && sl < cnt) ? id(slot_train)[sl] : 0;
+              int sl = -1;
+              if (id(focus_mode).state) sl = 0;
+              else for (int i = 0; i < 10; i++) { if (id(slot_train)[i] == 0) break; if (y < id(slot_ybot)[i]) { sl = i; break; } }
+              int tn = sl >= 0 ? id(slot_train)[sl] : 0;
               if (tn > 0) { id(detail_train) = tn; id(ui_screen) = 2; }
             }
             else if (id(stn_count) > 1) {   // tap the footer = next station
@@ -372,12 +373,13 @@ touchscreen:
                 case 0:
                   switch (row) {
                     case 0: id(theme_select).make_call().select_next(true).perform(); break;
-                    case 1: if (plus || minus) { float v = id(train_count).state + (plus ? 1 : -1); if (v < 3) v = 3; if (v > 5) v = 5; auto c = id(train_count).make_call(); c.set_value(v); c.perform(); } break;
-                    case 2: id(text_large).toggle(); break;
-                    case 3: id(scroll_speed).make_call().select_next(true).perform(); break;
-                    case 4: id(scroll_enabled).toggle(); break;
-                    case 5: id(show_seconds).toggle(); break;
-                    case 6: id(clock_12h).toggle(); break;
+                    case 1: id(layout_select).make_call().select_next(true).perform(); break;
+                    case 2: if (id(layout_select).active_index().value_or(0) == 2) break; if (plus || minus) { float v = id(train_count).state + (plus ? 1 : -1); if (v < 3) v = 3; if (v > 5) v = 5; auto c = id(train_count).make_call(); c.set_value(v); c.perform(); } break;
+                    case 3: id(text_large).toggle(); break;
+                    case 4: id(scroll_speed).make_call().select_next(true).perform(); break;
+                    case 5: id(scroll_enabled).toggle(); break;
+                    case 6: id(show_seconds).toggle(); break;
+                    case 7: id(clock_12h).toggle(); break;
                   }
                   break;
                 case 1:
@@ -822,6 +824,13 @@ select:
     restore_value: true
     initial_option: "Medium"
     options: ["Slow", "Medium", "Fast"]
+  - platform: template
+    name: "Layout"
+    id: layout_select
+    optimistic: true
+    restore_value: true
+    initial_option: "Classic"
+    options: ["Classic", "Calm", "Compact"]
   - platform: template
     name: "Footer colour"
     id: footer_colour
@@ -1425,12 +1434,13 @@ display:
           }
           if (id(settings_page) == 0) {
             R = 0; band(R); lab(R, "Theme"); cyc(R, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
-            R = 1; band(R); lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
-            R = 2; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
-            R = 3; band(R); lab(R, "Scroll speed"); cyc(R, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
-            R = 4; band(R); lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
-            R = 5; band(R); lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
-            R = 6; band(R); lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
+            R = 1; band(R); lab(R, "Layout"); { static const char *LN[3] = {"Classic", "Calm", "Compact"}; cyc(R, LN[id(layout_select).active_index().value_or(0)]); }
+            R = 2; band(R); lab(R, "Trains shown"); if (id(layout_select).active_index().value_or(0) == 2) val(R, grey, "Auto"); else { snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf); }
+            R = 3; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
+            R = 4; band(R); lab(R, "Scroll speed"); cyc(R, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
+            R = 5; band(R); lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
+            R = 6; band(R); lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
+            R = 7; band(R); lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
           }
           else if (id(settings_page) == 1) {
             R = 0; band(R); lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
@@ -1554,16 +1564,68 @@ display:
       int pages = 1;
       if (id(paging_on).state && view == 0 && !detail && elig_prev > count)
         pages = pin ? (elig_prev - 1 + per - 1) / per : (elig_prev + per - 1) / per;
+      // ---- layout: 0 Classic, 1 Calm (only the first train scrolls), 2 Compact (one line per train) ----
+      const int lay = id(layout_select).active_index().value_or(0);
+      static std::vector<uint8_t> cmp_tall(10, 0);           // last frame: train needs a reason line
+      std::vector<uint8_t> cmp_tall_now(10, 0);
+      int cmp_page[10], cmp_y[10], cmp_ry[10], cmp_bot[10];
+      for (int i = 0; i < 10; i++) { cmp_page[i] = -1; cmp_y[i] = -1; cmp_ry[i] = -1; cmp_bot[i] = 0; }
+      const int C_ROWB = (rB - rT) + 4;                      // band of a one-line row (letters + 2 px each side)
+      const int C_SUBB = (sB - sT) + 4;                      // band of a reason line
+      const int C_Y0 = 6 + 4 - rT;                           // first train: top of its main line
+      const int C_TOP = C_Y0 + SUBOFF + sB + 2 + 8;          // first one-line row, below the first train's band
+      const int C_BOT = 412;                                 // the footer band starts at 419
+      if (lay == 2 && view == 0 && !detail) {
+        // the next train stays at the top; the others fill pages underneath it
+        int p = 0, used = 0;
+        for (int i = 1; i < elig_prev && i < 10; i++) {
+          int h = C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0);
+          if (used > 0 && used + h > C_BOT - C_TOP) { p++; used = 0; }
+          cmp_page[i] = p;
+          used += h + 6;
+        }
+        pages = id(paging_on).state ? p + 1 : 1;
+      }
       const uint32_t page_ms = (uint32_t) (id(page_secs).state * 1000.0f);
       const int page = pages > 1 ? (int) ((millis() / page_ms) % pages) : 0;
       const uint32_t page_t0 = pages > 1 ? (millis() / page_ms) * page_ms : 0;   // scrolling restarts each page
+      if (lay == 2 && view == 0 && !detail) {
+        cmp_y[0] = C_Y0;
+        cmp_bot[0] = C_TOP - 4;
+        int n = 0, sum = 0;
+        for (int i = 1; i < 10; i++) if (cmp_page[i] == page) { n++; sum += C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0); }
+        int gap = n > 0 ? (C_BOT - C_TOP - sum) / n : 0;   // spread the rows down the screen
+        gap = std::max(6, std::min(gap, 14));
+        int cy = C_TOP;
+        for (int i = 1; i < 10; i++) {
+          if (cmp_page[i] != page) continue;
+          cmp_y[i] = cy + 2 - rT;
+          cy += C_ROWB;
+          if (cmp_tall[i]) { cmp_ry[i] = cy + 1 + 2 - sT; cy += 1 + C_SUBB; }
+          cmp_bot[i] = cy + gap / 2;
+          cy += gap;
+        }
+      }
+      auto cmp_bands = [&]() {
+        // first train: main and sub line bands, as in Classic
+        int mt = C_Y0 + rT - 2, mb = C_Y0 + rB + 2, st = C_Y0 + SUBOFF + sT - 2, sb = C_Y0 + SUBOFF + sB + 2;
+        if (mb > st - 3) { int mid = (mb + st) / 2; mb = mid - 1; st = mid + 2; }
+        it.filled_rectangle(10, mt, 780, mb - mt, band_col);
+        it.filled_rectangle(10, st, 780, sb - st, band_col);
+        for (int i = 1; i < 10; i++) {
+          if (cmp_y[i] < 0) continue;
+          it.filled_rectangle(10, cmp_y[i] + rT - 2, 780, C_ROWB, band_col);
+          if (cmp_ry[i] >= 0) it.filled_rectangle(10, cmp_ry[i] + sT - 2, 780, C_SUBB, band_col);
+        }
+      };
       auto on_page = [&](int i) {
+        if (lay == 2) return i == 0 || (i < 10 && cmp_page[i] == page);
         if (pages <= 1) return true;
         if (pin && i == 0) return true;                 // the next train stays on every page
         int k = pin ? i - 1 : i;
         return k / per == page;
       };
-      if (!detail) for (int i = 0; i < 6; i++) id(slot_train)[i] = 0;
+      if (!detail) for (int i = 0; i < 10; i++) id(slot_train)[i] = 0;
       // unlit LED rows behind the text, like a real dot-matrix board
       const int bgs = id(bg_style).active_index().value_or(1);
       if (bgs > 0 && view == 0 && !detail) {
@@ -1574,7 +1636,8 @@ display:
           a = top + t0 - 2;
           b = top + b0 + 2;
         };
-        for (int s = 0; s < count; s++) {
+        if (lay == 2) cmp_bands();
+        else for (int s = 0; s < count; s++) {
           int y = 6 + s * H + pad;
           int mt, mb, st, sb;
           ink(fr, y, mt, mb);
@@ -1973,6 +2036,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -1983,9 +2047,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(1, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 1;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2022,6 +2087,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -2091,6 +2174,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -2108,6 +2192,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -2118,9 +2203,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(2, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 2;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2157,6 +2243,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -2226,6 +2330,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -2243,6 +2348,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -2253,9 +2359,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(3, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 3;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2292,6 +2399,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -2361,6 +2486,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -2378,6 +2504,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -2388,9 +2515,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(4, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 4;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2427,6 +2555,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -2496,6 +2642,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -2512,6 +2659,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -2522,9 +2670,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(5, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 5;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2561,6 +2710,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -2630,6 +2797,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -2646,6 +2814,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -2656,9 +2825,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(6, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 6;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2695,6 +2865,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -2764,6 +2952,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -2780,6 +2969,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -2790,9 +2980,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(7, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 7;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2829,6 +3020,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -2898,6 +3107,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -2914,6 +3124,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -2924,9 +3135,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(8, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 8;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -2963,6 +3175,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -3032,6 +3262,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -3048,6 +3279,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -3058,9 +3290,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(9, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 9;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -3097,6 +3330,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -3166,6 +3417,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -3182,6 +3434,7 @@ display:
           std::string dest = departure::destination(calls, DMAX);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
             if (leave_mins < 0 && !cancelled && lm >= 0 && lm >= walk) leave_mins = lm - walk;
@@ -3192,9 +3445,10 @@ display:
             }
           } else if (view != 0) {
             focus_add(10, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if (slot < count && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 10;
-          int y = 6 + slot * H + pad;
+          id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
+          int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
           int mins = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
           bool soon = walk > 0 && !cancelled && mins >= 0 && mins < walk;   // too soon to walk there
           Color c0 = soon ? grey : amber;
@@ -3231,6 +3485,24 @@ display:
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
+          if (lay != 0 && slot != 0) {
+            // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
+            // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
+            std::string msg;
+            Color mc = grey;
+            if ((late || cancelled) && departure::valid(reason)) {
+              msg = reason;                                   // the time column already shows the delay
+              mc = cancelled ? red : orange;
+            } else if (lay == 1) {
+              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+            }
+            int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
+            if (!msg.empty() && ry >= 0) {
+              fit(msg, fs, SW);
+              it.printf(DX, ry, fs, mc, "%s", msg.c_str());
+            }
+            slot++;
+          } else {
           // scrolling sub-line: reason (orange/red) then "Calling at ..."
           if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
           std::string head;
@@ -3300,6 +3572,7 @@ display:
           }
           it.end_clipping();
           slot++;
+          }
           }
         }
       }
@@ -3325,6 +3598,7 @@ display:
       }
 
       elig_prev = elig;
+      cmp_tall = cmp_tall_now;
       if (detail && !dfound) id(ui_screen) = 0;      // the train has gone: back to the list
 
       if (switching && !detail) it.printf(400, 180, F_ROWL[fi], amber, TextAlign::CENTER, "Switching station...");

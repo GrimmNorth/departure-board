@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- New Layout setting: Classic (as before, default), Calm and Compact
+
 ## 1.14.1 - 2026-11-16 (beta)
 - Focus mode layout fixed: no overlapping lines, tidier spacing
 
