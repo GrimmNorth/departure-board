@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.12.1"
+    version: "1.13.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -373,11 +373,10 @@ touchscreen:
                     case 0: id(theme_select).make_call().select_next(true).perform(); break;
                     case 1: if (plus || minus) { float v = id(train_count).state + (plus ? 1 : -1); if (v < 3) v = 3; if (v > 5) v = 5; auto c = id(train_count).make_call(); c.set_value(v); c.perform(); } break;
                     case 2: id(text_large).toggle(); break;
-                    case 3: id(font_select).make_call().select_next(true).perform(); break;
-                    case 4: id(scroll_speed).make_call().select_next(true).perform(); break;
-                    case 5: id(scroll_enabled).toggle(); break;
-                    case 6: id(show_seconds).toggle(); break;
-                    case 7: id(clock_12h).toggle(); break;
+                    case 3: id(scroll_speed).make_call().select_next(true).perform(); break;
+                    case 4: id(scroll_enabled).toggle(); break;
+                    case 5: id(show_seconds).toggle(); break;
+                    case 6: id(clock_12h).toggle(); break;
                   }
                   break;
                 case 1:
@@ -475,81 +474,24 @@ light:
     restore_mode: ALWAYS_ON
 
 font:
-  - file: "fonts/LondonUnderground-Regular.ttf"
+  - file: "gfonts://DotGothic16"
     id: f_row_0
-    size: 31
-  - file: "fonts/LondonUnderground-Regular.ttf"
+    size: 32
+  - file: "gfonts://DotGothic16"
     id: f_sub_0
-    size: 25
-  - file: "fonts/LondonUnderground-Regular.ttf"
+    size: 32
+  - file: "gfonts://DotGothic16"
     id: f_clk_0
-    size: 31
-  - file: "fonts/LondonUnderground-Regular.ttf"
+    size: 32
+  - file: "gfonts://DotGothic16"
     id: f_row_l_0
-    size: 40
-  - file: "fonts/LondonUnderground-Regular.ttf"
-    id: f_sub_l_0
-    size: 31
-  - file: "gfonts://DotGothic16"
-    id: f_row_1
-    size: 32
-  - file: "gfonts://DotGothic16"
-    id: f_sub_1
-    size: 32
-  - file: "gfonts://DotGothic16"
-    id: f_clk_1
-    size: 32
-  - file: "gfonts://DotGothic16"
-    id: f_row_l_1
     size: 48
   - file: "gfonts://DotGothic16"
-    id: f_sub_l_1
+    id: f_sub_l_0
     size: 32
-  - file: "fonts/BitcountPropDouble-Dots.ttf"
-    id: f_row_2
-    size: 40
-  - file: "fonts/BitcountPropDouble-Dots.ttf"
-    id: f_sub_2
-    size: 30
-  - file: "fonts/BitcountPropDouble-Dots.ttf"
-    id: f_clk_2
-    size: 40
-  - file: "fonts/BitcountPropDouble-Dots.ttf"
-    id: f_row_l_2
-    size: 50
-  - file: "fonts/BitcountPropDouble-Dots.ttf"
-    id: f_sub_l_2
-    size: 40
-  - file: "gfonts://Handjet@500"
-    id: f_row_3
-    size: 39
-  - file: "gfonts://Handjet@500"
-    id: f_sub_3
-    size: 32
-  - file: "gfonts://Handjet@500"
-    id: f_clk_3
-    size: 39
-  - file: "gfonts://Handjet@500"
-    id: f_row_l_3
-    size: 51
-  - file: "gfonts://Handjet@500"
-    id: f_sub_l_3
-    size: 39
-  - file: "fonts/LondonUnderground-Regular.ttf"
-    id: f_big_0
-    size: 135
-    glyphs: "0123456789: apmDueinh"
   - file: "gfonts://DotGothic16"
-    id: f_big_1
+    id: f_big_0
     size: 144
-    glyphs: "0123456789: apmDueinh"
-  - file: "fonts/BitcountPropDouble-Dots.ttf"
-    id: f_big_2
-    size: 170
-    glyphs: "0123456789: apmDueinh"
-  - file: "gfonts://Handjet@500"
-    id: f_big_3
-    size: 172
     glyphs: "0123456789: apmDueinh"
 
 color:
@@ -881,10 +823,11 @@ select:
   - platform: template
     name: "Font"
     id: font_select
+    internal: true
     optimistic: true
     restore_value: true
-    initial_option: "Underground"
-    options: ["Underground", "DotGothic", "Bitcount", "Handjet"]
+    initial_option: "DotGothic"
+    options: ["DotGothic"]
 
 text_sensor:
   - platform: template
@@ -1402,16 +1345,16 @@ display:
         it.filled_rectangle(60, 138, 680, 64, band_col);
         const int wipe = std::min<int>(800, (int) (bt * 800 / 1600));
         it.start_clipping(0, 0, wipe, 480);
-        it.printf(400, 170, id(f_row_1), amber, TextAlign::CENTER, "UK Departure Board");
+        it.printf(400, 170, id(f_row_0), amber, TextAlign::CENTER, "UK Departure Board");
         it.end_clipping();
         if (wipe > 60 && wipe < 740) it.filled_rectangle(wipe, 138, 4, 64, hilite);   // the bright "cursor"
-        if (bt > 1800) it.printf(400, 232, id(f_sub_1), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
-        if (bt > 2200) it.printf(400, 268, id(f_sub_1), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
+        if (bt > 1800) it.printf(400, 232, id(f_sub_0), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
+        if (bt > 2200) it.printf(400, 268, id(f_sub_0), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
         if (bt > 2600) {
           if (wifi::global_wifi_component->is_connected())
-            it.printf(400, 304, id(f_sub_1), green, TextAlign::CENTER, "Wi-Fi connected");
+            it.printf(400, 304, id(f_sub_0), green, TextAlign::CENTER, "Wi-Fi connected");
           else
-            it.printf(400, 304, id(f_sub_1), orange, TextAlign::CENTER, "Connecting to Wi-Fi...");
+            it.printf(400, 304, id(f_sub_0), orange, TextAlign::CENTER, "Connecting to Wi-Fi...");
         }
         for (int d = 0; d < 24; d++)                     // a row of dots fills up while it starts
           it.filled_circle(400 - 230 + d * 20, 390, 4, bt > (uint32_t) d * 200 ? amber : band_col);
@@ -1422,7 +1365,7 @@ display:
       bool tv = now.is_valid();
       int nowmin = tv ? now.hour * 60 + now.minute : -1;
       const char *THEME_NAMES[] = {"Classic", "White LED", "Modern LCD", "Retro green", "High contrast", "Daylight"};
-      const char *FONT_NAMES[] = {"Underground", "DotGothic", "Bitcount", "Handjet"};
+      const char *FONT_NAMES[] = {"DotGothic"};
       std::string stn_name = id(station_ts).state.empty() ? std::string("Departures") : id(station_ts).state;
       const char *STATION_NAMES[] = {stn_name.c_str()};
       int si = id(station_select).active_index().value_or(0);
@@ -1440,34 +1383,33 @@ display:
           static const char *SPEEDN[3] = {"Slow", "Medium", "Fast"};
           int R = 0;
           auto lab = [&](int row, const char *s) {
-            it.printf(20, 50 + row * 46 + 21, id(f_row_1), amber, TextAlign::CENTER_LEFT, "%s", s);
+            it.printf(20, 50 + row * 46 + 21, id(f_row_0), amber, TextAlign::CENTER_LEFT, "%s", s);
           };
           auto val = [&](int row, Color c, const char *s) {
-            it.printf(776, 50 + row * 46 + 21, id(f_row_1), c, TextAlign::CENTER_RIGHT, "%s", s);
+            it.printf(776, 50 + row * 46 + 21, id(f_row_0), c, TextAlign::CENTER_RIGHT, "%s", s);
           };
           auto pm = [&](int row, const char *v) {
             int ry = 50 + row * 46;
             it.rectangle(510, ry, 80, 42, amber);
-            it.printf(550, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "-");
+            it.printf(550, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "-");
             it.rectangle(700, ry, 80, 42, amber);
-            it.printf(740, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "+");
-            it.printf(645, ry + 21, id(f_row_1), amber, TextAlign::CENTER, "%s", v);
+            it.printf(740, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "+");
+            it.printf(645, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "%s", v);
           };
           auto onoff = [&](int row, bool on) { val(row, on ? green : red, on ? "On" : "Off"); };
           char buf[40];
           const bool wifi_ok = wifi::global_wifi_component->is_connected();
           const bool api_ok = api::global_api_server->is_connected();
           static const char *PAGE_NAMES[5] = {"Display", "Trains", "Extras", "Screen", "Status"};
-          it.printf(20, 25, id(f_row_1), hilite, TextAlign::CENTER_LEFT, "Settings %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
+          it.printf(20, 25, id(f_row_0), hilite, TextAlign::CENTER_LEFT, "Settings %d/5  %s", id(settings_page) + 1, PAGE_NAMES[id(settings_page)]);
           if (id(settings_page) == 0) {
             R = 0; lab(R, "Theme"); val(R, amber, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
             R = 1; lab(R, "Trains shown"); snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf);
             R = 2; lab(R, "Text size"); val(R, amber, id(text_large).state ? "Large" : "Normal");
-            R = 3; lab(R, "Font"); val(R, amber, FONT_NAMES[id(font_select).active_index().value_or(0)]);
-            R = 4; lab(R, "Scroll speed"); val(R, amber, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
-            R = 5; lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
-            R = 6; lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
-            R = 7; lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
+            R = 3; lab(R, "Scroll speed"); val(R, amber, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
+            R = 4; lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
+            R = 5; lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
+            R = 6; lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
           }
           else if (id(settings_page) == 1) {
             R = 0; lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
@@ -1507,9 +1449,9 @@ display:
             R = 7; lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
           }
           it.rectangle(60, 426, 300, 46, amber);
-          it.printf(210, 449, id(f_row_1), amber, TextAlign::CENTER, "Next >");
+          it.printf(210, 449, id(f_row_0), amber, TextAlign::CENTER, "Next >");
           it.rectangle(440, 426, 300, 46, amber);
-          it.printf(590, 449, id(f_row_1), amber, TextAlign::CENTER, "Close");
+          it.printf(590, 449, id(f_row_0), amber, TextAlign::CENTER, "Close");
           return;
         }
       }
@@ -1521,14 +1463,14 @@ display:
       if (count > 5) count = 5;
       if (L && count > 4) count = 4;            // large text only has room for 4 trains
       const int H = 406 / count;                // pixel height of one train (two lines)
-      const int fi = id(font_select).active_index().value_or(0);
+      const int fi = 0;   // one font
       static std::map<std::string, uint32_t> pchg_seen;   // when each platform change was first shown
-      font::Font *F_ROW[] = {id(f_row_0), id(f_row_1), id(f_row_2), id(f_row_3)};
-      font::Font *F_SUB[] = {id(f_sub_0), id(f_sub_1), id(f_sub_2), id(f_sub_3)};
-      font::Font *F_CLK[] = {id(f_clk_0), id(f_clk_1), id(f_clk_2), id(f_clk_3)};
-      font::Font *F_ROWL[] = {id(f_row_l_0), id(f_row_l_1), id(f_row_l_2), id(f_row_l_3)};
-      font::Font *F_SUBL[] = {id(f_sub_l_0), id(f_sub_l_1), id(f_sub_l_2), id(f_sub_l_3)};
-      font::Font *F_BIG[] = {id(f_big_0), id(f_big_1), id(f_big_2), id(f_big_3)};
+      font::Font *F_ROW[] = {id(f_row_0)};
+      font::Font *F_SUB[] = {id(f_sub_0)};
+      font::Font *F_CLK[] = {id(f_clk_0)};
+      font::Font *F_ROWL[] = {id(f_row_l_0)};
+      font::Font *F_SUBL[] = {id(f_sub_l_0)};
+      font::Font *F_BIG[] = {id(f_big_0)};
       auto fr = L ? F_ROWL[fi] : F_ROW[fi];
       auto fs = L ? F_SUBL[fi] : F_SUB[fi];
       const int TX = 18;

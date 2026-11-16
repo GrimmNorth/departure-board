@@ -31,7 +31,6 @@ Updates appear in Home Assistant as an Update button on the board's device page.
 - Tap a train for its detail page: status and expected time, platform and operator, countdown, delay reason, arrival time, and the calling points as a route line with times. Tap anywhere to close.
 - **Themes:** Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Settings > Display > Theme on the board, or the theme setting in Home Assistant.
 - **Background:** *Rows* (default) puts each line on a faint unlit band like a real LED board; *Dot matrix* adds the grid of unlit dots; *Plain* turns it off. Set it in Home Assistant.
-- **Fonts:** DotGothic (default), Underground (London Underground dot-matrix style), Bitcount (round LED dots) and Handjet (narrow dot-matrix). Settings > Display > Font.
 - Tap the clock (bottom right) for settings: display, trains, extras (highlight stop, disruption banner, logo, focus mode, clock screen), screen (night dimming, screen off), status.
 - All the same switches and numbers appear in Home Assistant under the device.
 
@@ -64,5 +63,5 @@ Choosing **stable** in step 2 skips the beta stage. `release.sh` does the same p
 - Built and tested on one CrowPanel Basic 7" with ESPHome 2026.10. Hobby project, not affiliated with National Rail or Elecrow.
 - The board's API is unencrypted so setup stays simple; keep it on your home network.
 - Train data comes from the National Rail Darwin feed via My Rail Commute; check its terms for your use.
-- The Underground and Bitcount fonts are bundled under the SIL Open Font License; see `firmware/fonts/README.md` for credits.
+- Text uses the DotGothic16 font (SIL Open Font License), downloaded from Google Fonts at build time.
 - `departure_board.h` includes a USB-pin workaround for the CrowPanel touch bus, based on the community notes on the ESPHome devices page.
