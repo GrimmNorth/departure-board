@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.14.0 - 2026-11-16 (beta)
+- Focus mode shows 1st, 2nd and 3rd trains, delay reasons and platform changes; new footer colour setting
+
+## 1.14.0 - 2026-11-16 (beta)
 - Focus mode: the train is labelled 1st, with the 2nd and 3rd trains along the bottom; shows the delay reason (scrolling if long) and highlights a platform change; skips trains you can no longer catch when a walking time is set
 - New Footer colour setting (Theme or White) for the logo and station name
 
