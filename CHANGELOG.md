@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2.0.1 - 2026-11-16 (beta)
+- Update icon, themed TfL logo, Brightness slider, new defaults
+
+## 2.0.1 - 2026-11-16 (beta)
 - New defaults for new boards (boards that already have settings keep them): Calm layout, Dot matrix background, white footer, column headings, fade cancelled trains, page animation and the logo on; pin next train and the disruption banner off; 15 s page interval; 30% night brightness
 - New "Brightness" slider in Home Assistant for the daytime brightness, next to Night brightness and Idle brightness; it stays in step with the board's Settings and the Backlight light
 - The "Logo image" setting is now called "National Rail board logo image" (next to "TfL board logo image"). Set your logo address again after updating, and delete the old "Logo image" entity from the board's device page

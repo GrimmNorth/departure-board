@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.0.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.0.1.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "d73b37ed5732d917617189277bfb5a51",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.0.ota.bin",
-        "summary": "London Underground and DLR support"
+        "md5": "7cd5d79c80e70169976622ce6359e9a3",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.1.ota.bin",
+        "summary": "Update icon, themed TfL logo, Brightness slider, new defaults"
       }
     }
   ]
