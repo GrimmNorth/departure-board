@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.15.0"
+    version: "1.13.1"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1569,7 +1569,8 @@ display:
       static std::vector<uint8_t> cmp_tall(10, 0);           // last frame: train needs a reason line
       std::vector<uint8_t> cmp_tall_now(10, 0);
       int cmp_page[10], cmp_y[10], cmp_ry[10], cmp_bot[10];
-      for (int i = 0; i < 10; i++) { cmp_page[i] = -1; cmp_y[i] = -1; cmp_ry[i] = -1; cmp_bot[i] = 0; }
+      const int C_NONE = -10000;                             // "no row" (real text tops can be slightly negative)
+      for (int i = 0; i < 10; i++) { cmp_page[i] = -1; cmp_y[i] = C_NONE; cmp_ry[i] = C_NONE; cmp_bot[i] = 0; }
       const int C_ROWB = (rB - rT) + 4;                      // band of a one-line row (letters + 2 px each side)
       const int C_SUBB = (sB - sT) + 4;                      // band of a reason line
       const int C_Y0 = 6 + 4 - rT;                           // first train: top of its main line
@@ -1577,14 +1578,15 @@ display:
       const int C_BOT = 412;                                 // the footer band starts at 419
       if (lay == 2 && view == 0 && !detail) {
         // the next train stays at the top; the others fill pages underneath it
-        int p = 0, used = 0;
-        for (int i = 1; i < elig_prev && i < 10; i++) {
+        int p = 0, used = 0, last = 0;
+        for (int i = 1; i < 10; i++) {
           int h = C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0);
           if (used > 0 && used + h > C_BOT - C_TOP) { p++; used = 0; }
           cmp_page[i] = p;
           used += h + 6;
+          if (i < elig_prev) last = p;
         }
-        pages = id(paging_on).state ? p + 1 : 1;
+        pages = id(paging_on).state ? last + 1 : 1;
       }
       const uint32_t page_ms = (uint32_t) (id(page_secs).state * 1000.0f);
       const int page = pages > 1 ? (int) ((millis() / page_ms) % pages) : 0;
@@ -1593,12 +1595,14 @@ display:
         cmp_y[0] = C_Y0;
         cmp_bot[0] = C_TOP - 4;
         int n = 0, sum = 0;
-        for (int i = 1; i < 10; i++) if (cmp_page[i] == page) { n++; sum += C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0); }
+        for (int i = 1; i < 10 && i < elig_prev; i++) if (cmp_page[i] == page) { n++; sum += C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0); }
         int gap = n > 0 ? (C_BOT - C_TOP - sum) / n : 0;   // spread the rows down the screen
         gap = std::max(6, std::min(gap, 14));
         int cy = C_TOP;
         for (int i = 1; i < 10; i++) {
           if (cmp_page[i] != page) continue;
+          int h = C_ROWB + (cmp_tall[i] ? C_SUBB + 1 : 0);
+          if (cy + h > C_BOT) break;                          // no room left on this page
           cmp_y[i] = cy + 2 - rT;
           cy += C_ROWB;
           if (cmp_tall[i]) { cmp_ry[i] = cy + 1 + 2 - sT; cy += 1 + C_SUBB; }
@@ -1613,9 +1617,9 @@ display:
         it.filled_rectangle(10, mt, 780, mb - mt, band_col);
         it.filled_rectangle(10, st, 780, sb - st, band_col);
         for (int i = 1; i < 10; i++) {
-          if (cmp_y[i] < 0) continue;
+          if (cmp_y[i] == C_NONE || i >= elig_prev) continue;
           it.filled_rectangle(10, cmp_y[i] + rT - 2, 780, C_ROWB, band_col);
-          if (cmp_ry[i] >= 0) it.filled_rectangle(10, cmp_ry[i] + sT - 2, 780, C_SUBB, band_col);
+          if (cmp_ry[i] != C_NONE) it.filled_rectangle(10, cmp_ry[i] + sT - 2, 780, C_SUBB, band_col);
         }
       };
       auto on_page = [&](int i) {
@@ -2047,7 +2051,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(1, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 1;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -2099,7 +2103,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -2203,7 +2207,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(2, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 2;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -2255,7 +2259,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -2359,7 +2363,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(3, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 3;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -2411,7 +2415,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -2515,7 +2519,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(4, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 4;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -2567,7 +2571,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -2670,7 +2674,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(5, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 5;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -2722,7 +2726,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -2825,7 +2829,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(6, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 6;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -2877,7 +2881,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -2980,7 +2984,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(7, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 7;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -3032,7 +3036,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -3135,7 +3139,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(8, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 8;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -3187,7 +3191,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -3290,7 +3294,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(9, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 9;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -3342,7 +3346,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }
@@ -3445,7 +3449,7 @@ display:
             }
           } else if (view != 0) {
             focus_add(10, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
-          } else if ((lay == 2 ? (slot < 10 && cmp_y[eidx < 10 ? eidx : 0] >= 0 && eidx < 10) : slot < count) && on_page(eidx) && !switching) {
+          } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 10;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + (slot + 1) * H;
           int y = (lay == 2) ? cmp_y[eidx] : 6 + slot * H + pad;
@@ -3497,7 +3501,7 @@ display:
               msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? cmp_ry[eidx] : y + SUBOFF;
-            if (!msg.empty() && ry >= 0) {
+            if (!msg.empty() && ry != C_NONE) {
               fit(msg, fs, SW);
               it.printf(DX, ry, fs, mc, "%s", msg.c_str());
             }

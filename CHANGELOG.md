@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Compact layout fixed: the next train now shows at the top (it was missing and the rows below overlapped)
+
 ## 1.15.0 - 2026-11-16 (beta)
 - New Layout setting: Classic, Calm and Compact
 
