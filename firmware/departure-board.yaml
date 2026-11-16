@@ -1834,6 +1834,7 @@ display:
       const bool wifi_ok = wifi::global_wifi_component->is_connected();
       const bool api_ok = api::global_api_server->is_connected();
       int leave_mins = -1;
+      int n_recent = 0;                 // trains Home Assistant sent that leave from 10 min ago onwards
       int slot = 0;
       if (id(ui_screen) == 2 && millis() - id(last_fresh) > 30000) id(ui_screen) = 0;   // detail view times out
       const bool detail = (id(ui_screen) == 2);
@@ -1857,6 +1858,7 @@ display:
       const bool hi_con = id(theme_select).active_index().value_or(0) == 4;
       const Color cxl_col = Color((amber.r * 45 + band_col.r * 55) / 100, (amber.g * 45 + band_col.g * 55) / 100, (amber.b * 45 + band_col.b * 55) / 100);
       const Color sub_col = hi_con ? amber : Color((amber.r * 7 + band_col.r * 3) / 10, (amber.g * 7 + band_col.g * 3) / 10, (amber.b * 7 + band_col.b * 3) / 10);
+      const Color sub_ora = hi_con ? orange : Color((orange.r * 7 + band_col.r * 3) / 10, (orange.g * 7 + band_col.g * 3) / 10, (orange.b * 7 + band_col.b * 3) / 10);
       static std::vector<uint8_t> cmp_tall(10, 0);           // last frame: train needs a reason line
       std::vector<uint8_t> cmp_tall_now(10, 0);
       int cmp_page[10], cmp_y[10], cmp_ry[10], cmp_bot[10];
@@ -2377,6 +2379,11 @@ display:
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -2449,13 +2456,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -2575,6 +2582,11 @@ display:
         if (id(demo_mode).state) { stat = "delayed"; dreason = "This service has been delayed by a late running train in front of this one"; }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -2647,13 +2659,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -2773,6 +2785,11 @@ display:
         if (id(demo_mode).state) { stat = "cancelled"; creason = "Due to a shortage of train crew"; }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -2845,13 +2862,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -2971,6 +2988,11 @@ display:
         if (id(demo_mode).state) { plat = "2"; pchg = "true"; }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -3043,13 +3065,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -3168,6 +3190,11 @@ display:
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -3240,13 +3267,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -3365,6 +3392,11 @@ display:
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -3437,13 +3469,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -3562,6 +3594,11 @@ display:
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -3634,13 +3671,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -3759,6 +3796,11 @@ display:
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -3831,13 +3873,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -3956,6 +3998,11 @@ display:
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -4028,13 +4075,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -4153,6 +4200,11 @@ display:
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(sched) && nowmin >= 0) {
+          const std::string &tt = exp.size() >= 5 ? exp : sched;
+          int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+          if (dm <= 720 || 1440 - dm <= 10) n_recent++;
+        }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
           std::string dest = departure::destination(calls, DMAX);
@@ -4225,13 +4277,13 @@ display:
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
-          Color arr_c = soon ? grey : amber;
+          Color arr_c = c0s;                 // dimmed like the rest of the second line
           if (!id(route_to).empty() && !cancelled) {
             auto hm = [](const std::string &s) { return s.size() == 5 && s[2] == ':' && isdigit(s[0]) && isdigit(s[4]); };
             const bool ev = hm(earr), sv = hm(sarr);
             if (ev || sv) {
               arr_s = "Arrives " + (ev ? earr : sarr);
-              if (ev && sv && earr != sarr && !soon) arr_c = orange;
+              if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
@@ -4416,6 +4468,11 @@ display:
           h2 = "Check Home Assistant and My Rail Commute";
         } else if (!filt.empty()) {
           l1 = "No trains calling at"; l2 = filt;
+        } else if (n_recent > 0) {
+          l1 = "Waiting for new train times";
+          h1 = "The trains listed have all just left";
+          h2 = "At a busy station, a route works better";
+          waiting = true;
         } else {
           l1 = "No more trains"; l2 = "tonight"; big = true;
         }
