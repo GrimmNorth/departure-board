@@ -1568,7 +1568,7 @@ display:
       if (count < 3) count = 3;
       if (count > 5) count = 5;
       if (L && count > 4) count = 4;            // large text only has room for 4 trains
-      const int HDR = id(col_headings).state ? 26 : 0;   // room for column headings
+      const int HDR = id(col_headings).state ? 32 : 0;   // room for column headings
       const int H = (406 - HDR) / count;                // pixel height of one train (two lines)
       const int fi = 0;   // one font
       static std::map<std::string, uint32_t> pchg_seen;   // when each platform change was first shown
@@ -2113,10 +2113,12 @@ display:
 
       if (HDR > 0 && view == 0 && !detail) {
         font::Font *fh = id(f_hdr_0);
-        it.printf(TX, 9, fh, sub_col, "Time");
-        it.printf(DX, 9, fh, sub_col, "Destination");
-        if (id(show_platform).state) it.printf(PX, 9, fh, sub_col, TextAlign::TOP_RIGHT, "Plat");
-        it.printf(784, 9, fh, sub_col, TextAlign::TOP_RIGHT, "Expt");
+        const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
+        const int hy = 5;                                                            // letters well clear of the line
+        it.printf(TX, hy, fh, hc, "Time");
+        it.printf(DX, hy, fh, hc, "Destination");
+        if (id(show_platform).state) it.printf(PX, hy, fh, hc, TextAlign::TOP_RIGHT, "Plat");
+        it.printf(784, hy, fh, hc, TextAlign::TOP_RIGHT, "Expt");
         it.filled_rectangle(10, 6 + HDR - 4, 780, 2, band_col);
       }
       // ---- train 1 ----
