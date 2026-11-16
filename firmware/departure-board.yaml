@@ -1653,23 +1653,38 @@ display:
                              std::string reason, std::string oper, std::string delaym, std::string stops,
                              std::string sarr, std::string earr, std::string pprev, bool cancelled, bool late) {
 
-        // ---------- header: time, destination, status ----------
-        const int LH = F_SUB[fi]->get_height() + 4;            // line height follows the chosen font
+        // ---------- detail page: laid out like a departure row, on the board's bands ----------
+        font::Font *fh = F_ROW[fi], *fd = F_SUB[fi];
+        int hT, hB, dT, dB;
+        ink_of(fh, hT, hB);
+        ink_of(fd, dT, dB);
+        const int LHB = dB - dT + 8;                         // one band
+        const Color BAND = band_col;                 // follows the theme
+        auto bandline = [&](int y, font::Font *f) {
+          int t, b;
+          ink_of(f, t, b);
+          it.filled_rectangle(10, y + t - 4, 780, b - t + 8, BAND);
+        };
         int bx, by, bw, bh;
-        Color sc = cancelled ? red : (late ? orange : green);
-        std::string st = cancelled ? std::string("Cancelled") : (late ? (departure::valid(exp) ? "Exp " + exp : std::string("Delayed")) : std::string("On time"));
-        it.get_text_bounds(0, 0, sched.c_str(), F_ROW[fi], TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
-        const int dx = 18 + bw + 20;                           // content column, lined up under the destination
-        int stw;
-        it.get_text_bounds(0, 0, st.c_str(), F_ROW[fi], TextAlign::TOP_LEFT, &bx, &by, &stw, &bh);
-        std::string dd = departure::destination(calls, 60);
-        fit(dd, F_ROW[fi], 784 - stw - 24 - dx);
-        it.printf(18, 8, F_ROW[fi], amber, "%s", sched.c_str());
-        it.printf(dx, 8, F_ROW[fi], amber, "%s", dd.c_str());
-        it.printf(784, 8, F_ROW[fi], sc, TextAlign::TOP_RIGHT, "%s", st.c_str());
-        int cy = 8 + F_ROW[fi]->get_height() + 6;
+        const bool bus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
 
-        // ---------- platform and operator, countdown on the right ----------
+        // line 1: time, destination, platform, status - the same columns as the list
+        int y = 6 - hT + 6;
+        bandline(y, fh);
+        Color sc = cancelled ? red : (late ? orange : green);
+        std::string st = cancelled ? std::string("Cancelled") : ((late && departure::valid(exp)) ? exp : (late ? std::string("Delayed") : std::string("On time")));
+        std::string pl = cancelled ? std::string("") : (bus ? std::string("Bus") : (departure::valid(plat) ? plat : std::string("")));
+        int plw = 0;
+        if (!pl.empty()) it.get_text_bounds(0, 0, pl.c_str(), fh, TextAlign::TOP_LEFT, &bx, &by, &plw, &bh);
+        std::string dd = departure::destination(calls, 60);
+        fit(dd, fh, (pl.empty() ? 784 - 140 : 610 - plw - 16) - 130);
+        it.printf(18, y, fh, amber, "%s", sched.c_str());
+        it.printf(130, y, fh, amber, "%s", dd.c_str());
+        if (!pl.empty()) it.printf(610, y, fh, departure::truthy(pchg) ? orange : amber, TextAlign::TOP_RIGHT, "%s", pl.c_str());
+        it.printf(784, y, fh, sc, TextAlign::TOP_RIGHT, "%s", st.c_str());
+        y += (hB - hT + 8) + 3;
+
+        // line 2: operator, countdown on the right
         char cb[24] = "";
         if (!cancelled) {
           int dm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -1680,27 +1695,35 @@ display:
           }
         }
         int cw = 0;
-        if (cb[0]) it.get_text_bounds(0, 0, cb, F_SUB[fi], TextAlign::TOP_LEFT, &bx, &by, &cw, &bh);
-        std::string l2;
-        if (departure::valid(plat) && !cancelled) {
-          l2 = "Platform " + plat;
-          if (departure::truthy(pchg) && departure::valid(pprev)) l2 += " (was " + pprev + ")";
-        }
-        if (departure::valid(oper)) l2 += (l2.empty() ? "" : "  -  ") + oper;
-        fit(l2, F_SUB[fi], 784 - (cw ? cw + 24 : 0) - dx);
-        it.printf(dx, cy, F_SUB[fi], departure::truthy(pchg) ? orange : amber, "%s", l2.c_str());
-        if (cb[0]) it.printf(784, cy, F_SUB[fi], late ? orange : green, TextAlign::TOP_RIGHT, "%s", cb);
-        cy += LH;
+        if (cb[0]) it.get_text_bounds(0, 0, cb, fd, TextAlign::TOP_LEFT, &bx, &by, &cw, &bh);
+        bandline(y, fd);
+        std::string op = departure::valid(oper) ? oper : std::string("");
+        if (departure::truthy(pchg) && departure::valid(pprev) && !bus) op += (op.empty() ? "" : "  -  ") + std::string("was platform ") + pprev;
+        fit(op, fd, 784 - (cw ? cw + 24 : 0) - 130);
+        it.printf(130, y, fd, amber, "%s", op.c_str());
+        if (cb[0]) it.printf(784, y, fd, late ? orange : green, TextAlign::TOP_RIGHT, "%s", cb);
+        y += LHB + 3;
 
-        // ---------- delay, reason, arrival ----------
+        // line 3: replacement bus / delay / arrival
         if (delaym.size() > 2 && delaym.compare(delaym.size() - 2, 2, ".0") == 0) delaym.resize(delaym.size() - 2);
-        if (late && !cancelled && departure::valid(exp)) {
-          std::string l3 = "Expected " + exp;
-          if (departure::valid(delaym) && delaym != "0") l3 += "  -  " + delaym + " min late";
-          fit(l3, F_SUB[fi], 784 - dx);
-          it.printf(dx, cy, F_SUB[fi], orange, "%s", l3.c_str());
-          cy += LH;
+        std::string l3;
+        Color l3c = amber;
+        if (bus) l3 = "Replacement bus";
+        if (cancelled) { l3 += (l3.empty() ? "" : "  -  ") + std::string("Cancelled"); l3c = red; }
+        else {
+          if (late && departure::valid(delaym) && delaym != "0") l3 += (l3.empty() ? "" : "  -  ") + delaym + " min late";
+          if (departure::valid(sarr)) {
+            bool latearr = departure::valid(earr) && earr != sarr;
+            l3 += (l3.empty() ? "" : "  -  ") + std::string("Arrives ") + (latearr ? earr : sarr);
+          }
         }
+        if (!l3.empty()) {
+          bandline(y, fd);
+          fit(l3, fd, 784 - 130);
+          it.printf(130, y, fd, l3c, "%s", l3.c_str());
+          y += LHB + 3;
+        }
+        // delay or cancellation reason, wrapped onto up to two lines
         if (departure::valid(reason)) {
           std::string rem = reason;
           for (int ln = 0; ln < 2 && !rem.empty(); ln++) {
@@ -1710,8 +1733,8 @@ display:
               size_t e = rem.find(' ', p);
               if (e == std::string::npos) e = rem.size();
               std::string cand = rem.substr(0, e);
-              it.get_text_bounds(0, 0, cand.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
-              if (bw > 784 - dx && !line.empty()) break;
+              it.get_text_bounds(0, 0, cand.c_str(), fd, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+              if (bw > 784 - 130 && !line.empty()) break;
               line = cand;
               next = e + 1;
               if (e >= rem.size()) break;
@@ -1719,20 +1742,14 @@ display:
             }
             rem = (next != std::string::npos && next < rem.size()) ? rem.substr(next) : "";
             if (ln == 1 && !rem.empty()) line += " ...";
-            fit(line, F_SUB[fi], 784 - dx);
-            it.printf(dx, cy, F_SUB[fi], cancelled ? red : orange, "%s", line.c_str());
-            cy += LH;
+            fit(line, fd, 784 - 130);
+            bandline(y, fd);
+            it.printf(130, y, fd, amber, "%s", line.c_str());
+            y += LHB + 3;
           }
         }
-        if (departure::valid(sarr) && !cancelled) {
-          bool latearr = departure::valid(earr) && earr != sarr;
-          std::string l4 = "Arrives " + (latearr ? earr : sarr);
-          if (latearr) l4 += "  (due " + sarr + ")";
-          it.printf(dx, cy, F_SUB[fi], latearr ? orange : amber, "%s", l4.c_str());
-          cy += LH;
-        }
 
-        // ---------- calling points as a route line ----------
+        // calling points: heading, then a route line in two columns, paged when long
         std::vector<std::pair<std::string, std::string>> stp;
         if (departure::valid(stops)) {
           size_t pos = 0;
@@ -1747,43 +1764,38 @@ display:
           for (auto &p : departure::points(calls)) stp.push_back({p, ""});
         }
         if (stp.empty()) return;
-        cy += 4;
-        it.horizontal_line(18, cy, 766, grey);
-        cy += 10;
-        int tmw;
-        it.get_text_bounds(0, 0, "00:00", F_SUB[fi], TextAlign::TOP_LEFT, &bx, &by, &tmw, &bh);
-        const int bottom = 404;
-        int rows = (bottom - cy) / LH;
+        y += 5;
+        int rows = (414 - (y + LHB + dT - 4)) / (LHB + 3);
         if (rows < 1) rows = 1;
-        int cols = stp.size() > (size_t) rows ? 2 : 1;
-        size_t shown = std::min(stp.size(), (size_t) (rows * cols));
-        bool more = shown < stp.size();
-        if (more) shown -= 1;                                  // last slot says how many are left
-        const int colw = cols == 2 ? 383 : 766;
-        for (size_t i = 0; i < shown + (more ? 1 : 0); i++) {
-          int col = (int) i / rows, row = (int) i % rows;
+        const int per = rows * 2;
+        const int npages = ((int) stp.size() + per - 1) / per;
+        const int pg = npages > 1 ? (int) ((millis() / 8000) % npages) : 0;
+        it.printf(18, y, fd, grey, "Calling at");
+        if (npages > 1) it.printf(784, y, fd, grey, TextAlign::TOP_RIGHT, "%d of %d", pg + 1, npages);
+        y += LHB;
+        int tmw;
+        it.get_text_bounds(0, 0, "00:00", fd, TextAlign::TOP_LEFT, &bx, &by, &tmw, &bh);
+        const int first = pg * per;
+        const int last_i = std::min((int) stp.size(), first + per);
+        for (int r = 0; r < rows && first + r < last_i; r++) bandline(y + r * (LHB + 3), fd);
+        for (int i = first; i < last_i; i++) {
+          int k = i - first, col = k / rows, row = k % rows;
           int x0 = 18 + col * 392;
-          int y = cy + row * LH;
-          int lx = x0 + tmw + 16;                              // route line x
-          int my = y + LH / 2 - 2;
-          if (more && i == shown) {
-            char mb[24];
-            snprintf(mb, sizeof(mb), "+%d more", (int) (stp.size() - shown));
-            it.printf(lx + 18, y, F_SUB[fi], grey, "%s", mb);
-            break;
-          }
-          bool last = (i == stp.size() - 1);
+          int yy = y + row * (LHB + 3);
+          int lx = x0 + tmw + 16;
+          int my = yy + (dT + dB) / 2;
+          bool is_last = (i == (int) stp.size() - 1);
           bool fav = !fstop.empty() && departure::ieq(stp[i].first, fstop);
           Color tc = fav ? hilite : amber;
-          // route line: joins this stop to the ones above and below in the same column
-          if (row > 0) it.vertical_line(lx, y - 2, my - y + 2, grey);
-          if (!last && row < rows - 1 && i + 1 < shown + (more ? 1 : 0)) it.vertical_line(lx, my, y + LH - my - 2, grey);
-          it.filled_circle(lx, my, last ? 6 : 4, last ? amber : tc);
+          // the route line joins the stops; it carries on past the edge of a page when the route does
+          if (row > 0 || i > 0) it.filled_rectangle(lx - 1, yy + dT - 4, 2, my - (yy + dT - 4), amber);
+          if (!is_last) it.filled_rectangle(lx - 1, my, 2, (yy + dB + 4 + (row < rows - 1 ? 3 : 0)) - my, amber);
+          it.filled_circle(lx, my, is_last ? 6 : 4, amber);
           if (!stp[i].second.empty())
-            it.printf(x0 + tmw, y, F_SUB[fi], fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
+            it.printf(x0 + tmw, yy, fd, fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
           std::string nm = stp[i].first;
-          fit(nm, F_SUB[fi], x0 + colw - (lx + 18) - 8);
-          it.printf(lx + 18, y, F_SUB[fi], tc, "%s", nm.c_str());
+          fit(nm, fd, x0 + 383 - (lx + 18));
+          it.printf(lx + 18, yy, fd, tc, "%s", nm.c_str());
         }
       };
 
