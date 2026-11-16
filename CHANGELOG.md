@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.19.0 - 2026-11-16 (beta)
+- Station messages in the footer and arrival times on routes
+
+## 1.19.0 - 2026-11-16 (beta)
 - Station messages: an orange "i" in the footer when National Rail has a notice for your station; tap it to read the messages (Prev / Next, closes after a minute). New "Station messages" diagnostic sensor
 - Routes: each train's second line starts with its arrival time at your destination ("Arrives 17:39", orange when running late)
 - Help page: a row for the station message icon

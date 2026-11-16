@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.18.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.19.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "db517b770d481cd398b460ca3d73b48f",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.18.0.ota.bin",
-        "summary": "Help page, swipe to change station, step through train details, clearer status screens"
+        "md5": "80413f238f3ac66aa43f32d1962d348c",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.19.0.ota.bin",
+        "summary": "Station messages in the footer and arrival times on routes"
       }
     }
   ]
