@@ -1,20 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.13.1",
+  "version": "1.19.1",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        {
-          "path": "releases/departure-board-1.13.1.factory.bin",
-          "offset": 0
-        }
+        { "path": "releases/departure-board-1.19.1.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "6c7e173de64794ce2f10d691e5ce2310",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.13.1.ota.bin",
-        "summary": "Big update: themes, dot-matrix row bands, paging, station switching, custom logo, new detail and settings screens, safe mode and more. See the changelog.",
-        "release_url": "https://github.com/GrimmNorth/departure-board/blob/main/CHANGELOG.md"
+        "md5": "d65410f1f634841922dd55b2a4e81bfd",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.19.1.ota.bin",
+        "summary": "Dimmed arrival times; clearer screen at busy stations"
       }
     }
   ]
