@@ -251,6 +251,15 @@ globals:
   - id: slot_train         # which train is drawn in each row (for taps)
     type: int[10]
     initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+  - id: tap_t0             # when the finger went down (press and hold = favourite)
+    type: uint32_t
+    initial_value: "0"
+  - id: fav_toast          # short message after a press and hold
+    type: std::string
+    initial_value: '""'
+  - id: fav_toast_until
+    type: uint32_t
+    initial_value: "0"
   - id: msg_text           # National Rail station messages, one per line; sent by the blueprint
     type: std::string
     initial_value: '""'
@@ -295,6 +304,44 @@ time:
 # Decides every 2 seconds whether the screen should be normal, dimmed for the night,
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
+  # Press and hold a train: its departure time is added to (or removed from) Favourite trains
+  - id: fav_hold
+    parameters:
+      hy: int
+    then:
+      - lambda: |-
+          if (id(ui_screen) != 0 || hy >= 406) return;
+          int sl = -1;
+          if (id(focus_mode).state) sl = 0;
+          else for (int i = 0; i < 10; i++) { if (id(slot_train)[i] == 0) break; if (hy < id(slot_ybot)[i]) { sl = i; break; } }
+          const int tn = sl >= 0 ? id(slot_train)[sl] : 0;
+          if (tn <= 0) return;
+          std::string t;
+          switch (tn) { case 1: t = id(stn_t1_scheduled_departure).state; break; case 2: t = id(stn_t2_scheduled_departure).state; break; case 3: t = id(stn_t3_scheduled_departure).state; break; case 4: t = id(stn_t4_scheduled_departure).state; break; case 5: t = id(stn_t5_scheduled_departure).state; break; case 6: t = id(stn_t6_scheduled_departure).state; break; case 7: t = id(stn_t7_scheduled_departure).state; break; case 8: t = id(stn_t8_scheduled_departure).state; break; case 9: t = id(stn_t9_scheduled_departure).state; break; case 10: t = id(stn_t10_scheduled_departure).state; break; default: break; }
+          if (!departure::valid(t) || t.size() < 5) return;
+          t = t.substr(0, 5);
+          std::vector<std::string> v;
+          std::string cur;
+          for (char ch : id(fav_times).state + ",") { if (ch == ',' || ch == ' ') { if (!cur.empty()) v.push_back(cur); cur.clear(); } else cur += ch; }
+          bool had = false;
+          std::string out;
+          for (auto &s : v) {
+            if (s == t) { had = true; continue; }
+            if (!out.empty()) out += ", ";
+            out += s;
+          }
+          if (!had) {
+            if (out.size() + 7 > 80) { id(fav_toast) = "Favourites are full"; id(fav_toast_until) = millis() + 2500; id(main_display).update(); return; }
+            if (!out.empty()) out += ", ";
+            out += t;
+          }
+          auto c = id(fav_times).make_call();
+          c.set_value(out);
+          c.perform();
+          id(fav_toast) = had ? t + " removed from favourites" : t + " is now a favourite";
+          id(fav_toast_until) = millis() + 2500;
+          if (!id(focus_mode).state) { id(flash_slot) = sl; id(flash_until) = millis() + 400; id(pending_detail) = 0; }
+          id(main_display).update();
   - id: apply_theme
     mode: single
     then:
@@ -446,6 +493,7 @@ touchscreen:
             // main screen, train details and station messages: decided when the finger lifts, so a sideways swipe can be told from a tap
             id(tap_x0) = x; id(tap_y0) = y; id(tap_xl) = x; id(tap_yl) = y;
             id(tap_pending) = true;
+            id(tap_t0) = now;
           } else {
             if (y >= 424) {
               if (x < 270) id(settings_page) = (id(settings_page) + 7 - 1) % 7;   // BACK
@@ -461,12 +509,11 @@ touchscreen:
                   switch (row) {
                     case 0: id(theme_select).make_call().select_next(true).perform(); break;
                     case 1: id(layout_select).make_call().select_next(true).perform(); break;
-                    case 2: if (id(layout_select).active_index().value_or(0) == 2) break; if (plus || minus) { float v = id(train_count).state + (plus ? 1 : -1); if (v < 3) v = 3; if (v > 5) v = 5; auto c = id(train_count).make_call(); c.set_value(v); c.perform(); } break;
-                    case 3: id(text_large).toggle(); break;
-                    case 4: id(scroll_speed).make_call().select_next(true).perform(); break;
-                    case 5: id(scroll_enabled).toggle(); break;
-                    case 6: id(show_seconds).toggle(); break;
-                    case 7: id(clock_12h).toggle(); break;
+                    case 2: id(text_large).toggle(); break;
+                    case 3: id(scroll_speed).make_call().select_next(true).perform(); break;
+                    case 4: id(scroll_enabled).toggle(); break;
+                    case 5: id(show_seconds).toggle(); break;
+                    case 6: id(clock_12h).toggle(); break;
                   }
                   break;
                 case 1:
@@ -559,6 +606,11 @@ touchscreen:
     on_update:
       - lambda: |-
           if (id(tap_pending) && !touches.empty()) { id(tap_xl) = touches[0].x; id(tap_yl) = touches[0].y; }
+          if (id(tap_pending) && id(ui_screen) == 0 && millis() - id(tap_t0) >= 700 &&
+              std::abs(id(tap_xl) - id(tap_x0)) < 30 && std::abs(id(tap_yl) - id(tap_y0)) < 30 && id(tap_y0) < 406) {
+            id(tap_pending) = false;
+            id(fav_hold).execute(id(tap_y0));
+          }
     on_release:
       - lambda: |-
           id(touch_down) = false;
@@ -604,6 +656,10 @@ touchscreen:
             }
             return;
           }
+            if (millis() - id(tap_t0) >= 700 && std::abs(dx) < 30 && std::abs(dy) < 30 && y < 406) {
+              id(fav_hold).execute(y);
+              return;
+            }
             // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
             if (y >= 410 && id(msg_icon_x) >= 0 && x >= id(msg_icon_x) && x < id(msg_icon_x) + 64) { id(ui_screen) = 3; id(msg_idx) = 0; }
             else if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = id(help_seen) ? 0 : 6; id(help_seen) = true; }
@@ -731,15 +787,6 @@ number:
     unit_of_measurement: "s"
     mode: box
     entity_category: config
-  - platform: template
-    name: "Trains shown"
-    id: train_count
-    min_value: 3
-    max_value: 5
-    step: 1
-    optimistic: true
-    restore_value: true
-    initial_value: 5
   - platform: template
     name: "Night brightness"
     id: night_level
@@ -1646,12 +1693,11 @@ display:
           if (id(settings_page) == 0) {
             R = 0; band(R); lab(R, "Theme"); cyc(R, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
             R = 1; band(R); lab(R, "Layout"); { static const char *LN[3] = {"Classic", "Calm", "Compact"}; cyc(R, LN[id(layout_select).active_index().value_or(0)]); }
-            R = 2; band(R); lab(R, "Trains shown"); if (id(layout_select).active_index().value_or(0) == 2) val(R, grey, "Auto"); else { snprintf(buf, sizeof(buf), "%d", (int) id(train_count).state); pm(R, buf); }
-            R = 3; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
-            R = 4; band(R); lab(R, "Scroll speed"); cyc(R, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
-            R = 5; band(R); lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
-            R = 6; band(R); lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
-            R = 7; band(R); lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
+            R = 2; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
+            R = 3; band(R); lab(R, "Scroll speed"); cyc(R, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
+            R = 4; band(R); lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
+            R = 5; band(R); lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
+            R = 6; band(R); lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
           }
           else if (id(settings_page) == 1) {
             R = 0; band(R); lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
@@ -1693,18 +1739,20 @@ display:
             R = 3; band(R); lab(R, "Data age"); if (dms == 0) val(R, amber, "No data yet"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 5 ? red : green, buf); }
             R = 4; band(R); lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
             R = 5; band(R); lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
-            R = 6; band(R); lab(R, "Firmware"); snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf);
+            R = 6; band(R); lab(R, "Firmware");
+            if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) { snprintf(buf, sizeof(buf), "%s, %s ready", ESPHOME_PROJECT_VERSION, id(fw_update).update_info.latest_version.c_str()); val(R, orange, buf); }
+            else { snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf); }
             R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
           }
           else if (id(settings_page) == 6) {
             R = 0; band(R); lab(R, "Tap a train"); val(R, amber, "Its details and stops");
-            R = 1; band(R); lab(R, "Tap station name"); val(R, amber, "Next station or route");
-            R = 2; band(R); lab(R, "Swipe sideways"); val(R, amber, "Change station or route");
-            R = 3; band(R); lab(R, "Tap the clock"); val(R, amber, "These settings");
-            R = 4; band(R); lab(R, "Train details"); val(R, amber, "Tap sides: prev / next");
-            R = 5; band(R); lab(R, "Screen off at night"); val(R, amber, "Tap once to wake");
-            R = 6; band(R); lab(R, "Home Assistant"); val(R, amber, "More on device page");
-            R = 7; band(R); lab(R, "Orange i in footer"); val(R, amber, "Station messages");
+            R = 1; band(R); lab(R, "Swipe, or tap station"); val(R, amber, "Change station or route");
+            R = 2; band(R); lab(R, "Tap the clock"); val(R, amber, "These settings");
+            R = 3; band(R); lab(R, "Train details"); val(R, amber, "Tap sides: prev / next");
+            R = 4; band(R); lab(R, "Screen off at night"); val(R, amber, "Tap once to wake");
+            R = 5; band(R); lab(R, "Home Assistant"); val(R, amber, "More on device page");
+            R = 6; band(R); lab(R, "Orange i in footer"); val(R, amber, "Station messages");
+            R = 7; band(R); lab(R, "Hold a train"); val(R, amber, "Make it a favourite");
           }
           const char *BTN[3] = {"< Back", "Next >", "Close"};
           for (int b = 0; b < 3; b++) {
@@ -1779,7 +1827,7 @@ display:
 
       // ---------------- departures screen ----------------
       const bool L = id(text_large).state;
-      int count = (int) id(train_count).state;
+      int count = 5;                            // 5 trains a page
       if (count < 3) count = 3;
       if (count > 5) count = 5;
       if (L && count > 4) count = 4;            // large text only has room for 4 trains
@@ -1827,6 +1875,11 @@ display:
       const int speeds[3] = {20, 30, 50};       // scroll px per second
       const int sp = speeds[id(scroll_speed).active_index().value_or(1)];
       const std::string filt = id(dest_filter).state;
+      int lt_n = 0, lt_last = 0;        // trains sent, and the number of the last one (for "Last train")
+      {
+        const std::string *S[10] = {&id(stn_t1_scheduled_departure).state, &id(stn_t2_scheduled_departure).state, &id(stn_t3_scheduled_departure).state, &id(stn_t4_scheduled_departure).state, &id(stn_t5_scheduled_departure).state, &id(stn_t6_scheduled_departure).state, &id(stn_t7_scheduled_departure).state, &id(stn_t8_scheduled_departure).state, &id(stn_t9_scheduled_departure).state, &id(stn_t10_scheduled_departure).state};
+        for (int i = 0; i < 10; i++) if (departure::valid(*S[i])) { lt_n++; lt_last = i + 1; }
+      }
       const std::string favs = id(fav_times).state;
       const std::string fstop = id(fav_stop).state;       // favourite stop to highlight
       const int walk = (int) id(walk_minutes).state;
@@ -1857,8 +1910,8 @@ display:
       // softer version of the main colour for second lines (70% text, 30% band); High contrast keeps full strength
       const bool hi_con = id(theme_select).active_index().value_or(0) == 4;
       const Color cxl_col = Color((amber.r * 45 + band_col.r * 55) / 100, (amber.g * 45 + band_col.g * 55) / 100, (amber.b * 45 + band_col.b * 55) / 100);
-      const Color sub_col = hi_con ? amber : Color((amber.r * 7 + band_col.r * 3) / 10, (amber.g * 7 + band_col.g * 3) / 10, (amber.b * 7 + band_col.b * 3) / 10);
-      const Color sub_ora = hi_con ? orange : Color((orange.r * 7 + band_col.r * 3) / 10, (orange.g * 7 + band_col.g * 3) / 10, (orange.b * 7 + band_col.b * 3) / 10);
+      const Color sub_col = hi_con ? amber : Color((amber.r * 6 + band_col.r * 4) / 10, (amber.g * 6 + band_col.g * 4) / 10, (amber.b * 6 + band_col.b * 4) / 10);
+      const Color sub_ora = hi_con ? orange : Color((orange.r * 6 + band_col.r * 4) / 10, (orange.g * 6 + band_col.g * 4) / 10, (orange.b * 6 + band_col.b * 4) / 10);
       static std::vector<uint8_t> cmp_tall(10, 0);           // last frame: train needs a reason line
       std::vector<uint8_t> cmp_tall_now(10, 0);
       int cmp_page[10], cmp_y[10], cmp_ry[10], cmp_bot[10];
@@ -2390,6 +2443,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 1;
+          const int tnum = 1;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2464,6 +2518,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -2593,6 +2653,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 2;
+          const int tnum = 2;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2667,6 +2728,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -2796,6 +2863,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 3;
+          const int tnum = 3;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -2870,6 +2938,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -2999,6 +3073,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 4;
+          const int tnum = 4;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3073,6 +3148,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -3201,6 +3282,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 5;
+          const int tnum = 5;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3275,6 +3357,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -3403,6 +3491,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 6;
+          const int tnum = 6;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3477,6 +3566,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -3605,6 +3700,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 7;
+          const int tnum = 7;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3679,6 +3775,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -3807,6 +3909,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 8;
+          const int tnum = 8;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -3881,6 +3984,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -4009,6 +4118,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 9;
+          const int tnum = 9;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -4083,6 +4193,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -4211,6 +4327,7 @@ display:
           bool late = (stat == "delayed");
           const int eidx = elig++;
           if (eidx < 10) id(elig_list)[eidx] = 10;
+          const int tnum = 10;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
           {
             int lm = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
@@ -4285,6 +4402,12 @@ display:
               arr_s = "Arrives " + (ev ? earr : sarr);
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
+          }
+          if (!cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
+            const int sh = atoi(sched.substr(0, 2).c_str());
+            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
+            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
+            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
           }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
@@ -4428,6 +4551,14 @@ display:
           it.printf(400, 235, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", sb);
         }
       }
+      if (id(fav_toast_until) != 0) {
+        if ((int32_t) (id(fav_toast_until) - millis()) > 0) {
+          it.filled_rectangle(100, 180, 600, 64, band_col);
+          it.rectangle(100, 180, 600, 64, hilite);
+          it.rectangle(101, 181, 598, 62, hilite);
+          it.printf(400, 212, id(f_row_0), amber, TextAlign::CENTER, "%s", id(fav_toast).c_str());
+        } else id(fav_toast_until) = 0;
+      }
       if (id(flash_slot) >= 0 && view == 0 && !detail) {
         if (millis() < id(flash_until)) {
           const int sl = id(flash_slot);
@@ -4542,16 +4673,11 @@ display:
         it.image(20 + (56 - lg->get_width()) / 2, fy + 4 + (35 - lg->get_height()) / 2, lg, footc, bg_col);
         fx = 20 + 56 + 14;
       } else if (id(show_logo).state) {
-        // simple train icon, 56x35 (replace with your own drawing if you like)
+        // railway track, 56x35 (replace with your own drawing if you like)
         int lx = 20, ly = fy + 4;
-        it.filled_rectangle(lx + 4, ly + 2, 48, 22, footc);                 // body
-        it.filled_rectangle(lx + 8, ly + 6, 12, 9, bg_col);          // windows
-        it.filled_rectangle(lx + 22, ly + 6, 12, 9, bg_col);
-        it.filled_rectangle(lx + 36, ly + 6, 12, 9, bg_col);
-        it.filled_rectangle(lx + 4, ly + 19, 48, 3, bg_col);         // stripe
-        it.filled_rectangle(lx + 10, ly + 26, 8, 6, footc);                  // wheels
-        it.filled_rectangle(lx + 38, ly + 26, 8, 6, footc);
-        it.filled_rectangle(lx, ly + 33, 56, 2, footc);                      // rail
+        for (int sx = 3; sx < 56; sx += 11) it.filled_rectangle(lx + sx, ly + 7, 4, 22, footc);   // sleepers
+        it.filled_rectangle(lx, ly + 11, 56, 3, footc);                      // rails
+        it.filled_rectangle(lx, ly + 22, 56, 3, footc);
         fx = 20 + 56 + 14;
       }
       // station, message and clock share one baseline; the clock is placed first, then the rest fits around it
@@ -4569,6 +4695,7 @@ display:
         clk_left = kbx;
         it.printf(784, fb, F_CLK[fi], amber, TextAlign::BASELINE_RIGHT, "%s", cb);
       }
+      if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE && !switching) it.filled_circle(785, fy + 8, 4, orange);   // update ready
       id(msg_icon_x) = -1;
       if (id(msg_n) > 0 && !detail && !switching) {
         const int icx = clk_left - 34, icy = fb - 11;
