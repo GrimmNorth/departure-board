@@ -72,7 +72,7 @@ inline std::string destination(const std::string &s, size_t max_len) {
   return d;
 }
 
-// "Ferriby, Hessle, Hull" truncated to max_len
+// "Selby, Leeds, York" truncated to max_len
 inline std::string calling_list(const std::string &s, size_t max_len) {
   auto p = points(s);
   std::string out;

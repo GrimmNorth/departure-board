@@ -44,9 +44,9 @@ blueprint:
     station_name:
       name: Names on the board (optional)
       description: >-
-        Short names for the bottom of the board, in the same order as your stations, separated by
-        commas, e.g. "Brough, To Hull, To Leeds". Leave a name out (e.g. "Brough, , To Leeds") or
-        the whole box empty to use each station's own name (e.g. "York").
+        Usually leave this empty: the board uses each station's own name (e.g. "York").
+        To use different wording, type one name per station, in order, separated by commas
+        (e.g. "York, Leeds"); leave a name out (e.g. "York, , Leeds") to keep that station's own name.
       default: ""
       selector:
         text:
@@ -85,7 +85,7 @@ variables:
   status_ent: "{{ ents | select('search', '_status$') | first | default('') }}"
   summary_ent: "{{ ents | select('search', '_summary$') | first | default('') }}"
   by_dest: "{{ state_attr(summary_ent, 'services_by_destination') }}"
-  # a My Rail Commute route (e.g. Brough to Hull) has a destination; "Departures from" does not
+  # a My Rail Commute route (e.g. Manchester Piccadilly to Leeds) has a destination; "Departures from" does not
   origin_name: "{% set v = state_attr(status_ent, 'origin_name') if status_ent != '' else none %}{{ v if v else '' }}"
   route_to: "{% set v = state_attr(status_ent, 'destination_name') if status_ent != '' else none %}{{ v if v else '' }}"
   all_trains: "{% set v = state_attr(summary_ent, 'all_trains') if summary_ent != '' else none %}{{ v if v is list else [] }}"

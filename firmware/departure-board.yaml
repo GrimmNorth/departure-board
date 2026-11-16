@@ -821,7 +821,7 @@ text:
     max_length: 40
     optimistic: true
     restore_value: true
-    initial_value: ""     # e.g. "Hull" = only trains calling at Hull
+    initial_value: ""     # e.g. "Leeds" = only trains calling at Leeds
   - platform: template
     name: "Favourite stop"
     id: fav_stop
@@ -830,7 +830,7 @@ text:
     max_length: 40
     optimistic: true
     restore_value: true
-    initial_value: ""     # a stop name to highlight on the board, e.g. "Hull"
+    initial_value: ""     # a stop name to highlight on the board, e.g. "Leeds"
   - platform: template
     name: "Favourite trains"
     id: fav_times
@@ -1866,7 +1866,7 @@ display:
         };
         // everything below is placed by the letters' own height (ink), so bands hug the text like the list
         auto band_at = [&](font::Font *f, int ytop) { int t, b; ink_of(f, t, b); fband(ytop + t - 5, b - t + 10); };
-        // line 1: "1st  13:52  Hull" on a band, the ordinal in grey
+        // line 1: "1st  13:52  Leeds" on a band, the ordinal in grey
         {
           font::Font *f = F_ROWL[fi];
           int t, b;
@@ -2161,7 +2161,7 @@ display:
         const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
         const int hy = 5;                                                            // letters well clear of the line
         it.printf(TX, hy, fh, hc, "Time");
-        // "Destination (to Hull only)" on a route, "Destination (calling at X)" with the board's own filter
+        // "Destination (to Leeds only)" on a route, "Destination (calling at X)" with the board's own filter
         std::string dh = "Destination";
         if (!filt.empty()) dh += " (calling at " + filt + ")";
         else if (!id(route_to).empty()) dh += " (to " + id(route_to) + " only)";
