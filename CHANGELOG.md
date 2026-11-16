@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.20.0 - 2026-11-16 (beta)
+- Press and hold a train to make it a favourite (or hold again to remove it); a short message confirms it
+- "Last train" on the second line of the evening's last train
+- Update ready: an orange dot by the clock, and the Status page shows the new version
+- Help page: a row for press and hold
+- New default logo: a simple railway track instead of the train carriage
+- Second lines (operator, calling points, arrival times) slightly dimmer: 60% instead of 70% (High contrast unchanged)
+- Removed the "Trains shown" setting (and its Home Assistant entity): the board always shows 5 trains a page, or 4 with large text. Compact still fits as many as it can
+
 ## 1.19.1 - 2026-11-16 (beta)
 - Dimmed arrival times; clearer screen at busy stations
 

@@ -35,6 +35,9 @@ The fix is a **route**: in My Rail Commute, add your station **with a destinatio
 - **Switching station:** add extra stations under *More stations* in the board's automation. Then swipe left or right across the board, or tap the station name at the bottom, to move between them, or set the board's *Station number* in Home Assistant (handy in your own automations, e.g. your work station in the evening). The board shows "Switching station or route" (with, say, "3 of 5") for a moment while the new trains arrive.
 - **Paging:** when there are more trains than rows, the board flicks between pages ("Page 1 of 2" in the footer), every 10 seconds by default. *Pin next train* keeps the next departure on every page. Switch either off under Settings > Trains, and change the interval with *page interval* in Home Assistant.
 - **Station messages:** when National Rail has a notice for your station (engineering works, strikes, a closed entrance), an orange **i** appears in the footer next to the clock, with a small number if there is more than one, and flashes briefly when a new one arrives. Tap it to read the message in full; tap the sides (or swipe) for the previous or next message, and the middle to close. The message count also shows in Home Assistant as *Station messages*.
+- **Favourite trains:** press and hold a train for a second to make it a favourite: its time is underlined every day from then on. Hold it again to remove it. (They are kept in the board's *Favourite trains* setting in Home Assistant, which you can also edit.)
+- **Last train:** late in the evening, the last train shown starts its second line with *Last train* when nothing else is due for at least an hour.
+- **Updates:** when new firmware is ready, a small orange dot appears next to the clock and the Status page in Settings says which version is ready. Install it from the board's device page in Home Assistant.
 - Tap a train for its detail page: status and expected time, platform and operator, countdown, delay reason, arrival time, and the calling points as a route line with times. Tap the left or right side (or swipe) for the previous or next train; tap the middle to close.
 - **Themes:** Classic amber, White LED, Modern LCD, Retro green, High contrast and Daylight (which switches to Classic amber during night hours). Settings > Display > Theme on the board, or the theme setting in Home Assistant.
 - **Background:** *Rows* (default) puts each line on a faint unlit band like a real LED board; *Dot matrix* adds the grid of unlit dots; *Plain* turns it off. Set it in Home Assistant.
@@ -46,10 +49,10 @@ The fix is a **route**: in My Rail Commute, add your station **with a destinatio
 - All the same switches and numbers appear in Home Assistant under the device.
 
 ### Custom logo
-The board shows a small train icon at the bottom left (switch it off with *Show logo*). To use your own logo instead:
+The board shows a small railway track logo at the bottom left (switch it off with *Show logo*). To use your own logo instead:
 1. Make a PNG of your logo: **white (or light) on a transparent background**, ideally about 56 x 35 pixels (larger images are shrunk to fit). It is drawn in the theme colour, or in white if you set *Footer colour* to White.
 2. Put it where the board can download it, for example in Home Assistant's `www` folder (`/config/www/logo.png` is served as `http://homeassistant.local:8123/local/logo.png`; use your Home Assistant's IP address if `homeassistant.local` doesn't work).
-3. On the board's device page in Home Assistant, set **Logo image** to that address. The logo appears within a minute. Clear the setting to go back to the train icon.
+3. On the board's device page in Home Assistant, set **Logo image** to that address. The logo appears within a minute. Clear the setting to go back to the track logo.
 
 ### Troubleshooting
 - **Board shows no trains or says it is waiting:** the automation from step 5 sends the data once a minute. Check it exists and is switched on (Settings > Automations), that you picked the right board and station, and that My Rail Commute has trains. Run the automation by hand with the three-dots menu > Run actions.
