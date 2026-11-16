@@ -514,13 +514,64 @@ interval:
             struct Shot : public AsyncWebHandler {
               bool canHandle(AsyncWebServerRequest *request) const override {
                 char ub[AsyncWebServerRequest::URL_BUF_SIZE];
-                return request->url_to(ub) == "/screenshot.bmp";
+                const auto u = request->url_to(ub);
+                return u == "/screenshot.bmp" || u == "/screenshot.png";
               }
               void handleRequest(AsyncWebServerRequest *request) override {
                 httpd_req_t *r = *request;
                 uint16_t *fb = ShotBuf::get(id(main_display));
                 const int W = id(main_display).get_width(), H = id(main_display).get_height();
                 if (fb == nullptr || W <= 0 || H <= 0) { httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Screen not ready"); return; }
+                char ub2[AsyncWebServerRequest::URL_BUF_SIZE];
+                if (request->url_to(ub2) == "/screenshot.png") {
+                  // PNG (what Home Assistant cameras and GitHub show), stored without compression: one IDAT chunk per row
+                  static uint32_t crct[256];
+                  static bool crcinit = false;
+                  if (!crcinit) { for (uint32_t n = 0; n < 256; n++) { uint32_t c = n; for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1; crct[n] = c; } crcinit = true; }
+                  auto crc = [&](uint32_t c, const uint8_t *d, size_t n) { for (size_t i = 0; i < n; i++) c = crct[(c ^ d[i]) & 0xFF] ^ (c >> 8); return c; };
+                  auto be32 = [](uint8_t *o, uint32_t v) { o[0] = v >> 24; o[1] = v >> 16; o[2] = v >> 8; o[3] = v; };
+                  std::vector<uint8_t> ck;
+                  auto chunk = [&](const char *type, const uint8_t *data, size_t n) -> bool {
+                    ck.resize(12 + n);
+                    be32(ck.data(), n);
+                    memcpy(ck.data() + 4, type, 4);
+                    if (n) memcpy(ck.data() + 8, data, n);
+                    be32(ck.data() + 8 + n, crc(0xFFFFFFFFu, ck.data() + 4, 4 + n) ^ 0xFFFFFFFFu);
+                    return httpd_resp_send_chunk(r, (const char *) ck.data(), ck.size()) == ESP_OK;
+                  };
+                  httpd_resp_set_type(r, "image/png");
+                  httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+                  static const uint8_t sig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+                  if (httpd_resp_send_chunk(r, (const char *) sig, 8) != ESP_OK) return;
+                  uint8_t ihdr[13];
+                  be32(ihdr, W); be32(ihdr + 4, H); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+                  if (!chunk("IHDR", ihdr, 13)) return;
+                  const size_t rl = 1 + W * 3;                       // filter byte + RGB
+                  std::vector<uint8_t> d(2 + 5 + rl + 4);
+                  uint32_t a1 = 1, a2 = 0;                           // Adler-32 of the image data
+                  for (int y = 0; y < H; y++) {
+                    size_t o = 0;
+                    if (y == 0) { d[o++] = 0x78; d[o++] = 0x01; }     // zlib header
+                    const bool last = (y == H - 1);
+                    d[o++] = last ? 1 : 0;                           // a stored deflate block
+                    d[o++] = rl & 0xFF; d[o++] = rl >> 8; d[o++] = ~rl & 0xFF; d[o++] = (~rl >> 8) & 0xFF;
+                    uint8_t *row = d.data() + o;
+                    row[0] = 0;
+                    const uint16_t *p = fb + y * W;
+                    for (int x = 0; x < W; x++) {
+                      const uint16_t v = __builtin_bswap16(p[x]);
+                      const uint8_t R = (v >> 11) & 31, G = (v >> 5) & 63, B = v & 31;
+                      row[1 + x * 3] = (R << 3) | (R >> 2); row[2 + x * 3] = (G << 2) | (G >> 4); row[3 + x * 3] = (B << 3) | (B >> 2);
+                    }
+                    for (size_t i = 0; i < rl; i++) { a1 = (a1 + row[i]) % 65521; a2 = (a2 + a1) % 65521; }
+                    o += rl;
+                    if (last) { be32(d.data() + o, (a2 << 16) | a1); o += 4; }
+                    if (!chunk("IDAT", d.data(), o)) return;
+                  }
+                  chunk("IEND", nullptr, 0);
+                  httpd_resp_send_chunk(r, nullptr, 0);
+                  return;
+                }
                 const uint32_t row = W * 3, size = 54 + row * H;
                 uint8_t h[54] = {0};
                 auto put32 = [&](int at, uint32_t v) { h[at] = v; h[at + 1] = v >> 8; h[at + 2] = v >> 16; h[at + 3] = v >> 24; };
@@ -546,7 +597,7 @@ interval:
             web_server_base::global_web_server_base->init();
           }
           const std::string ip = id(wifi_ip_ts).state;
-          const std::string url = ip.empty() ? std::string("") : "http://" + ip + "/screenshot.bmp";
+          const std::string url = ip.empty() ? std::string("") : "http://" + ip + "/screenshot.png";
           if (!id(shot_ts).has_state() || id(shot_ts).state != url) id(shot_ts).publish_state(url);
   # demo boards: keep the made-up times moving with the clock
   - interval: 30s
