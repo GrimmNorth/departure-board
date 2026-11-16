@@ -18,6 +18,15 @@
 <body>
 <h1>UK Departure Board</h1>
 <p>A live UK train departure board for the <strong>Elecrow CrowPanel Basic 7.0&quot; (ESP32-S3)</strong>, fed by Home Assistant.</p>
+<ul>
+  <li>Live departures from any UK station: times, platforms, delays, cancellations and calling points</li>
+  <li>Tap a train for its full details and route</li>
+  <li>Switch between several stations with a tap</li>
+  <li>Pages through up to 10 trains, keeping the next one on top if you like</li>
+  <li>Dot-matrix look with six colour themes and your own logo</li>
+  <li>Night dimming, a clock screen, and updates straight from Home Assistant</li>
+</ul>
+<p><small><strong>What you need:</strong> the CrowPanel 7&quot;, Home Assistant 2026.11 or newer, the My Rail Commute integration (step 4) and a free National Rail Darwin token.</small></p>
 
 <div class="box">
   <p><strong>1. Flash the board</strong> (Chrome or Edge on a computer; plug the board in with a USB cable first)</p>
@@ -34,7 +43,7 @@
     <p><a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&amp;repository=my-rail-commute&amp;category=integration"><img alt="Open your Home Assistant instance and open My Rail Commute in the Marketplace." src="https://my.home-assistant.io/badges/hacs_repository.svg"></a></p>
     Then add your station, choosing <strong>10 services</strong>. You need a free Darwin token from National Rail.
     <p><a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=my_rail_commute"><img alt="Open your Home Assistant instance and start setting up My Rail Commute." src="https://my.home-assistant.io/badges/config_flow_start.svg"></a></p></li>
-  <li><strong>Connect them.</strong> Click the button below to add the blueprint to Home Assistant, then go to Settings &gt; Automations &amp; scenes &gt; Blueprints &gt; UK Departure Board &gt; Create automation. Pick your board, pick your station, type the station name to show, and Save. The board fills in within a minute.
+  <li><strong>Connect them.</strong> Click the button below to add the blueprint to Home Assistant, then go to Settings &gt; Automations &amp; scenes &gt; Blueprints &gt; UK Departure Board &gt; Create automation. Pick your board and your station, then Save. Want more than one station? Add them under <em>More stations</em> and tap the station name on the board to switch. The board fills in within a minute.
     <p><a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FGrimmNorth%2Fdeparture-board%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fdeparture-board.yaml"><img alt="Open your Home Assistant instance and import this blueprint." src="https://my.home-assistant.io/badges/blueprint_import.svg"></a></p></li>
 </ol>
 <p>Updates arrive in Home Assistant as an &quot;Update&quot; button on the board's device page.</p>
