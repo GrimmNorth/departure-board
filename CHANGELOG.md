@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2.0.0 - 2026-11-16 (beta)
+- London Underground and DLR support
+
+## 2.0.0 - 2026-11-16 (beta)
 London Underground and DLR support: the board now works with Tube stations as well as National Rail.
 
 - London Underground and DLR stations, from the London TfL integration: pick them in the blueprint's new "London Underground / DLR stations" box. They count down ("Due", "3 min"), show each train's line, direction and where it is now, and use a tunnel logo

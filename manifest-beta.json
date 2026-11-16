@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.20.0",
+  "version": "2.0.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.20.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.0.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "f7495250722fe14f0935221327528946",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.20.0.ota.bin",
-        "summary": "Hold a train to make it a favourite, last train label, update notice, track logo"
+        "md5": "d73b37ed5732d917617189277bfb5a51",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.0.ota.bin",
+        "summary": "London Underground and DLR support"
       }
     }
   ]
