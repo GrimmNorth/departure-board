@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0 - 2026-11-16 (beta)
+London Underground and DLR support: the board now works with Tube stations as well as National Rail.
+
+- London Underground and DLR stations, from the London TfL integration: pick them in the blueprint's new "London Underground / DLR stations" box. They count down ("Due", "3 min"), show each train's line, direction and where it is now, and use a tunnel logo
+- New "TfL board logo image" setting: your own logo for Tube / DLR stations
+- TfL: several lines at the same station are merged into one board; "Arriving" when a train is approaching or at the platform; a bar in the line's colour on each train (new "TfL line colours" switch, also on the Style page); line status from the London Underground integration via the footer "i" (titled "Line status")
+- New "Data source" diagnostic sensor (National Rail or London TfL)
+- Route boards (and the "calling at" filter): the heading reads "Destination (all call at Hull)", since trains going beyond your destination are listed too
+- Column heading "Expt" now reads "Expected"
+
 ## 1.20.0 - 2026-11-16 (beta)
 - Hold a train to make it a favourite, last train label, update notice, track logo
 
