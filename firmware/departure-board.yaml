@@ -3929,19 +3929,48 @@ display:
       if (slot == 0 && !detail && elig == 0) {
         std::string l1, l2;
         bool big = false;
-        if (!wifi_ok) { l1 = "Connecting to Wi-Fi..."; }
-        else if (!api_ok || (dms == 0 && millis() < 120000)) { l1 = "Waiting for Home Assistant..."; }
-        else if (dms == 0) { l1 = "No train data received"; l2 = "Check the HA automation"; }
-        else if (millis() - dms > 30UL * 60000UL) { l1 = "Train data is out of date"; l2 = "Check Home Assistant"; }
-        else if (!filt.empty()) { l1 = "No trains calling at"; l2 = filt; }
-        else { l1 = "No more trains"; l2 = "tonight"; big = true; }
+        std::string h1, h2;          // help lines in the smaller, softer text
+        bool waiting = false;        // show moving dots
+        if (!wifi_ok) {
+          l1 = "Connecting to Wi-Fi"; h1 = "This usually takes a few seconds"; waiting = true;
+        } else if (!api_ok) {
+          l1 = "Waiting for Home Assistant";
+          h1 = "Add the board in Settings > Devices & services";
+          const std::string ip = id(wifi_ip_ts).state;
+          if (!ip.empty()) h2 = "Board address: " + ip;
+          waiting = true;
+        } else if (dms == 0 && millis() < 120000) {
+          l1 = "Connected to Home Assistant"; h1 = "Waiting for train data from the automation"; waiting = true;
+        } else if (dms == 0) {
+          l1 = "No train data received";
+          h1 = "Check the UK Departure Board automation";
+          h2 = "is set up and switched on in Home Assistant";
+        } else if (millis() - dms > 30UL * 60000UL) {
+          l1 = "Train data is out of date";
+          char ab[40];
+          snprintf(ab, sizeof(ab), "Last update %u min ago", (unsigned) ((millis() - dms) / 60000));
+          h1 = ab;
+          h2 = "Check Home Assistant and My Rail Commute";
+        } else if (!filt.empty()) {
+          l1 = "No trains calling at"; l2 = filt;
+        } else {
+          l1 = "No more trains"; l2 = "tonight"; big = true;
+        }
         if (big) {
           // nothing more today: big clock with the message underneath
           draw_bigclock();
           it.printf(400, 300, F_ROWL[fi], amber, TextAlign::CENTER, "No more trains tonight");
         } else {
-          it.printf(400, 140, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l1.c_str());
-          if (!l2.empty()) it.printf(400, 205, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l2.c_str());
+          int yy = (h1.empty() && l2.empty()) ? 190 : 140;
+          it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l1.c_str());
+          if (!l2.empty()) { yy += 65; it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l2.c_str()); }
+          if (!h1.empty()) { yy += 60; fit(h1, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h1.c_str()); }
+          if (!h2.empty()) { yy += 40; fit(h2, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h2.c_str()); }
+          if (waiting) {
+            // five dots, one lit, moving along so you can see the board is working
+            const int lit = (int) ((millis() / 300) % 5);
+            for (int d = 0; d < 5; d++) it.filled_circle(400 - 2 * 24 + d * 24, yy + 55, d == lit ? 6 : 4, d == lit ? amber : grey);
+          }
         }
       }
 
