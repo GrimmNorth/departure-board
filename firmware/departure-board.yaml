@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "1.16.0"
+    version: "1.13.1"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -196,6 +196,9 @@ globals:
   - id: anim_until         # redraw quickly until this time (page animation)
     type: uint32_t
     initial_value: "0"
+  - id: frame_ms           # how long a screen redraw takes (diagnostic)
+    type: uint32_t
+    initial_value: "0"
   - id: last_period        # auto station: -1 unknown, 0 before switch time, 1 after
     type: int
     initial_value: "-1"
@@ -280,7 +283,20 @@ script:
 interval:
   - interval: 40ms           # smooth page animation: redraw fast only while it runs
     then:
-      - lambda: 'if (id(anim_until) != 0 && millis() < id(anim_until)) id(main_display).update();'
+      - lambda: |-
+          if (id(anim_until) != 0 && millis() < id(anim_until)) {
+            uint32_t t = millis();
+            id(main_display).update();
+            uint32_t d = millis() - t;
+            if (d > id(frame_ms)) id(frame_ms) = d;
+          }
+  - interval: 60s            # one timed redraw a minute, for the frame time sensor
+    then:
+      - lambda: |-
+          uint32_t t = millis();
+          id(main_display).update();
+          uint32_t d = millis() - t;
+          id(frame_ms) = id(frame_ms) > d ? (id(frame_ms) + d) / 2 : d;
   - interval: 2s
     then:
       - script.execute: update_dim
@@ -1345,6 +1361,13 @@ sensor:
   - platform: uptime
     name: "Uptime"
     entity_category: diagnostic
+  - platform: template
+    name: "Display frame time"
+    unit_of_measurement: "ms"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    update_interval: 60s
+    lambda: 'return (float) id(frame_ms);'
   - platform: debug
     free:
       id: heap_free
@@ -1666,11 +1689,11 @@ display:
       static int anim_page = -1;
       static uint32_t anim_t0 = 0;
       if (view == 0 && !detail && pages > 1 && page != anim_page) {
-        if (anim_page >= 0 && id(page_anim).state) { anim_t0 = millis(); id(anim_until) = anim_t0 + 300 + 60 * 9; }
+        if (anim_page >= 0 && id(page_anim).state) { anim_t0 = millis(); id(anim_until) = anim_t0 + 250 + 150 * 9; }
         anim_page = page;
       }
       if (pages <= 1) anim_page = -1;
-      const bool anim_active = view == 0 && !detail && anim_t0 != 0 && millis() - anim_t0 < 300 + 60 * 9;
+      const bool anim_active = view == 0 && !detail && anim_t0 != 0 && millis() - anim_t0 < 250 + 150 * 9;
       auto cmp_bands = [&]() {
         // first train: main and sub line bands, as in Classic
         int mt = C_Y0 + rT - 2, mb = C_Y0 + rB + 2, st = C_Y0 + SUBOFF + sT - 2, sb = C_Y0 + SUBOFF + sB + 2;
@@ -2128,8 +2151,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -2300,8 +2324,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -2472,8 +2497,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -2644,8 +2670,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -2815,8 +2842,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -2986,8 +3014,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -3157,8 +3186,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -3328,8 +3358,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -3499,8 +3530,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
@@ -3670,8 +3702,9 @@ display:
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
           if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            int el = (int) (millis() - anim_t0) - 60 * slot;
-            float p = el <= 0 ? 0.f : (el >= 300 ? 1.f : el / 300.f);
+            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+            int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
+            float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
             aoff = (int) ((id(slot_ybot)[slot] - arow_top) * (1.f - p));
           }
