@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.12.1",
+  "version": "1.13.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.12.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.13.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "91c8a4a479d70fcc11d34c242bb9e41b",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.12.1.ota.bin",
-        "summary": "Station switching responds instantly and reliably"
+        "md5": "0106d301ecffceab30f8813e4823e087",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.13.0.ota.bin",
+        "summary": "DotGothic only; restyled settings screen with Back/Next/Close"
       }
     }
   ]

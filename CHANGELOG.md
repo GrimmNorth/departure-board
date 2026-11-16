@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.13.0 - 2026-11-16 (beta)
+- DotGothic only; restyled settings screen with Back/Next/Close
+
 ## 1.12.1 - 2026-11-15 (beta)
 - Station switching responds instantly and reliably
 
