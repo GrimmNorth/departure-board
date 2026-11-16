@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.2 - 2026-11-16 (beta)
+- Train details: the column headings show here too (when they are on)
+- Tube train details: the countdown or "Arriving", the line colour, where the train is now, the next two trains from the same platform and the line's status ("Good service" or the delay)
+- Demo mode is now a choice: Off, National Rail (a made-up York board showing every feature) or London Underground (a made-up Green Park board). Home Assistant's data waits while it is on
+- Screenshots: http://<board>/screenshot.bmp gives an exact copy of the screen; the address is on the new "Screenshot" sensor
+- Blueprint: a deeper Bakerloo line brown, so it stands apart from the amber text
+- Footer logos (track, tunnel and custom logos) sit 3 px lower, level with the footer text
+
 ## 2.0.1 - 2026-11-16 (beta)
 - Update icon, themed TfL logo, Brightness slider, new defaults
 
