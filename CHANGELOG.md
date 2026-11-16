@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.16.0 - 2026-11-16 (beta)
+- Compact layout fixed; softer second lines; new Style page (fade cancelled, column headings, page animation); night dimming can follow the sun
+
+## 1.16.0 - 2026-11-16 (beta)
 - Compact layout fixed: the next train now shows at the top (it was missing and the rows below overlapped)
 - Calm and Compact: only the next train scrolls (the first train on later pages no longer does)
 - Second lines (operator and calling points) use a softer version of the theme colour in every layout, so the main line stands out; the High contrast theme keeps full brightness

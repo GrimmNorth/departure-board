@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.15.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.16.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "804c081394db7456e51889addac3812e",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.15.0.ota.bin",
-        "summary": "New Layout setting: Classic, Calm and Compact"
+        "md5": "dc6a504e2fab000e405bcca1240ea7bd",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.16.0.ota.bin",
+        "summary": "Compact layout fixed; softer second lines; new Style page (fade cancelled, column headings, page animation); night dimming can follow the sun"
       }
     }
   ]
