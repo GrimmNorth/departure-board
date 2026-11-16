@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.13.1 - 2026-11-16 (beta)
+- Redesigned train detail page in the board style
+
 ## 1.13.0 - 2026-11-16 (beta)
 - DotGothic only; restyled settings screen with Back/Next/Close
 

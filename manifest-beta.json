@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-1.13.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-1.13.1.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "0106d301ecffceab30f8813e4823e087",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.13.0.ota.bin",
-        "summary": "DotGothic only; restyled settings screen with Back/Next/Close"
+        "md5": "6c7e173de64794ce2f10d691e5ce2310",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-1.13.1.ota.bin",
+        "summary": "Redesigned train detail page in the board style"
       }
     }
   ]
