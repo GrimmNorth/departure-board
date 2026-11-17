@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.0.4"
+    version: "2.0.5"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -2470,6 +2470,22 @@ display:
         };
         // everything below is placed by the letters' own height (ink), so bands hug the text like the list
         auto band_at = [&](font::Font *f, int ytop) { int t, b; ink_of(f, t, b); fband(ytop + t - 5, b - t + 10); };
+        // Tube: the line colour for the band, and the train's position split from the line and direction
+        bool fbar = false;
+        Color fcol;
+        std::string ftline = t.oper, ftloc;
+        if (id(src_tfl)) {
+          const size_t a = t.oper.find(" - ");
+          const size_t b = a == std::string::npos ? std::string::npos : t.oper.find(" - ", a + 3);
+          if (b != std::string::npos) { ftline = t.oper.substr(0, b); ftloc = t.oper.substr(b + 3); }
+          if (id(tfl_colours).state && t.pprev.size() == 7 && t.pprev[0] == '#') {
+            int cr = strtol(t.pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(t.pprev.substr(3, 2).c_str(), nullptr, 16), cb2 = strtol(t.pprev.substr(5, 2).c_str(), nullptr, 16);
+            const int mx = std::max(cr, std::max(cg, cb2));
+            if (mx == 0) { cr = cg = cb2 = 200; } else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb2 = cb2 * 150 / mx; }
+            fcol = Color(cr, cg, cb2);
+            fbar = true;
+          }
+        }
         // line 1: "1st  13:52  Leeds" on a band, the ordinal in grey
         {
           font::Font *f = F_ROWL[fi];
@@ -2483,6 +2499,7 @@ display:
           rest += dest;
           const int w = wo + width(rest, f);
           band_at(f, ytop);
+          if (fbar) it.filled_rectangle(10, ytop + t - 5, 5, b - t + 10, fcol);
           const int x0 = 400 - w / 2;
           it.printf(x0, ytop, f, grey, TextAlign::TOP_LEFT, "%s", ord.c_str());
           it.printf(x0 + wo, ytop, f, amber, TextAlign::TOP_LEFT, "%s", rest.c_str());
@@ -2508,6 +2525,13 @@ display:
         std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
         if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
         if (late && departure::valid(exp) && exp.find(':') != std::string::npos) st += " - expt " + exp;
+        Color stc = sc;
+        if (id(src_tfl) && !cancelled) {
+          const std::string sn = id(station_ts).state;
+          const bool arr = ftloc == "At Platform" || (!sn.empty() && (ftloc.rfind("At " + sn, 0) == 0 || ftloc.rfind("Approaching " + sn, 0) == 0));
+          if (arr) { st = "Arriving"; stc = green; }
+          else { st = ftloc; stc = amber; }
+        }
         fit(st, fr2, 760);
         const bool has_reason = departure::valid(t.reason) && (late || cancelled);
         std::string pl;
@@ -2517,7 +2541,7 @@ display:
           if (departure::truthy(t.pchg) && departure::valid(t.pprev) && t.pprev != plat) pl += " (was " + t.pprev + ")";
         }
         const bool changed = !pl.empty() && !bus && departure::truthy(t.pchg);
-        std::string op = departure::valid(t.oper) ? t.oper : std::string("");
+        std::string op = departure::valid(t.oper) ? (id(src_tfl) ? ftline : t.oper) : std::string("");
         const bool has_pl = !pl.empty() || !op.empty();
 
         // the strip of following trains sits at the bottom, just above the footer
@@ -2530,7 +2554,7 @@ display:
         const int block = hr + n_sub * (gap + hs);
         int ink_y = area_top + std::max(0, (area_bot - area_top - block) / 2);   // ink top of the first line
 
-        it.printf(400, ink_y - rT, fr2, sc, TextAlign::TOP_CENTER, "%s", st.c_str());
+        if (!st.empty()) it.printf(400, ink_y - rT, fr2, stc, TextAlign::TOP_CENTER, "%s", st.c_str());
         ink_y += hr + gap;
         if (has_reason) {
           std::string rs = t.reason;
@@ -2579,6 +2603,8 @@ display:
             wd[k] = width(dst[k], fs2);
             fixed += wo[k] + wh[k];
           }
+          // too long with the "2nd" / "3rd" labels: leave them out
+          if (fixed + wd[0] + wd[1] > 760) for (int k = 0; k < 2; k++) { fixed -= wo[k]; wo[k] = 0; }
           // share the room: a short destination leaves the rest for a long one
           const int avail = 760 - fixed;
           int cap[2] = {avail, 0};
@@ -2600,7 +2626,7 @@ display:
           for (int k = 0; k < 2; k++) {
             if (nx[k] == nullptr) continue;
             if (k == 1) x += ws;
-            it.printf(x, strip_top, fs2, grey, TextAlign::TOP_LEFT, "%s", ords[k]);
+            if (wo[k] > 0) it.printf(x, strip_top, fs2, grey, TextAlign::TOP_LEFT, "%s", ords[k]);
             x += wo[k];
             const Color c = nx[k]->cancelled ? red : amber;
             it.printf(x, strip_top, fs2, c, TextAlign::TOP_LEFT, "%s", head[k].c_str());
@@ -2855,7 +2881,7 @@ display:
           if (!stp[i].second.empty())
             it.printf(x0 + tmw, yy, fd, fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
           std::string nm = stp[i].first;
-          fit(nm, fd, x0 + 383 - (lx + 18));
+          fit(nm, fd, (last_i - first <= rows ? 784 : x0 + 383) - (lx + 18));
           it.printf(lx + 18, yy, fd, tc, "%s", nm.c_str());
         }
       };
@@ -2881,6 +2907,14 @@ display:
           case 0: sched = id(stn_t1_scheduled_departure).state; exp = id(stn_t1_expected_departure).state; stat = id(stn_t1_status).state; plat = id(stn_t1_platform).state; pchg = id(stn_t1_platform_changed).state; calls = id(stn_t1_calling_points).state; dreason = id(stn_t1_delay_reason).state; creason = id(stn_t1_cancellation_reason).state; oper = id(stn_t1_operator).state; delaym = id(stn_t1_delay_minutes).state; stops = id(stn_t1_stops).state; sarr = id(stn_t1_scheduled_arrival).state; earr = id(stn_t1_estimated_arrival).state; pprev = id(stn_t1_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -2997,7 +3031,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -3024,7 +3058,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3102,6 +3136,14 @@ display:
           case 0: sched = id(stn_t2_scheduled_departure).state; exp = id(stn_t2_expected_departure).state; stat = id(stn_t2_status).state; plat = id(stn_t2_platform).state; pchg = id(stn_t2_platform_changed).state; calls = id(stn_t2_calling_points).state; dreason = id(stn_t2_delay_reason).state; creason = id(stn_t2_cancellation_reason).state; oper = id(stn_t2_operator).state; delaym = id(stn_t2_delay_minutes).state; stops = id(stn_t2_stops).state; sarr = id(stn_t2_scheduled_arrival).state; earr = id(stn_t2_estimated_arrival).state; pprev = id(stn_t2_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -3218,7 +3260,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -3245,7 +3287,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3323,6 +3365,14 @@ display:
           case 0: sched = id(stn_t3_scheduled_departure).state; exp = id(stn_t3_expected_departure).state; stat = id(stn_t3_status).state; plat = id(stn_t3_platform).state; pchg = id(stn_t3_platform_changed).state; calls = id(stn_t3_calling_points).state; dreason = id(stn_t3_delay_reason).state; creason = id(stn_t3_cancellation_reason).state; oper = id(stn_t3_operator).state; delaym = id(stn_t3_delay_minutes).state; stops = id(stn_t3_stops).state; sarr = id(stn_t3_scheduled_arrival).state; earr = id(stn_t3_estimated_arrival).state; pprev = id(stn_t3_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -3439,7 +3489,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -3466,7 +3516,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3544,6 +3594,14 @@ display:
           case 0: sched = id(stn_t4_scheduled_departure).state; exp = id(stn_t4_expected_departure).state; stat = id(stn_t4_status).state; plat = id(stn_t4_platform).state; pchg = id(stn_t4_platform_changed).state; calls = id(stn_t4_calling_points).state; dreason = id(stn_t4_delay_reason).state; creason = id(stn_t4_cancellation_reason).state; oper = id(stn_t4_operator).state; delaym = id(stn_t4_delay_minutes).state; stops = id(stn_t4_stops).state; sarr = id(stn_t4_scheduled_arrival).state; earr = id(stn_t4_estimated_arrival).state; pprev = id(stn_t4_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -3660,7 +3718,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -3687,7 +3745,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3765,6 +3823,14 @@ display:
           case 0: sched = id(stn_t5_scheduled_departure).state; exp = id(stn_t5_expected_departure).state; stat = id(stn_t5_status).state; plat = id(stn_t5_platform).state; pchg = id(stn_t5_platform_changed).state; calls = id(stn_t5_calling_points).state; dreason = id(stn_t5_delay_reason).state; creason = id(stn_t5_cancellation_reason).state; oper = id(stn_t5_operator).state; delaym = id(stn_t5_delay_minutes).state; stops = id(stn_t5_stops).state; sarr = id(stn_t5_scheduled_arrival).state; earr = id(stn_t5_estimated_arrival).state; pprev = id(stn_t5_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -3881,7 +3947,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -3908,7 +3974,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -3986,6 +4052,14 @@ display:
           case 0: sched = id(stn_t6_scheduled_departure).state; exp = id(stn_t6_expected_departure).state; stat = id(stn_t6_status).state; plat = id(stn_t6_platform).state; pchg = id(stn_t6_platform_changed).state; calls = id(stn_t6_calling_points).state; dreason = id(stn_t6_delay_reason).state; creason = id(stn_t6_cancellation_reason).state; oper = id(stn_t6_operator).state; delaym = id(stn_t6_delay_minutes).state; stops = id(stn_t6_stops).state; sarr = id(stn_t6_scheduled_arrival).state; earr = id(stn_t6_estimated_arrival).state; pprev = id(stn_t6_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -4102,7 +4176,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -4129,7 +4203,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -4207,6 +4281,14 @@ display:
           case 0: sched = id(stn_t7_scheduled_departure).state; exp = id(stn_t7_expected_departure).state; stat = id(stn_t7_status).state; plat = id(stn_t7_platform).state; pchg = id(stn_t7_platform_changed).state; calls = id(stn_t7_calling_points).state; dreason = id(stn_t7_delay_reason).state; creason = id(stn_t7_cancellation_reason).state; oper = id(stn_t7_operator).state; delaym = id(stn_t7_delay_minutes).state; stops = id(stn_t7_stops).state; sarr = id(stn_t7_scheduled_arrival).state; earr = id(stn_t7_estimated_arrival).state; pprev = id(stn_t7_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -4323,7 +4405,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -4350,7 +4432,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -4428,6 +4510,14 @@ display:
           case 0: sched = id(stn_t8_scheduled_departure).state; exp = id(stn_t8_expected_departure).state; stat = id(stn_t8_status).state; plat = id(stn_t8_platform).state; pchg = id(stn_t8_platform_changed).state; calls = id(stn_t8_calling_points).state; dreason = id(stn_t8_delay_reason).state; creason = id(stn_t8_cancellation_reason).state; oper = id(stn_t8_operator).state; delaym = id(stn_t8_delay_minutes).state; stops = id(stn_t8_stops).state; sarr = id(stn_t8_scheduled_arrival).state; earr = id(stn_t8_estimated_arrival).state; pprev = id(stn_t8_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -4544,7 +4634,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -4571,7 +4661,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -4649,6 +4739,14 @@ display:
           case 0: sched = id(stn_t9_scheduled_departure).state; exp = id(stn_t9_expected_departure).state; stat = id(stn_t9_status).state; plat = id(stn_t9_platform).state; pchg = id(stn_t9_platform_changed).state; calls = id(stn_t9_calling_points).state; dreason = id(stn_t9_delay_reason).state; creason = id(stn_t9_cancellation_reason).state; oper = id(stn_t9_operator).state; delaym = id(stn_t9_delay_minutes).state; stops = id(stn_t9_stops).state; sarr = id(stn_t9_scheduled_arrival).state; earr = id(stn_t9_estimated_arrival).state; pprev = id(stn_t9_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -4765,7 +4863,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -4792,7 +4890,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {
@@ -4870,6 +4968,14 @@ display:
           case 0: sched = id(stn_t10_scheduled_departure).state; exp = id(stn_t10_expected_departure).state; stat = id(stn_t10_status).state; plat = id(stn_t10_platform).state; pchg = id(stn_t10_platform_changed).state; calls = id(stn_t10_calling_points).state; dreason = id(stn_t10_delay_reason).state; creason = id(stn_t10_cancellation_reason).state; oper = id(stn_t10_operator).state; delaym = id(stn_t10_delay_minutes).state; stops = id(stn_t10_stops).state; sarr = id(stn_t10_scheduled_arrival).state; earr = id(stn_t10_estimated_arrival).state; pprev = id(stn_t10_previous_platform).state; break;
         }
         std::string reason = (stat == "cancelled") ? creason : dreason;
+        // Tube rows: "Jubilee - N/bound - Left West Hampstead" so where the train is fits
+        std::string oper_s = oper;
+        if (id(src_tfl)) {
+          size_t lp = oper_s.find(" line - ");
+          if (lp != std::string::npos) oper_s.erase(lp, 5);
+          static const char *const DIRS[4][2] = {{"Northbound", "N/bound"}, {"Southbound", "S/bound"}, {"Eastbound", "E/bound"}, {"Westbound", "W/bound"}};
+          for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
+        }
         bool cancelled = (stat == "cancelled");
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
@@ -4986,7 +5092,7 @@ display:
               mc = cancelled ? red : orange;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
-              msg = departure::valid(oper) ? oper : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
+              msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
             }
             int ry = (lay == 2) ? (cmp_ry[eidx] == C_NONE ? C_NONE : cmp_ry[eidx] + aoff) : y + SUBOFF;
             int ax = DX;
@@ -5013,7 +5119,7 @@ display:
           if (departure::valid(reason)) head += (head.empty() ? "" : " - ") + reason;
           if (!head.empty()) head += "   -   ";
           std::string lst = departure::valid(stops) ? stops : departure::calling_list(calls, 200);
-          std::string tail = id(src_tfl) ? oper : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
+          std::string tail = id(src_tfl) ? oper_s : (departure::valid(oper) ? oper + " - " : "") + "Calling at " + lst;
           int bx, by, bw, bh, tw;
           int aw = 0;
           if (!arr_s.empty()) {

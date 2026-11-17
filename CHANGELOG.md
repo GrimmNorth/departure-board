@@ -1,20 +1,17 @@
 # Changelog
 
-## 2.0.4 - 2026-11-17 (beta)
-- Clean screenshots, 10-train demo
+## 2.0.5 - 2026-11-17 (beta)
+- Tube Focus mode: "Arriving" or where the train is now (instead of "On time"), the line and direction underneath, and the line colour bar
+- Tube boards: shorter second lines ("Jubilee - N/bound - Left West Hampstead") so where the train is fits
+- Train details: stop names use the full width when the stops fit in one column (no more "London Kings...")
+- Focus mode: the 2nd and 3rd trains drop their "2nd" / "3rd" labels when both destinations wouldn't fit
 
 ## 2.0.4 - 2026-11-17 (beta)
 - Screenshots are taken from one finished frame (they could mix frames and miss text)
 - National Rail demo board has 10 trains, so it no longer shows "Last train" late in the evening
 
 ## 2.0.3 - 2026-11-16 (beta)
-- Screenshots as PNG
-
-## 2.0.3 - 2026-11-16 (beta)
 - Screenshots as PNG (/screenshot.png), which Home Assistant cameras and GitHub can show; the Screenshot sensor now gives the PNG address (/screenshot.bmp still works)
-
-## 2.0.2 - 2026-11-16 (beta)
-- Demo boards, screenshots, Tube detail page
 
 ## 2.0.2 - 2026-11-16 (beta)
 - Train details: the column headings show here too (when they are on)
@@ -23,9 +20,6 @@
 - Screenshots: http://<board>/screenshot.bmp gives an exact copy of the screen; the address is on the new "Screenshot" sensor
 - Blueprint: a deeper Bakerloo line brown, so it stands apart from the amber text
 - Footer logos (track, tunnel and custom logos) sit 3 px lower, level with the footer text
-
-## 2.0.1 - 2026-11-16 (beta)
-- Update icon, themed TfL logo, Brightness slider, new defaults
 
 ## 2.0.1 - 2026-11-16 (beta)
 - New defaults for new boards (boards that already have settings keep them): Calm layout, Dot matrix background, white footer, column headings, fade cancelled trains, page animation and the logo on; pin next train and the disruption banner off; 15 s page interval; 30% night brightness
@@ -39,9 +33,6 @@
 - Update ready: an orange arrow icon in the footer instead of the small dot (next to the station message "i" when there is one). Tap it to see the new version and install it from the board
 
 ## 2.0.0 - 2026-11-16 (beta)
-- London Underground and DLR support
-
-## 2.0.0 - 2026-11-16 (beta)
 London Underground and DLR support: the board now works with Tube stations as well as National Rail.
 
 - London Underground and DLR stations, from the London TfL integration: pick them in the blueprint's new "London Underground / DLR stations" box. They count down ("Due", "3 min"), show each train's line, direction and where it is now, and use a tunnel logo
@@ -52,9 +43,6 @@ London Underground and DLR support: the board now works with Tube stations as we
 - Column heading "Expt" now reads "Expected"
 
 ## 1.20.0 - 2026-11-16 (beta)
-- Hold a train to make it a favourite, last train label, update notice, track logo
-
-## 1.20.0 - 2026-11-16 (beta)
 - Press and hold a train to make it a favourite (or hold again to remove it); a short message confirms it
 - "Last train" on the second line of the evening's last train
 - Update ready: an orange dot by the clock, and the Status page shows the new version
@@ -63,24 +51,15 @@ London Underground and DLR support: the board now works with Tube stations as we
 - Second lines (operator, calling points, arrival times) slightly dimmer: 60% instead of 70% (High contrast unchanged)
 - Removed the "Trains shown" setting (and its Home Assistant entity): the board always shows 5 trains a page, or 4 with large text. Compact still fits as many as it can
 
-## 1.19.1 - 2026-11-16 (beta)
-- Dimmed arrival times; clearer screen at busy stations
-
 ## 1.19.1 - 2026-11-16
 - Arrival times on routes are now dimmed like the rest of the second line (dimmed orange when late)
 - Fixed: at a busy station the board could say "No more trains tonight" in the daytime when every train it had just left before the next update arrived. It now says "Waiting for new train times" (and suggests a route)
-
-## 1.19.0 - 2026-11-16 (beta)
-- Station messages in the footer and arrival times on routes
 
 ## 1.19.0 - 2026-11-16 (beta)
 - Station messages: an orange "i" in the footer when National Rail has a notice for your station; tap it to read the messages (Prev / Next, closes after a minute). New "Station messages" diagnostic sensor
 - Routes: each train's second line starts with its arrival time at your destination ("Arrives 17:39", orange when running late)
 - Help page: a row for the station message icon
 - Blueprint: sends station messages (web links removed) to boards that support them
-
-## 1.18.0 - 2026-11-16 (beta)
-- Help page, swipe to change station, step through train details, clearer status screens
 
 ## 1.18.0 - 2026-11-16 (beta)
 - Fixed: the column heading showed boxes for some letters on a route (e.g. "Destination (to Leeds only)")
@@ -92,24 +71,15 @@ London Underground and DLR support: the board now works with Tube stations as we
 - Clearer status screens: what is happening and what to do (including the board's address when Home Assistant is not connected), with moving dots while waiting
 
 ## 1.17.0 - 2026-11-16 (beta)
-- Faster drawing with Rows and Dot matrix; routes show the destination in the heading and real train destinations
-
-## 1.17.0 - 2026-11-16 (beta)
 - Much faster drawing with the Rows and Dot matrix backgrounds: the bands and LED grid are written in bulk instead of pixel by pixel, so scrolling, page animation and taps are smoother
 - Routes (e.g. Manchester Piccadilly to Leeds): the footer shows the station, the column heading says "Destination (to Leeds only)", and each train shows its real final destination; the board's Calling at filter also shows in the heading
 - New "Route" diagnostic sensor
 - Blueprint: pick a station or a route; the optional "Names on the board" now takes a name for each station
 
 ## 1.16.1 - 2026-11-16 (beta)
-- Page animation now visible; white column headings; display frame time sensor
-
-## 1.16.1 - 2026-11-16 (beta)
 - Page animation reworked so it shows on the panel: rows appear one after another from the top, each sliding up into place
 - New diagnostic sensor: Display frame time (how long a screen redraw takes)
 - Column headings are white (dark on Daylight), sit higher, and no longer have a line underneath
-
-## 1.16.0 - 2026-11-16 (beta)
-- Compact layout fixed; softer second lines; new Style page (fade cancelled, column headings, page animation); night dimming can follow the sun
 
 ## 1.16.0 - 2026-11-16 (beta)
 - Compact layout fixed: the next train now shows at the top (it was missing and the rows below overlapped)
@@ -119,35 +89,14 @@ London Underground and DLR support: the board now works with Tube stations as we
 - Night dimming can follow sunset and sunrise from Home Assistant (Settings > Screen > Night dimming: Off / Set times / Sunset)
 
 ## 1.15.0 - 2026-11-16 (beta)
-- New Layout setting: Classic, Calm and Compact
-
-## 1.15.0 - 2026-11-16 (beta)
 - New Layout setting: Classic (as before, default), Calm and Compact
-
-## 1.14.1 - 2026-11-16 (beta)
-- Focus mode layout fixed: no overlapping lines, tidier spacing
 
 ## 1.14.1 - 2026-11-16 (beta)
 - Focus mode layout fixed: bands hug the text, lines evenly spaced, the 2nd/3rd strip no longer overlaps the footer, and a short destination leaves room for a long one
 
 ## 1.14.0 - 2026-11-16 (beta)
-- Focus mode shows 1st, 2nd and 3rd trains, delay reasons and platform changes; new footer colour setting
-
-## 1.14.0 - 2026-11-16 (beta)
 - Focus mode: the train is labelled 1st, with the 2nd and 3rd trains along the bottom; shows the delay reason (scrolling if long) and highlights a platform change; skips trains you can no longer catch when a walking time is set
 - New Footer colour setting (Theme or White) for the logo and station name
-
-## 1.13.1 - 2026-11-16 (stable)
-Everything since 1.5.0, now on the stable channel:
-- Six colour themes, and dot-matrix style row bands (Rows / Dot matrix / Plain)
-- Paging through all trains, with an optional pinned next train
-- Switch between several stations: tap the station name, or set Station number in Home Assistant
-- Custom logo from a PNG address
-- Redesigned train detail page and settings screens
-- Startup animation; calmer delay colours; normal case instead of capitals
-- Platform number flashes when it changes; factory reset button
-- DotGothic text drawn crisply, with layout measured from the letters
-- Shorter entity names in Home Assistant (settings return to defaults once on this update)
 
 ## 1.13.1 - 2026-11-16 (beta)
 - Redesigned train detail page in the board style
