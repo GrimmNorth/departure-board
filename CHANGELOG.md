@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.8 - 2026-11-17 (beta)
+- Panel colour warmth only changes the text colours, so the dot-matrix background and row bands no longer disappear when it is turned up
+- Panel colour warmth goes up to 20 (was 10), and new boards start at 10, which suits the CrowPanel's screen
+- Replacement buses show "Bus" in the platform column (instead of "via Bus")
+- A platform given for the first time (common at big stations shortly before departure) is no longer shown in orange as a platform change
+- Panel colour warmth also warms the Tube line colours, so lines like the Bakerloo look right on the panel
+- Tube boards (Calm layout): a second line too long to fit scrolls to show where the train is, instead of being cut short
+- High contrast theme: delays and delay reasons in orange (they were white)
+- A late train with no new time yet shows "Delayed" (it could show "On time")
+
 ## 2.0.7 - 2026-11-17 (beta)
 - New "Panel colour warmth" slider (0 to 10) in Home Assistant: some panels show amber too yellow, and turning this up warms the colours back towards the intended amber. Screenshots still show the intended colours
 
