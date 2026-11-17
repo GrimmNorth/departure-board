@@ -8,15 +8,15 @@ A UK train departure board for the **Elecrow CrowPanel Basic 7.0" (ESP32-S3, 800
 
 ## What you need
 - The CrowPanel Basic 7.0"
-- Home Assistant 2026.11 or newer (older versions: install My Rail Commute through HACS)
-- **My Rail Commute** from the Home Assistant Marketplace, with a free National Rail Darwin token
-- For Tube / DLR only: **London TfL** from HACS
+- Home Assistant 2026.11 or newer
+- **My Rail Commute** from the Marketplace (Settings > Marketplace), with a free National Rail Darwin token
+- For Tube / DLR only: **London TfL** from the Marketplace
 
 ## Setup
 1. **Flash.** Open the [install page](https://grimmnorth.github.io/departure-board/) in Chrome or Edge on a computer, plug the board in by USB and click Install.
 2. **Wi-Fi.** Enter your Wi-Fi details when the page asks. If it doesn't ask, join the board's `Departure-Board` Wi-Fi from your phone and pick your network.
 3. **Add to Home Assistant.** Go to Settings > Devices & services and add the discovered ESPHome device. No key is needed. If it isn't discovered, choose Add integration > ESPHome and enter the board's IP address.
-4. **My Rail Commute.** [Install it](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&repository=my-rail-commute&category=integration), then add your station with **10 services**. Next, open the station's **Configure > Disruption** and set **Departed train grace period** to **1 minute**. With the default of 5, departed trains take up rows.
+4. **My Rail Commute.** [Install it from the Marketplace](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&repository=my-rail-commute&category=integration), then add your station with **10 services**. Next, open the station's **Configure > Disruption** and set **Departed train grace period** to **1 minute**. With the default of 5, departed trains take up rows.
 5. **Connect them.** [Import the blueprint](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FGrimmNorth%2Fdeparture-board%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fdeparture-board.yaml), then go to Settings > Automations & scenes > Blueprints > UK Departure Board > Create automation. Pick your board and station, then Save. Trains appear within a minute.
 
 You can add up to **5 stations or routes in total** under *More stations or routes*. Tube stations count towards the 5. Updates appear in Home Assistant under Settings > Updates.
@@ -25,7 +25,7 @@ You can add up to **5 stations or routes in total** under *More stations or rout
 My Rail Commute sends at most 10 trains. At a big station that may only cover the next 10 minutes. Instead, add your station **with a destination** in My Rail Commute (e.g. Manchester Piccadilly to Leeds). You then get the next 10 trains that go there, and each shows its arrival time (*Arrives 17:39*). Pick the route in the blueprint like a station.
 
 ### London Underground and DLR
-1. Install **London TfL** from HACS and add your station, with one entry per line.
+1. [Install **London TfL** from the Marketplace](https://my.home-assistant.io/redirect/hacs_repository/?owner=morosanmihail&repository=HA-LondonTfL&category=integration) and add your station, with one entry per line.
 2. In the blueprint, pick its main sensor under **London Underground / DLR stations**, not the "All" or "Scheduled" one. If you add several lines at one station, they merge into one board.
 3. Optional: add Home Assistant's built-in **London Underground** integration. The footer **i** then shows line status when there are problems.
 
@@ -46,7 +46,10 @@ Tube boards always count down and show *Arriving*. Each train has its line, dire
 
 <img src="docs/screenshots/nr-detail.png" width="390" alt="Train detail page"> <img src="docs/screenshots/nr-message.png" width="390" alt="Station message">
 
-When there are more trains than rows, the board pages between them every 15 seconds. A changed platform flashes for a minute. Late in the evening, the final train is labelled *Last train*.
+When there are more trains than rows, the board pages between them every 15 seconds (the footer shows *1/2*). A changed platform flashes for a minute. Late in the evening, the final train is labelled *Last train*.
+
+### Weather
+Pick a weather entity under **Weather** in the blueprint and the board shows the temperature and an icon in the footer, and beside the date on the clock screen. Switch it off with **Show weather** (in Home Assistant, or *Settings > Extras* on the board).
 
 ### Layouts
 **Calm** (default): only the first train scrolls its calling points. **Classic**: every train scrolls. **Compact**: one line per train, so 7 or 8 fit.
@@ -67,7 +70,7 @@ Classic amber (default), White LED, Modern LCD, Retro green, High contrast and D
 Every setting is on the board (tap the clock) and in Home Assistant on the board's device page. Highlights:
 - **Display:** theme, layout, text size, scroll speed, clock seconds
 - **Trains:** countdown, calling-at filter, hide cancelled, show platform, paging, pin next train, walking time
-- **Extras:** highlight a stop, disruption banner, logo, focus mode, clock screen, footer colour
+- **Extras:** highlight a stop, disruption banner, logo, focus mode, clock screen, footer colour, weather
 - **Screen:** brightness, night dimming (set times or sunset/sunrise), screen off at night, idle dimming
 - **Style:** fade cancelled trains, column headings, page animation, TfL line colours
 - **Home Assistant only:** background (*Dot matrix*, *Rows* or *Plain*), page interval, 12-hour clock, demo mode, *Panel colour warmth*, and *Station number* for switching station from your own automations
@@ -95,10 +98,12 @@ The footer shows a track logo on National Rail boards and a tunnel logo on Tube 
 - **Safe mode:** after 5 failed starts, the board boots a minimal mode that can still receive an update over Wi-Fi.
 - **Stale data:** the footer turns red ("Data 7 min old") if Home Assistant stops sending trains.
 - **Memory watchdog:** if memory runs critically low, the board restarts. If memory is running down slowly, it restarts quietly at 03:30.
+- **Automatic updates:** *Install updates automatically* (on by default) installs new versions at about 03:00. Turn it off to update by hand from Settings > Updates or the orange arrow.
 - **Update channel:** *Stable* by default. Set it to *Beta* to get test versions first.
 - **Factory reset:** a button on the device page clears Wi-Fi and settings, ready to pass the board on.
 
 ## Troubleshooting
+- **Notifications:** Home Assistant tells you if the board hasn't had trains for 15 minutes, or if My Rail Commute's grace period needs changing. A new board's setup screens also show a QR code to the step you're on.
 - **No trains / waiting:** check the automation is on and that you picked the right board and station. To force an update, run it with ⋮ > Run actions.
 - **Fewer than 10 trains:** set My Rail Commute's departed train grace period to 1 minute (setup step 4). Quiet stations may simply have fewer trains in the next 2 hours.
 - **Board flicks between stations:** you have two automations for one board. Keep one and add the extra stations to it.

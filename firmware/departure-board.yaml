@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.0.10"
+    version: "2.1.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -93,6 +93,25 @@ api:
         - lambda: |-
             if (id(demo_kind) != 0) return;   // a demo board is showing
             if (id(route_to) != to || !id(route_ts).has_state()) { id(route_to) = to; id(route_ts).publish_state(to); }
+    # Called by the blueprint: the weather, temperature already rounded ("" when no weather entity is chosen)
+    - action: update_weather
+      variables:
+        temp: string
+        cond: string
+      then:
+        - lambda: |-
+            id(wx_temp) = temp;
+            id(wx_cond) = cond;
+            id(wx_ms) = temp.empty() ? 0 : std::max<uint32_t>(1, millis());
+    # Called by the blueprint: how the station's trains have run this week (-1 when not known, e.g. a Tube station)
+    - action: update_history
+      variables:
+        pct: int
+        avg: int
+      then:
+        - lambda: |-
+            id(hist_pct) = pct;
+            id(hist_avg) = avg;
     # Called by the Home Assistant blueprint (about once a minute).
     - action: update_status
       variables:
@@ -321,6 +340,24 @@ globals:
   - id: route_to           # destination of a My Rail Commute route ("" for all departures); sent by the blueprint
     type: std::string
     initial_value: '""'
+  - id: wx_temp            # weather from Home Assistant: temperature ("12") and condition ("partlycloudy"); sent by the blueprint
+    type: std::string
+    initial_value: '""'
+  - id: wx_cond
+    type: std::string
+    initial_value: '""'
+  - id: wx_ms              # when the weather last arrived (0 = none)
+    type: uint32_t
+    initial_value: '0'
+  - id: grace_warn         # trains that left a few minutes ago are still in the data: My Rail Commute's grace period is too long
+    type: bool
+    initial_value: 'false'
+  - id: hist_pct           # the station's trains on time this week (%), -1 = not known; sent by the blueprint
+    type: int
+    initial_value: '-1'
+  - id: hist_avg           # their average delay (minutes), -1 = not known
+    type: int
+    initial_value: '-1'
   - id: slot_ybot          # bottom edge of each row on screen (for taps)
     type: int[10]
     initial_value: "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
@@ -525,6 +562,41 @@ script:
           c.perform();
 
 interval:
+  # automatic updates: check for a new version at 03:00 and install it a few minutes later
+  - interval: 60s
+    then:
+      - lambda: |-
+          auto t = id(ha_time).now();
+          if (!t.is_valid() || !id(auto_update).state) return;
+          static int done_day = -1;
+          if (t.hour == 3 && t.minute == 0) id(fw_update).update();
+          if (t.hour == 3 && t.minute >= 5 && t.minute < 30 && t.day_of_year != done_day &&
+              id(fw_update).state == update::UPDATE_STATE_AVAILABLE) {
+            done_day = t.day_of_year;
+            id(fw_update).perform(false);
+          }
+  # trains that left more than 3 minutes ago, still being sent: My Rail Commute's
+  # "departed train grace period" is longer than a minute, so they take up rows (a tip on the Status page)
+  - interval: 30s
+    then:
+      - lambda: |-
+          static uint32_t since = 0;
+          static int hits = 0;
+          auto t = id(ha_time).now();
+          if (!t.is_valid() || id(src_tfl) || id(demo_kind) != 0) { since = 0; hits = 0; id(grace_warn) = false; return; }
+          const int nowmin = t.hour * 60 + t.minute;
+          const std::string *S[10] = {&id(stn_t1_scheduled_departure).state, &id(stn_t2_scheduled_departure).state, &id(stn_t3_scheduled_departure).state, &id(stn_t4_scheduled_departure).state, &id(stn_t5_scheduled_departure).state, &id(stn_t6_scheduled_departure).state, &id(stn_t7_scheduled_departure).state, &id(stn_t8_scheduled_departure).state, &id(stn_t9_scheduled_departure).state, &id(stn_t10_scheduled_departure).state};
+          const std::string *E[10] = {&id(stn_t1_expected_departure).state, &id(stn_t2_expected_departure).state, &id(stn_t3_expected_departure).state, &id(stn_t4_expected_departure).state, &id(stn_t5_expected_departure).state, &id(stn_t6_expected_departure).state, &id(stn_t7_expected_departure).state, &id(stn_t8_expected_departure).state, &id(stn_t9_expected_departure).state, &id(stn_t10_expected_departure).state};
+          const std::string *ST[10] = {&id(stn_t1_status).state, &id(stn_t2_status).state, &id(stn_t3_status).state, &id(stn_t4_status).state, &id(stn_t5_status).state, &id(stn_t6_status).state, &id(stn_t7_status).state, &id(stn_t8_status).state, &id(stn_t9_status).state, &id(stn_t10_status).state};
+          bool stale = false;
+          for (int i = 0; i < 10; i++) {
+            if (*ST[i] == "cancelled") continue;
+            const std::string &tm = (E[i]->size() >= 5 && isdigit((unsigned char) (*E[i])[0])) ? *E[i] : *S[i];
+            if (departure::valid(tm) && departure::departed(tm, nowmin, 3)) { stale = true; break; }
+          }
+          // seen in at least 4 checks (2 minutes) within half an hour: a quiet station only shows it now and then
+          if (millis() - since > 30UL * 60000UL || since == 0) { id(grace_warn) = hits >= 4; hits = 0; since = millis(); }
+          if (stale && ++hits >= 4) id(grace_warn) = true;
   # start the board's small web server once on Wi-Fi, for screenshots (the setup hotspot uses it too)
   - interval: 10s
     then:
@@ -818,6 +890,7 @@ touchscreen:
                     case 3: id(focus_mode).toggle(); break;
                     case 4: if (plus || minus) { float v = id(clock_after).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(clock_after).make_call(); c.set_value(v); c.perform(); } break;
                     case 5: id(footer_colour).make_call().select_next(true).perform(); break;
+                    case 6: id(show_weather).toggle(); break;
                   }
                   break;
                 case 3:
@@ -1260,6 +1333,19 @@ switch:
     id: show_logo
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Install updates automatically"
+    id: auto_update
+    icon: mdi:update
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+  - platform: template
+    name: "Show weather"
+    id: show_weather
+    icon: mdi:weather-partly-cloudy
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
 
 text:
   - platform: template
@@ -1342,7 +1428,7 @@ select:
             - script.execute: demo_fill
           else:
             # back to real trains: ask Home Assistant to send them straight away
-            - lambda: 'id(src_tfl) = false; id(msg_text) = ""; id(msg_n) = 0; id(msg_count_s).publish_state(0);'
+            - lambda: 'id(src_tfl) = false; id(src_ts).publish_state("National Rail"); id(msg_text) = ""; id(msg_n) = 0; id(msg_count_s).publish_state(0);'
             - homeassistant.event:
                 event: esphome.departure_board_station
                 data:
@@ -1980,6 +2066,67 @@ display:
         auto f = [&](int c) { c = std::max(0, std::min(255, c)); return (int) lroundf(255.0f * powf(c / 255.0f, gg)); };
         r = f(r); g = f(g); b = f(b);
       };
+      // weather from Home Assistant: shown when it's switched on and has arrived in the last 3 hours
+      auto wx_ok = [&]() { return id(show_weather).state && !id(wx_temp).empty() && id(wx_ms) != 0 && millis() - id(wx_ms) < 10800000UL; };
+      // a weather icon about s pixels tall, centred on cx, cy, in colour col
+      auto draw_wx = [&](int cx, int cy, int s, const std::string &c, Color col) {
+        auto cloud = [&](int ox, int oy, int k, Color cc) {          // k = width of the cloud
+          it.filled_circle(ox - k * 25 / 100, oy + k * 5 / 100, k * 22 / 100, cc);
+          it.filled_circle(ox + k * 2 / 100, oy - k * 8 / 100, k * 28 / 100, cc);
+          it.filled_circle(ox + k * 28 / 100, oy + k * 7 / 100, k * 19 / 100, cc);
+          it.filled_rectangle(ox - k * 25 / 100, oy + k * 5 / 100, k * 53 / 100, k * 21 / 100, cc);
+        };
+        auto sun = [&](int ox, int oy, int r) {
+          it.filled_circle(ox, oy, r, col);
+          static const int DX[8] = {100, 71, 0, -71, -100, -71, 0, 71}, DY[8] = {0, 71, 100, 71, 0, -71, -100, -71};
+          for (int k = 0; k < 8; k++) {
+            const int x1 = ox + DX[k] * (r + 3) / 100, y1 = oy + DY[k] * (r + 3) / 100;
+            const int x2 = ox + DX[k] * (r + 3 + r * 7 / 10) / 100, y2 = oy + DY[k] * (r + 3 + r * 7 / 10) / 100;
+            it.line(x1, y1, x2, y2, col); it.line(x1 + 1, y1, x2 + 1, y2, col);
+          }
+        };
+        const bool rain = c == "rainy" || c == "pouring" || c == "lightning-rainy" || c == "snowy-rainy";
+        const bool snow = c == "snowy" || c == "snowy-rainy" || c == "hail";
+        const bool storm = c == "lightning" || c == "lightning-rainy";
+        if (c == "sunny") { sun(cx, cy, s * 22 / 100); return; }
+        if (c == "clear-night") {
+          const int r = s * 38 / 100;
+          it.filled_circle(cx, cy, r, col);
+          it.filled_circle(cx + r * 55 / 100, cy - r * 30 / 100, r * 85 / 100, bg_col);
+          return;
+        }
+        if (c == "fog") {
+          for (int k = 0; k < 3; k++) it.filled_rectangle(cx - s * 45 / 100 + (k % 2) * s / 10, cy - s / 4 + k * s / 4, s * 80 / 100, 3, col);
+          return;
+        }
+        if (c == "windy" || c == "windy-variant") {
+          for (int k = 0; k < 3; k++) it.filled_rectangle(cx - s * 45 / 100, cy - s / 4 + k * s / 4, s * (90 - k * 25) / 100, 3, col);
+          return;
+        }
+        if (c == "partlycloudy") {
+          sun(cx - s * 20 / 100, cy - s * 15 / 100, s * 16 / 100);
+          const int ox = cx + s * 12 / 100, oy = cy + s * 12 / 100, k = s * 85 / 100;
+          // a ring in the background colour keeps the cloud apart from the sun
+          it.filled_circle(ox - k * 25 / 100, oy + k * 5 / 100, k * 22 / 100 + 3, bg_col);
+          it.filled_circle(ox + k * 2 / 100, oy - k * 8 / 100, k * 28 / 100 + 3, bg_col);
+          it.filled_circle(ox + k * 28 / 100, oy + k * 7 / 100, k * 19 / 100 + 3, bg_col);
+          cloud(ox, oy, k, col);
+          return;
+        }
+        if (!(rain || snow || storm)) { cloud(cx, cy + s * 5 / 100, s, col); return; }   // cloudy and anything else
+        cloud(cx, cy - s * 18 / 100, s * 90 / 100, col);
+        const int y0 = cy + s * 18 / 100;
+        for (int k = 0; k < 3; k++) {
+          const int x = cx - s * 25 / 100 + k * s * 25 / 100;
+          if (storm && (k == 1 || !rain)) continue;
+          if (snow && !(rain && k == 0)) it.filled_circle(x, y0 + s / 8, 2 + s / 20, col);
+          else { it.line(x + 3, y0, x - 2, y0 + s * 28 / 100, col); it.line(x + 4, y0, x - 1, y0 + s * 28 / 100, col); }
+        }
+        if (storm) {
+          it.filled_triangle(cx + 2, y0 - 2, cx - 6, y0 + s * 18 / 100, cx + 1, y0 + s * 18 / 100, col);
+          it.filled_triangle(cx - 1, y0 + s * 14 / 100, cx + 6, y0 + s * 14 / 100, cx - 4, y0 + s * 38 / 100, col);
+        }
+      };
       // the project logo, a dot-matrix train. sh > 0 slides it in from the left, a column at a time
       auto draw_logo = [&](int cx, int top, int pitch, int rl, int ru, Color on, Color off, int sh) {
         static const char *const LOGO[11] = {"...........", "...........", "#######....", "#.#.#.##...", "#.#.#.###..",
@@ -2099,6 +2246,7 @@ display:
             R = 3; band(R); lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
             R = 4; band(R); lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
             R = 5; band(R); lab(R, "Footer colour"); cyc(R, id(footer_colour).active_index().value_or(0) == 1 ? "White" : "Theme");
+            R = 6; band(R); lab(R, "Weather"); if (id(wx_temp).empty() && id(show_weather).state) val(R, grey, "Not set up"); else onoff(R, id(show_weather).state);
           }
           else if (id(settings_page) == 3) {
             R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
@@ -2126,7 +2274,8 @@ display:
             R = 6; band(R); lab(R, "Firmware");
             if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) { snprintf(buf, sizeof(buf), "%s, %s ready", ESPHOME_PROJECT_VERSION, id(fw_update).update_info.latest_version.c_str()); val(R, orange, buf); }
             else { snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf); }
-            R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
+            if (id(grace_warn)) { R = 7; band(R); lab(R, "Tip"); val(R, orange, "Grace period: set 1 min"); }
+            else { R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "..."); }
           }
           else if (id(settings_page) == 6) {
             R = 0; band(R); lab(R, "Tap a train"); val(R, amber, "Its details and stops");
@@ -2403,6 +2552,24 @@ display:
           else for (int xx = 12; xx < 790; xx += 4) row[xx] = v_bg;
         }
       };
+      // a band that follows the Background setting: nothing on Plain, a band on Rows, a band with LED gaps on Dot matrix
+      const int bgs0 = id(bg_style).active_index().value_or(1);
+      auto lband = [&](int x, int y, int w, int h) {
+        if (bgs0 == 0) return;
+        frect(x, y, w, h);
+        if (bgs0 != 2) return;
+        const int x0 = std::max(10, x), x1 = std::min(790, x + w), y0 = std::max(0, y), y1 = std::min(476, y + h);
+        if (fbuf == nullptr) {
+          for (int xx = 12; xx < x1; xx += 4) if (xx >= x0) it.vertical_line(xx, y0, y1 - y0, bg_col);
+          for (int yy = y0; yy < y1; yy++) if (yy % 4 == 1) it.horizontal_line(x0, yy, x1 - x0, bg_col);
+          return;
+        }
+        for (int yy = y0; yy < y1 && yy < FBH; yy++) {
+          uint16_t *row = fbuf + yy * FBW;
+          if (yy % 4 == 1) { if (x1 > x0) std::fill_n(row + x0, x1 - x0, v_bg); }
+          else for (int xx = 12 + ((std::max(x0, 12) - 12 + 3) / 4) * 4; xx < x1; xx += 4) row[xx] = v_bg;
+        }
+      };
       static int anim_page = -1;
       static uint32_t anim_t0 = 0;
       if (view == 0 && !detail && pages > 1 && page != anim_page) {
@@ -2466,6 +2633,14 @@ display:
         if (bgs == 2) {                                   // fine grid: the gaps between LEDs
           fgrid();
         }
+      } else if (bgs > 0) {
+        // train details, focus mode and the clock screen: the footer band too
+        const int fb = 418 + 34;
+        int ft = fb - std::max(F_SUB[fi]->get_capheight(), F_CLK[fi]->get_capheight()) - 7;
+        int fbm = fb + std::abs(F_SUB[fi]->get_descender()) + 5;
+        ft = std::min(ft, 418 + 1);
+        fbm = std::min(std::max(fbm, 418 + 42), 478);
+        lband(10, ft, 780, fbm - ft);
       }
 
       // shorten s with "..." until it fits in maxw pixels
@@ -2491,7 +2666,18 @@ display:
         snprintf(cb, sizeof(cb), "%02d:%02d%s", hh, now.minute, ap);
         it.printf(400, 105, F_BIG[fi], amber, TextAlign::CENTER, "%s", cb);
         std::string ds = now.strftime("%A %d %B");
-        it.printf(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, "%s", ds.c_str());
+        if (!wx_ok()) { it.printf(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, "%s", ds.c_str()); return; }
+        int dbx, dby, dw, dh, tw;
+        it.get_text_bounds(0, 0, ds.c_str(), F_ROWL[fi], TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dh);
+        it.get_text_bounds(0, 0, id(wx_temp).c_str(), F_ROWL[fi], TextAlign::TOP_LEFT, &dbx, &dby, &tw, &dh);
+        const int total = dw + 40 + 44 + 12 + tw + 12;
+        int x = 400 - total / 2;
+        it.printf(x, 215, F_ROWL[fi], amber, TextAlign::CENTER_LEFT, "%s", ds.c_str());
+        x += dw + 40;
+        draw_wx(x + 22, 215, 44, id(wx_cond), amber);
+        x += 44 + 12;
+        it.printf(x, 215, F_ROWL[fi], amber, TextAlign::CENTER_LEFT, "%s", id(wx_temp).c_str());
+        it.circle(x + tw + 7, 215 - 14, 4, amber); it.circle(x + tw + 7, 215 - 14, 3, amber);   // degree sign
       };
       // focus mode / clock screen: the trains are collected first, then the first one you can still catch is shown
       struct FocusTrain {
@@ -2510,7 +2696,7 @@ display:
         int m = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
         focus.push_back(FocusTrain{n, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late, m});
       };
-      auto fband = [&](int y0, int h) { if (bgs > 0) it.filled_rectangle(10, y0, 780, h, band_col); };     // theme row band behind a focus line (themes only)
+      auto fband = [&](int y0, int h) { lband(10, y0, 780, h); };     // band behind a focus line, following the Background setting
       auto draw_next = [&](int vw, const FocusTrain &t, const FocusTrain *t2, const FocusTrain *t3) {
         std::string sched = t.sched, exp = t.exp, plat = t.plat, delaym = t.delaym;
         const bool cancelled = t.cancelled, late = t.late;
@@ -2714,11 +2900,10 @@ display:
         ink_of(fh, hT, hB);
         ink_of(fd, dT, dB);
         const int LHB = dB - dT + 8;                         // one band
-        const Color BAND = band_col;                 // follows the theme
         auto bandline = [&](int y, font::Font *f) {
           int t, b;
           ink_of(f, t, b);
-          it.filled_rectangle(10, y + t - 4, 780, b - t + 8, BAND);
+          lband(10, y + t - 4, 780, b - t + 8);                    // follows the Background setting
         };
         int bx, by, bw, bh;
         const bool bus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
@@ -2927,7 +3112,27 @@ display:
         const int npages = ((int) stp.size() + per - 1) / per;
         const int pg = npages > 1 ? (int) ((millis() / 8000) % npages) : 0;
         it.printf(18, y, fd, grey, id(src_tfl) ? "Going to" : "Calling at");
-        if (npages > 1) it.printf(784, y, fd, grey, TextAlign::TOP_RIGHT, "%d of %d", pg + 1, npages);
+        {
+          char pgb[12] = "";
+          int pgw = 0;
+          if (npages > 1) {
+            snprintf(pgb, sizeof(pgb), "%d/%d", pg + 1, npages);
+            it.get_text_bounds(0, 0, pgb, fd, TextAlign::TOP_LEFT, &bx, &by, &pgw, &bh);
+            it.printf(784, y, fd, grey, TextAlign::TOP_RIGHT, "%s", pgb);
+          }
+          if (!id(src_tfl) && id(hist_pct) >= 0) {
+            char hb[64];
+            if (id(hist_avg) >= 1) snprintf(hb, sizeof(hb), "Station: %d%% on time, avg %d min late", id(hist_pct), id(hist_avg));
+            else snprintf(hb, sizeof(hb), "Station: %d%% on time", id(hist_pct));
+            std::string ht = hb;
+            const Color hc = id(hist_pct) >= 80 ? green : (id(hist_pct) >= 60 ? amber : orange);
+            int lw;
+            it.get_text_bounds(0, 0, "Calling at", fd, TextAlign::TOP_LEFT, &bx, &by, &lw, &bh);
+            const int right = 784 - (pgw ? pgw + 20 : 0);
+            fit(ht, fd, right - (18 + lw + 30));
+            it.printf(right, y, fd, hc, TextAlign::TOP_RIGHT, "%s", ht.c_str());
+          }
+        }
         y += LHB;
         int tmw;
         it.get_text_bounds(0, 0, "00:00", fd, TextAlign::TOP_LEFT, &bx, &by, &tmw, &bh);
@@ -5556,11 +5761,25 @@ display:
           it.printf(400, 300, F_ROWL[fi], amber, TextAlign::CENTER, "No more trains tonight");
         } else {
           if (setup_scr) draw_logo(400, 30, 6, 2, 2, amber, band_col, 0);
-          int yy = (h1.empty() && l2.empty()) ? 190 : 140;
+          // which step of the setup guide helps here ("" = no QR code)
+          const char *anchor = !wifi_ok ? "wifi" : (!api_ok ? "home-assistant" : ((dms == 0 || millis() - dms > 30UL * 60000UL) ? "trains" : ""));
+          const bool qr = anchor[0] != 0;
+          int yy = qr ? 125 : ((h1.empty() && l2.empty()) ? 190 : 140);
           it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l1.c_str());
-          if (!l2.empty()) { yy += 65; it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l2.c_str()); }
-          if (!h1.empty()) { yy += 60; fit(h1, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h1.c_str()); }
-          if (!h2.empty()) { yy += 40; fit(h2, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h2.c_str()); }
+          if (!l2.empty()) { yy += qr ? 55 : 65; it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l2.c_str()); }
+          if (!h1.empty()) { yy += qr ? 50 : 60; fit(h1, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h1.c_str()); }
+          if (!h2.empty()) { yy += 36 + (qr ? 0 : 4); fit(h2, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h2.c_str()); }
+          if (qr) {
+            static std::string qr_url;
+            const std::string url = std::string("https://grimmnorth.github.io/departure-board/#") + anchor;
+            if (qr_url != url) { id(qr_help).set_value(url); qr_url = url; }
+            const int n = id(qr_help).get_size(), sc = 3, box = n * sc + 8 * sc;   // 4 modules of white all round
+            const int bx = 400 - box / 2, by = 280;
+            it.filled_rectangle(bx, by, box, box, Color(255, 255, 255));
+            it.qr_code(bx + 4 * sc, by + 4 * sc, id(qr_help), Color(0, 0, 0), sc);
+            it.printf(bx + box + 16, by + box / 2, F_SUB[fi], sub_col, TextAlign::CENTER_LEFT, "Scan for help");
+            yy -= 10;
+          }
           if (waiting) {
             // five dots, one lit, moving along so you can see the board is working
             const int lit = (int) ((millis() / 300) % 5);
@@ -5600,7 +5819,7 @@ display:
       }
       else if (pages > 1) {
         char pb[24];
-        snprintf(pb, sizeof(pb), "Page %d of %d", page + 1, pages);
+        snprintf(pb, sizeof(pb), "%d/%d", page + 1, pages);
         info = pb;
         infoc = amber;
       }
@@ -5695,6 +5914,17 @@ display:
         id(upd_icon_x) = ucx - 30;
         clk_left = ucx - 20;
       }
+      if (wx_ok() && !detail && !switching) {
+        const std::string &tt = id(wx_temp);
+        int tbx, tby, tbw, tbh;
+        it.get_text_bounds(0, 0, tt.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &tbx, &tby, &tbw, &tbh);
+        const int tr = clk_left - 30;                              // right edge of the number
+        it.printf(tr, fb, F_SUB[fi], amber, TextAlign::BASELINE_RIGHT, "%s", tt.c_str());
+        it.circle(tr + 6, fb - 21, 3, amber); it.circle(tr + 6, fb - 21, 2, amber);   // degree sign
+        const int icx = tr - tbw - 20;
+        draw_wx(icx, fb - 11, 28, id(wx_cond), amber);
+        clk_left = icx - 18;
+      }
       int info_left = clk_left;
       if (!info.empty()) {
         fit(info, F_SUB[fi], clk_left - 24 - (fx + 160));
@@ -5705,6 +5935,10 @@ display:
       }
       fit(foot, F_SUB[fi], info_left - 20 - fx);
       it.printf(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
+
+qr_code:
+  - id: qr_help              # setup screens: a link to the step in the setup guide (changed as the board goes through setup)
+    value: "https://grimmnorth.github.io/departure-board/"
 
 image:
   # Custom logo: light pixels are drawn in the theme colour, dark/transparent ones are left out.

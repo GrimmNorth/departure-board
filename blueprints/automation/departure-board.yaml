@@ -5,7 +5,7 @@ blueprint:
     Sends departures to your UK Departure Board every minute. Pick your board and a
     My Rail Commute station or route (set it to 10 services and a 1-minute departed
     train grace period). At busy stations, use a route (e.g. Manchester Piccadilly to Leeds).
-    Tube and DLR stations come from the London TfL integration (HACS).
+    Tube and DLR stations come from the London TfL integration (Marketplace).
     Up to 5 stations in total; swipe or tap the station name on the board to switch.
     Use one automation per board.
   domain: automation
@@ -42,7 +42,7 @@ blueprint:
     tfl_stations:
       name: London Underground / DLR stations (optional)
       description: >-
-        Tube or DLR stations from the London TfL integration (HACS), after the stations above.
+        Tube or DLR stations from the London TfL integration (Marketplace), after the stations above.
         Pick each station's main sensor, not the "All" or "Scheduled" one. Several lines at one
         station merge and count as one station. Up to 5 stations in total.
       default: []
@@ -52,6 +52,16 @@ blueprint:
           filter:
             - integration: london_tfl
               domain: sensor
+    weather:
+      name: Weather (optional)
+      description: >-
+        A weather entity, for the temperature and conditions in the board's footer and on its clock
+        screen. Hide it on the board with "Show weather".
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain: weather
     station_name:
       name: Names on the board (optional)
       description: >-
@@ -81,6 +91,11 @@ variables:
   extra: !input more_stations
   tfl_in: !input tfl_stations
   label_in: !input station_name
+  weather_in: !input weather
+  # the temperature, rounded ("" when there's no weather entity or it isn't available)
+  wx_temp: >-
+    {% set t = state_attr(weather_in, 'temperature') if weather_in else none %}{{ (t | float) | round(0) | int if t is number or (t is string and t | float(none) is not none) else '' }}
+  wx_cond: "{{ states(weather_in) if weather_in and states(weather_in) not in ['unknown', 'unavailable'] else '' }}"
   # London TfL sensors (the "All" / "Scheduled" ones are mapped to the station's main sensor)
   tfl_list: "{{ (tfl_in if tfl_in is list else ([tfl_in] if tfl_in else [])) | map('regex_replace', '_(all|scheduled)$', '') | list }}"
   # sensors for the same station (one per line) are merged into one board
@@ -101,6 +116,11 @@ variables:
   label: "{{ names[idx] if idx < (names | count) else '' }}"
   svc: "{{ device_attr(board_id, 'name') | slugify }}"
   ents: "{{ [] if is_tfl else device_entities(station_id) }}"
+  # how the station's trains have run this week, from My Rail Commute (-1 when not known)
+  hist_pct: >-
+    {% set e = ents | select('search', 'historical_reliability$') | first | default('') %}{{ states(e) | float(-1) | round(0) | int if e else -1 }}
+  hist_avg: >-
+    {% set e = ents | select('search', 'historical_delays$') | first | default('') %}{{ states(e) | float(-1) | round(0) | int if e else -1 }}
   status_ent: "{{ ents | select('search', '_status$') | first | default('') }}"
   summary_ent: "{{ ents | select('search', '_summary$') | first | default('') }}"
   by_dest: "{{ state_attr(summary_ent, 'services_by_destination') }}"
@@ -108,6 +128,14 @@ variables:
   origin_name: "{% set v = state_attr(status_ent, 'origin_name') if status_ent != '' else none %}{{ v if v else '' }}"
   route_to: "{% set v = state_attr(status_ent, 'destination_name') if status_ent != '' else none %}{{ v if v else '' }}"
   all_trains: "{% set v = state_attr(summary_ent, 'all_trains') if summary_ent != '' else none %}{{ v if v is list else [] }}"
+  # setup checks, for Home Assistant notifications
+  note_id: "uk_departure_board_{{ svc }}"
+  # minutes since the station's data stopped coming (-1 when it's fine)
+  data_bad_for: >-
+    {% set e = (tfl_members[0] if tfl_members else '') if is_tfl else summary_ent %}{% if e and states(e) in ['unavailable', 'unknown'] and states[e] is not none %}{{ ((now() - states[e].last_changed).total_seconds() / 60) | int }}{% elif not e %}0{% else %}-1{% endif %}
+  # trains that left more than 3 minutes ago but are still listed: My Rail Commute's grace period is too long
+  stale_trains: >-
+    {% set ns = namespace(n=0) %}{% set nm = now().hour * 60 + now().minute %}{% for t in all_trains if t is mapping and not t.get('is_cancelled', false) %}{% set ex = t.get('expected_departure', '') | string %}{% set tm = ex if ex | regex_match('^[0-9]{2}:[0-9]{2}') else t.get('scheduled_departure', '') | string %}{% if tm | regex_match('^[0-9]{2}:[0-9]{2}') %}{% set d = (nm - ((tm[:2] | int) * 60 + (tm[3:5] | int))) % 1440 %}{% if 3 < d < 720 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endif %}{% endfor %}{{ ns.n }}
   # London TfL: live trains from every line at the station (timetable-only ones left out), sorted by time,
   # each with its line's name and colour; the station's name; and the lines' status from London Underground
   tfl_lines: >-
@@ -148,6 +176,20 @@ actions:
         continue_on_error: true
         data:
           to: "{{ route_to }}"
+  # weather and the station's reliability. Only boards with a "Show weather" switch have these actions.
+  - if:
+      - "{{ device_entities(board_id) | select('search', '_show_weather$') | list | count > 0 }}"
+    then:
+      - action: "esphome.{{ svc }}_update_weather"
+        continue_on_error: true
+        data:
+          temp: "{{ wx_temp | string if wx_cond != '' else '' }}"
+          cond: "{{ wx_cond }}"
+      - action: "esphome.{{ svc }}_update_history"
+        continue_on_error: true
+        data:
+          pct: "{{ hist_pct }}"
+          avg: "{{ hist_avg }}"
   # station messages for the "i" in the footer. Only boards with a "Station messages" sensor have this action.
   - if:
       - "{{ device_entities(board_id) | select('search', '_station_messages$') | list | count > 0 }}"
@@ -223,3 +265,35 @@ actions:
     continue_on_error: true
     data:
       count: "{{ stations | count }}"
+  # a notification in Home Assistant when the board can't get trains, or My Rail Commute needs a setting changed.
+  # Each one clears itself once it's fixed.
+  - if:
+      - "{{ data_bad_for | int >= 15 }}"
+    then:
+      - action: persistent_notification.create
+        continue_on_error: true
+        data:
+          notification_id: "{{ note_id }}_data"
+          title: "UK Departure Board: no trains"
+          message: >-
+            {{ label if label else 'The board\'s station' }} hasn't sent any trains for {{ data_bad_for }} minutes.
+            {% if is_tfl %}Check the London TfL integration in Settings > Devices & services.{% else %}Check My Rail Commute in
+            Settings > Devices & services: if it shows an error, your National Rail Darwin token may have expired or been
+            mistyped, so reconfigure it with a new token.{% endif %}
+    else:
+      - action: persistent_notification.dismiss
+        continue_on_error: true
+        data:
+          notification_id: "{{ note_id }}_data"
+  - if:
+      - "{{ not is_tfl and stale_trains | int > 0 }}"
+    then:
+      - action: persistent_notification.create
+        continue_on_error: true
+        data:
+          notification_id: "{{ note_id }}_grace"
+          title: "UK Departure Board: change one My Rail Commute setting"
+          message: >-
+            My Rail Commute is still listing trains that left a few minutes ago, so they take up rows on the board.
+            Open {{ label if label else 'your station' }} in Settings > Devices & services > My Rail Commute, choose
+            Configure > Disruption, and set "Departed train grace period" to 1 minute. Then dismiss this notification.
