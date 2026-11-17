@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0 - 2026-11-17 (beta)
+- Weather: pick a weather entity in the blueprint and the temperature and an icon show in the footer and beside the date on the clock screen. Switch it off with "Show weather" (in Home Assistant, or Settings > Extras on the board)
+- Train details: how the station's trains have run this week ("Station: 58% on time, avg 8 min late"), from My Rail Commute
+- Shorter page numbers: "1/2" instead of "Page 1 of 2", in the footer and on train details
+- Train details and focus mode follow the Background setting: LED gaps on Dot matrix, no bands on Plain, and the footer band as on the list
+- The "Data source" reading goes back to National Rail when demo mode is switched off (it could stay on "London TfL")
+- Install updates automatically: a new switch (on by default) installs new versions on the board's update channel at about 03:00
+- Setup screens show a QR code to that step of the setup guide ("Scan for help")
+- Home Assistant notifications: when the board hasn't had trains for 15 minutes (e.g. an expired Darwin token), and when My Rail Commute's departed train grace period needs setting to 1 minute. The board's Status page shows a tip for the grace period too
+- Docs: install My Rail Commute and London TfL from Home Assistant's Marketplace (it replaced HACS in 2026.11)
+- Needs the updated blueprint (re-import it) for the weather, the station's record and the notifications
+
 ## 2.0.10 - 2026-11-17 (beta)
 - Panel colour warmth keeps delays orange: at high warmth they had turned red and looked like cancellations
 

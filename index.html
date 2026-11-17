@@ -14,6 +14,7 @@
   h1 img { width:56px; height:56px; }
   a { color:#ffb000; }
   ol li { margin-bottom:.9rem; }
+  li:target { background:#2a2410; border-radius:6px; padding:.3rem .5rem; }
   img.shot { width:100%; height:auto; border-radius:6px; display:block; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; margin:1rem 0; }
   .box { background:#1c1c1c; border:1px solid #333; border-radius:8px; padding:1rem 1.2rem; margin:1.2rem 0; }
@@ -55,14 +56,14 @@
 </div>
 
 <ol start="2">
-  <li><strong>Wi-Fi.</strong> Enter your Wi-Fi details when the page asks. If it doesn't ask, join the <em>Departure-Board</em> Wi-Fi from your phone and pick your network.</li>
-  <li><strong>Add to Home Assistant.</strong> Go to Settings &gt; Devices &amp; services and add the discovered ESPHome device. No key is needed.</li>
-  <li><strong>Install My Rail Commute</strong> and add your station with <strong>10 services</strong>. Then, in the station's <em>Configure &gt; Disruption</em>, set <strong>Departed train grace period</strong> to <strong>1 minute</strong>.
+  <li id="wifi"><strong>Wi-Fi.</strong> Enter your Wi-Fi details when the page asks. If it doesn't ask, join the <em>Departure-Board</em> Wi-Fi from your phone and pick your network.</li>
+  <li id="home-assistant"><strong>Add to Home Assistant.</strong> Go to Settings &gt; Devices &amp; services and add the discovered ESPHome device. No key is needed.</li>
+  <li id="trains"><strong>Install My Rail Commute</strong> from the Marketplace (Settings &gt; Marketplace) and add your station with <strong>10 services</strong>. Then, in the station's <em>Configure &gt; Disruption</em>, set <strong>Departed train grace period</strong> to <strong>1 minute</strong>.
     <p><a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&amp;repository=my-rail-commute&amp;category=integration"><img alt="Open My Rail Commute in your Home Assistant." src="https://my.home-assistant.io/badges/hacs_repository.svg"></a>
     <a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=my_rail_commute"><img alt="Start setting up My Rail Commute." src="https://my.home-assistant.io/badges/config_flow_start.svg"></a></p></li>
   <li><strong>Connect them.</strong> Import the blueprint, then go to Settings &gt; Automations &amp; scenes &gt; Blueprints &gt; UK Departure Board &gt; Create automation. Pick your board and station, then Save.
     <p><a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FGrimmNorth%2Fdeparture-board%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fdeparture-board.yaml"><img alt="Import this blueprint into your Home Assistant." src="https://my.home-assistant.io/badges/blueprint_import.svg"></a></p>
-    <small><strong>Busy station?</strong> Add a <em>route</em> in My Rail Commute (your station with a destination) and pick that instead. <strong>Tube or DLR?</strong> Install London TfL from HACS and pick it under <em>London Underground / DLR stations</em>.</small></li>
+    <small><strong>Busy station?</strong> Add a <em>route</em> in My Rail Commute (your station with a destination) and pick that instead. <strong>Tube or DLR?</strong> Install <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=morosanmihail&amp;repository=HA-LondonTfL&amp;category=integration">London TfL</a> from the Marketplace and pick it under <em>London Underground / DLR stations</em>.</small></li>
 </ol>
 <div class="box" id="dashboard">
   <p><strong>Optional: get the dashboard.</strong> A Home Assistant dashboard with every control and setting for your board.</p>
@@ -79,14 +80,14 @@
 <script>
 (function () {
   // The board's own entity names, longest first, so "restart_in_safe_mode" wins over "restart".
-  const NAMES = ["factory_reset_clears_wi_fi_and_settings","national_rail_board_logo_image","largest_free_memory_block",
+  const NAMES = ["factory_reset_clears_wi_fi_and_settings","install_updates_automatically","national_rail_board_logo_image","largest_free_memory_block",
     "tfl_board_logo_image","restart_in_safe_mode","fade_cancelled_trains","panel_colour_warmth","display_frame_time",
     "destination_filter","clock_screen_after","night_follows_sun","disruption_banner","station_messages","favourite_trains",
     "night_screen_off","tfl_line_colours","night_brightness","column_headings","idle_brightness","update_channel",
     "station_number","restart_reason","pin_next_train","page_animation","favourite_stop","departed_grace","idle_dim_after",
     "scrolling_text","footer_colour","night_dimming","page_interval","show_platform","hide_cancelled","clock_seconds",
     "12_hour_clock","wi_fi_signal","walking_time","scroll_speed","night_starts","free_memory","data_source","night_ends",
-    "screenshot","background","brightness","focus_mode","large_text","show_logo","demo_mode","countdown","data_age",
+    "screenshot","show_weather","background","brightness","focus_mode","large_text","show_logo","demo_mode","countdown","data_age",
     "leave_in","firmware","restart","uptime","layout","paging","theme","route"].sort((a, b) => b.length - a.length);
   const PLACEHOLDER = "departure_board_xxxxxx";
   const input = document.getElementById("dash-id"), msg = document.getElementById("dash-msg"), btn = document.getElementById("dash-copy");
