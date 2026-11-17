@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.9 - 2026-11-17 (beta)
+## 2.0.9 - 2026-11-17
 - New boards start with Panel colour warmth at 18, which matches the screenshots best on the CrowPanel's screen; the slider now goes up to 25. Boards that already have a setting keep it
 
 ## 2.0.8 - 2026-11-17 (beta)
