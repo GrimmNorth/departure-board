@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.0.7.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.0.8.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "39a834c7b24dabbcbdddf7234ad3700e",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.7.ota.bin",
-        "summary": "Panel colour warmth slider"
+        "md5": "97192600d5f6ac91e182a2916340f943",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.8.ota.bin",
+        "summary": "Warmth fixes, Tube scrolling, platform and delay tweaks"
       }
     }
   ]
