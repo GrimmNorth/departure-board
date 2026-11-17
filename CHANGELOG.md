@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.0 - 2026-11-17 (beta)
+## 2.1.0 - 2026-11-17
 - Weather: pick a weather entity in the blueprint and the temperature and an icon show in the footer and beside the date on the clock screen. Switch it off with "Show weather" (in Home Assistant, or Settings > Extras on the board)
 - Train details: how the station's trains have run this week ("Station: 58% on time, avg 8 min late"), from My Rail Commute
 - Shorter page numbers: "1/2" instead of "Page 1 of 2", in the footer and on train details
