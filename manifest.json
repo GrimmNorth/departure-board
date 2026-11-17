@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.0.9",
+  "version": "2.1.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.0.9.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.1.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "d0055a48adac7ddc2426f4a13bbc2073",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.9.ota.bin",
-        "summary": "London Underground and DLR, project logo, panel colour warmth, and many fixes"
+        "md5": "f0fccef6be0bc75465ee73cede7fda9c",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.1.0.ota.bin",
+        "summary": "Weather, station record, setup help and automatic updates"
       }
     }
   ]
