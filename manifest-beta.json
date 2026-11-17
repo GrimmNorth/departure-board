@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.0.6.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.0.7.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "1c79ddfa6893b426d32f6822ff1e0bb5",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.6.ota.bin",
-        "summary": "Project logo on the start-up, setup and Status screens"
+        "md5": "39a834c7b24dabbcbdddf7234ad3700e",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.7.ota.bin",
+        "summary": "Panel colour warmth slider"
       }
     }
   ]
