@@ -1,4 +1,4 @@
-# UK Departure Board
+# <img src="docs/logo/logo.svg" width="40" alt=""> UK Departure Board
 
 A UK train departure board for the **Elecrow CrowPanel Basic 7.0" (ESP32-S3, 800x480, touch)**, fed by Home Assistant. It covers National Rail stations and London Underground / DLR stations. You flash it from your browser and set it up with a ready-made automation. You don't need any ESPHome knowledge or YAML.
 

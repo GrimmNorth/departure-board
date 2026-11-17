@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.0.5"
+    version: "2.0.6"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1928,27 +1928,41 @@ display:
       }
       it.fill(bg_col);
 
-      // start-up: the title wipes in like an LED board, then the details appear
+      // the project logo, a dot-matrix train. sh > 0 slides it in from the left, a column at a time
+      auto draw_logo = [&](int cx, int top, int pitch, int rl, int ru, Color on, Color off, int sh) {
+        static const char *const LOGO[11] = {"...........", "...........", "#######....", "#.#.#.##...", "#.#.#.###..",
+                                             "##########.", "###########", "...........", ".#..#..#..#", "###########", "..........."};
+        const int x0 = cx - 5 * pitch;
+        for (int j = 0; j < 11; j++)
+          for (int i = 0; i < 11; i++) {
+            const int si = i + sh;
+            const bool lit = si >= 0 && si < 11 && LOGO[j][si] == '#';
+            if (lit) it.filled_circle(x0 + i * pitch, top + j * pitch, rl, on);
+            else if (ru > 0) it.filled_circle(x0 + i * pitch, top + j * pitch, ru, off);
+          }
+      };
+      // start-up: the logo drives in and the title wipes in like an LED board, then the details appear
       static uint32_t boot_t0 = 0;
       if (boot_t0 == 0) boot_t0 = millis();
       const uint32_t bt = millis() - boot_t0;
       if (bt < 5000) {
-        it.filled_rectangle(60, 138, 680, 64, band_col);
+        draw_logo(400, 28, 10, 4, 3, amber, band_col, std::max<int>(0, 11 - (int) (bt * 11 / 1300)));
+        it.filled_rectangle(60, 164, 680, 64, band_col);
         const int wipe = std::min<int>(800, (int) (bt * 800 / 1600));
         it.start_clipping(0, 0, wipe, 480);
-        it.printf(400, 170, id(f_row_0), amber, TextAlign::CENTER, "UK Departure Board");
+        it.printf(400, 196, id(f_row_0), amber, TextAlign::CENTER, "UK Departure Board");
         it.end_clipping();
-        if (wipe > 60 && wipe < 740) it.filled_rectangle(wipe, 138, 4, 64, hilite);   // the bright "cursor"
-        if (bt > 1800) it.printf(400, 232, id(f_sub_0), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
-        if (bt > 2200) it.printf(400, 268, id(f_sub_0), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
+        if (wipe > 60 && wipe < 740) it.filled_rectangle(wipe, 164, 4, 64, hilite);   // the bright "cursor"
+        if (bt > 1800) it.printf(400, 258, id(f_sub_0), amber, TextAlign::CENTER, "Version %s", ESPHOME_PROJECT_VERSION);
+        if (bt > 2200) it.printf(400, 294, id(f_sub_0), amber, TextAlign::CENTER, "ESPHome %s", id(esphome_ver_ts).state.c_str());
         if (bt > 2600) {
           if (wifi::global_wifi_component->is_connected())
-            it.printf(400, 304, id(f_sub_0), green, TextAlign::CENTER, "Wi-Fi connected");
+            it.printf(400, 330, id(f_sub_0), green, TextAlign::CENTER, "Wi-Fi connected");
           else
-            it.printf(400, 304, id(f_sub_0), orange, TextAlign::CENTER, "Connecting to Wi-Fi...");
+            it.printf(400, 330, id(f_sub_0), orange, TextAlign::CENTER, "Connecting to Wi-Fi...");
         }
         for (int d = 0; d < 24; d++)                     // a row of dots fills up while it starts
-          it.filled_circle(400 - 230 + d * 20, 390, 4, bt > (uint32_t) d * 200 ? amber : band_col);
+          it.filled_circle(400 - 230 + d * 20, 410, 4, bt > (uint32_t) d * 200 ? amber : band_col);
         return;
       }
 
@@ -2002,6 +2016,7 @@ display:
           it.printf(20, 25, id(f_row_0), hilite, TextAlign::CENTER_LEFT, "Settings");
           { int hx, hy, hw, hh; it.get_text_bounds(20, 25, "Settings", id(f_row_0), TextAlign::CENTER_LEFT, &hx, &hy, &hw, &hh);
             it.printf(20 + hw + 24, 25, id(f_row_0), amber, TextAlign::CENTER_LEFT, "%s", PAGE_NAMES[id(settings_page)]); }
+          if (id(settings_page) == 5) draw_logo(596, 10, 3, 1, 0, amber, amber, 0);
           for (int d = 0; d < 7; d++) {                         // page dots
             int dx = 776 - (7 - 1 - d) * 24;
             if (d == id(settings_page)) it.filled_circle(dx, 25, 7, hilite); else it.circle(dx, 25, 6, grey);
@@ -5250,6 +5265,7 @@ display:
         bool big = false;
         std::string h1, h2;          // help lines in the smaller, softer text
         bool waiting = false;        // show moving dots
+        const bool setup_scr = !wifi_ok || !api_ok || dms == 0;
         if (!wifi_ok) {
           l1 = "Connecting to Wi-Fi"; h1 = "This usually takes a few seconds"; waiting = true;
         } else if (!api_ok) {
@@ -5285,6 +5301,7 @@ display:
           draw_bigclock();
           it.printf(400, 300, F_ROWL[fi], amber, TextAlign::CENTER, "No more trains tonight");
         } else {
+          if (setup_scr) draw_logo(400, 30, 6, 2, 2, amber, band_col, 0);
           int yy = (h1.empty() && l2.empty()) ? 190 : 140;
           it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l1.c_str());
           if (!l2.empty()) { yy += 65; it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l2.c_str()); }

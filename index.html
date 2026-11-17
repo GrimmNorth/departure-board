@@ -4,10 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UK Departure Board - install</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="docs/logo/logo.svg">
+<link rel="apple-touch-icon" href="docs/logo/logo-256.png">
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
   body { font-family: system-ui, sans-serif; background:#111; color:#eee; max-width:720px; margin:2rem auto; padding:0 1rem; line-height:1.5; }
-  h1 { color:#ffb000; margin-bottom:.3rem; }
+  h1 { color:#ffb000; margin-bottom:.3rem; display:flex; align-items:center; gap:.7rem; }
+  h1 img { width:56px; height:56px; }
   a { color:#ffb000; }
   ol li { margin-bottom:.9rem; }
   img.shot { width:100%; height:auto; border-radius:6px; display:block; }
@@ -18,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>UK Departure Board</h1>
+<h1><img src="docs/logo/logo.svg" alt="">UK Departure Board</h1>
 <p>A live UK train departure board for the <strong>Elecrow CrowPanel Basic 7.0&quot; (ESP32-S3)</strong>, fed by Home Assistant.</p>
 <img class="shot" src="docs/screenshots/nr-calm-page1.png" alt="Departure board showing York departures">
 <div class="grid">
