@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.0.7"
+    version: "2.0.8"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -453,7 +453,7 @@ script:
               {{0, 0, 0}, {242, 242, 242}, {255, 176, 0}, {255, 59, 59}, {125, 255, 125}, {110, 110, 110}, {255, 200, 0}, {30, 30, 30}},
               {{11, 31, 74}, {255, 255, 255}, {255, 212, 0}, {255, 90, 90}, {123, 228, 149}, {120, 135, 170}, {255, 212, 0}, {24, 50, 104}},
               {{2, 10, 2}, {60, 255, 90}, {200, 255, 60}, {255, 80, 80}, {60, 255, 90}, {30, 110, 40}, {220, 255, 220}, {8, 28, 10}},
-              {{0, 0, 0}, {255, 230, 0}, {255, 255, 255}, {255, 64, 64}, {80, 255, 80}, {150, 150, 150}, {0, 255, 255}, {24, 24, 24}},
+              {{0, 0, 0}, {255, 230, 0}, {255, 140, 0}, {255, 64, 64}, {80, 255, 80}, {150, 150, 150}, {0, 255, 255}, {24, 24, 24}},
               {{244, 241, 232}, {26, 26, 26}, {179, 92, 0}, {196, 30, 30}, {30, 122, 46}, {150, 150, 150}, {0, 70, 180}, {226, 221, 206}}
           };
           static int applied = -1, applied_w = -1;
@@ -466,7 +466,11 @@ script:
           const float g = 1.0f + 0.1f * w;
           auto gm = [&](uint8_t c) -> uint8_t { return w == 0 ? c : (uint8_t) lroundf(255.0f * powf(c / 255.0f, g)); };
           Color *dst[8] = {&id(bg_col), &id(amber), &id(orange), &id(red), &id(green), &id(grey), &id(hilite), &id(band_col)};
-          for (int k = 0; k < 8; k++) *dst[k] = Color(gm(P[t][k][0]), gm(P[t][k][1]), gm(P[t][k][2]));
+          // only the bright text colours: the background, bands, dots and grey stay as they are
+          for (int k = 0; k < 8; k++) {
+            const bool warm = (k == 1 || k == 2 || k == 3 || k == 4 || k == 6);
+            *dst[k] = warm ? Color(gm(P[t][k][0]), gm(P[t][k][1]), gm(P[t][k][2])) : Color(P[t][k][0], P[t][k][1], P[t][k][2]);
+          }
   - id: update_dim
     mode: single
     then:
@@ -581,7 +585,9 @@ interval:
                     for (int x = 0; x < W; x++) {
                       const uint16_t v = __builtin_bswap16(p[x]);
                       const uint8_t R = (v >> 11) & 31, G = (v >> 5) & 63, B = v & 31;
-                      row[1 + x * 3] = INV[(R << 3) | (R >> 2)]; row[2 + x * 3] = INV[(G << 2) | (G >> 4)]; row[3 + x * 3] = INV[(B << 3) | (B >> 2)];
+                      const uint8_t r8 = (R << 3) | (R >> 2), g8 = (G << 2) | (G >> 4), b8 = (B << 3) | (B >> 2);
+                      const bool txt = r8 >= 128 || g8 >= 128 || b8 >= 128;   // only text colours were warmed
+                      row[1 + x * 3] = txt ? INV[r8] : r8; row[2 + x * 3] = txt ? INV[g8] : g8; row[3 + x * 3] = txt ? INV[b8] : b8;
                     }
                     for (size_t i = 0; i < rl; i++) { a1 = (a1 + row[i]) % 65521; a2 = (a2 + a1) % 65521; }
                     o += rl;
@@ -1033,10 +1039,10 @@ number:
     id: pc_warm
     icon: mdi:palette
     min_value: 0
-    max_value: 10
+    max_value: 20
     step: 1
     mode: slider
-    initial_value: 0
+    initial_value: 10
     restore_value: true
     optimistic: true
     entity_category: config
@@ -1950,6 +1956,14 @@ display:
       }
       it.fill(bg_col);
 
+      // panel warmth for colours that are not from the theme (Tube line colours)
+      const int pw = id(pc_warm).has_state() ? (int) id(pc_warm).state : 0;
+      auto warm_rgb = [&](int &r, int &g, int &b) {
+        if (pw <= 0) return;
+        const float gg = 1.0f + 0.1f * pw;
+        auto f = [&](int c) { c = std::max(0, std::min(255, c)); return (int) lroundf(255.0f * powf(c / 255.0f, gg)); };
+        r = f(r); g = f(g); b = f(b);
+      };
       // the project logo, a dot-matrix train. sh > 0 slides it in from the left, a column at a time
       auto draw_logo = [&](int cx, int top, int pitch, int rl, int ru, Color on, Color off, int sh) {
         static const char *const LOGO[11] = {"...........", "...........", "#######....", "#.#.#.##...", "#.#.#.###..",
@@ -2517,6 +2531,7 @@ display:
           if (b != std::string::npos) { ftline = t.oper.substr(0, b); ftloc = t.oper.substr(b + 3); }
           if (id(tfl_colours).state && t.pprev.size() == 7 && t.pprev[0] == '#') {
             int cr = strtol(t.pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(t.pprev.substr(3, 2).c_str(), nullptr, 16), cb2 = strtol(t.pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb2);
             const int mx = std::max(cr, std::max(cg, cb2));
             if (mx == 0) { cr = cg = cb2 = 200; } else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb2 = cb2 * 150 / mx; }
             fcol = Color(cr, cg, cb2);
@@ -2577,7 +2592,7 @@ display:
           pl = "Platform " + plat;
           if (departure::truthy(t.pchg) && departure::valid(t.pprev) && t.pprev != plat) pl += " (was " + t.pprev + ")";
         }
-        const bool changed = !pl.empty() && !bus && departure::truthy(t.pchg);
+        const bool changed = !pl.empty() && !bus && departure::truthy(t.pchg) && departure::valid(t.pprev) && !id(src_tfl);
         std::string op = departure::valid(t.oper) ? (id(src_tfl) ? ftline : t.oper) : std::string("");
         const bool has_pl = !pl.empty() || !op.empty();
 
@@ -2722,6 +2737,7 @@ display:
         it.printf(784, y, fh, sc, TextAlign::TOP_RIGHT, "%s", st.c_str());
         if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
           int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb2 = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+          warm_rgb(cr, cg, cb2);
           const int mx = std::max(cr, std::max(cg, cb2));
           if (mx == 0) { cr = cg = cb2 = 200; } else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb2 = cb2 * 150 / mx; }
           it.filled_rectangle(10, y + hT - 4, 5, (hB - hT + 8) * 2 + 3, Color(cr, cg, cb2));
@@ -3001,6 +3017,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -3015,7 +3032,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -3024,9 +3044,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -3036,9 +3056,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -3080,8 +3102,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -3230,6 +3266,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -3244,7 +3281,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -3253,9 +3293,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -3265,9 +3305,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -3309,8 +3351,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -3459,6 +3515,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -3473,7 +3530,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -3482,9 +3542,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -3494,9 +3554,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -3538,8 +3600,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -3688,6 +3764,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -3702,7 +3779,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -3711,9 +3791,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -3723,9 +3803,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -3767,8 +3849,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -3917,6 +4013,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -3931,7 +4028,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -3940,9 +4040,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -3952,9 +4052,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -3996,8 +4098,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -4146,6 +4262,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -4160,7 +4277,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -4169,9 +4289,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -4181,9 +4301,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -4225,8 +4347,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -4375,6 +4511,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -4389,7 +4526,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -4398,9 +4538,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -4410,9 +4550,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -4454,8 +4596,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -4604,6 +4760,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -4618,7 +4775,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -4627,9 +4787,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -4639,9 +4799,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -4683,8 +4845,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -4833,6 +5009,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -4847,7 +5024,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -4856,9 +5036,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -4868,9 +5048,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -4912,8 +5094,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
@@ -5062,6 +5258,7 @@ display:
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
+            warm_rgb(cr, cg, cb);
             const int mx = std::max(cr, std::max(cg, cb));
             if (mx == 0) { cr = cg = cb = 200; }
             else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb = cb * 150 / mx; }   // only the darkest lines (Piccadilly blue) are lifted
@@ -5076,7 +5273,10 @@ display:
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
-            if (departure::truthy(pchg)) {
+            const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
+            const std::string pshow = pbus ? std::string("Bus") : plat;
+            // a change only when there was a platform before (a first allocation is not a change)
+            if (departure::truthy(pchg) && departure::valid(pprev) && !pbus && !id(src_tfl)) {
               // platform changed: flash it for the first minute this train is shown with the new platform
               std::string pk = sched + "|" + dest + "|" + plat;
               auto pit = pchg_seen.find(pk);
@@ -5085,9 +5285,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", plat.c_str());
+              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
             }
           }
           char cd[16];
@@ -5097,9 +5297,11 @@ display:
             it.printf(784, y, fr, red, TextAlign::TOP_RIGHT, "Cancelled");
           else if (id(src_tfl) && stat == "arriving")            // TfL: approaching or at this station
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "Arriving");
+          else if (late && !(exp.size() >= 5 && isdigit((unsigned char) exp[0])))   // late, no new time yet
+            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "Delayed");
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
-          else if (late && departure::valid(exp))
+          else if (late)
             it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
@@ -5141,8 +5343,22 @@ display:
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
-              fit(msg, fs, SW - (ax - DX));
-              it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              const int avail = SW - (ax - DX);
+              int mbx, mby, mbw, mbh;
+              it.get_text_bounds(0, 0, msg.c_str(), fs, TextAlign::TOP_LEFT, &mbx, &mby, &mbw, &mbh);
+              if (id(src_tfl) && id(scroll_enabled).state && mbw > avail) {
+                // a long Tube location scrolls: pause, glide to the end, pause, back to the start
+                const int over = mbw - avail;
+                const uint32_t move = (uint32_t) over * 1000 / sp, cyc = 2500 + move + 2500;
+                const uint32_t ph = millis() % cyc;
+                const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
+                it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
+                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.end_clipping();
+              } else {
+                fit(msg, fs, avail);
+                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+              }
             }
             if (aoff > 0) it.end_clipping();
             slot++;
