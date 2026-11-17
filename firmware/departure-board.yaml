@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.0.9"
+    version: "2.0.10"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -468,7 +468,15 @@ script:
           Color *dst[8] = {&id(bg_col), &id(amber), &id(orange), &id(red), &id(green), &id(grey), &id(hilite), &id(band_col)};
           // only the bright text colours: the background, bands, dots and grey stay as they are
           for (int k = 0; k < 8; k++) {
-            const bool warm = (k == 1 || k == 2 || k == 3 || k == 4 || k == 6);
+            const bool warm = (k == 1 || k == 3 || k == 4 || k == 6);
+            if (k == 2) {
+              // orange (delays) is scaled by the same proportion as amber's green, not the curve: the curve
+              // squashes its small green value to nothing and it would look like the cancelled red
+              const float sc = gm(176) / 176.0f;
+              auto ol = [&](uint8_t c) -> uint8_t { return c >= 255 ? 255 : (uint8_t) lroundf(c * sc); };
+              *dst[k] = Color(ol(P[t][k][0]), ol(P[t][k][1]), ol(P[t][k][2]));
+              continue;
+            }
             *dst[k] = warm ? Color(gm(P[t][k][0]), gm(P[t][k][1]), gm(P[t][k][2])) : Color(P[t][k][0], P[t][k][1], P[t][k][2]);
           }
   - id: update_dim
@@ -573,6 +581,13 @@ interval:
                   uint8_t INV[256];
                   { const int w = id(pc_warm).has_state() ? (int) id(pc_warm).state : 0; const float ig = 1.0f / (1.0f + 0.1f * w);
                     for (int k = 0; k < 256; k++) INV[k] = w == 0 ? k : (uint8_t) lroundf(255.0f * powf(k / 255.0f, ig)); }
+                  // the warmed orange is scaled, not curved: undo that exactly for its pixels
+                  const int pw2 = id(pc_warm).has_state() ? (int) id(pc_warm).state : 0;
+                  const float osc = pw2 > 0 ? (255.0f * powf(176.0f / 255.0f, 1.0f + 0.1f * pw2)) / 176.0f : 1.0f;
+                  const Color oc = id(orange);
+                  const uint8_t oR = oc.r >> 3, oG = oc.g >> 2, oB = oc.b >> 3;
+                  auto ou = [&](uint8_t c) -> uint8_t { return c >= 255 ? 255 : (uint8_t) std::min(255L, lroundf(c / osc)); };
+                  const uint8_t o8r = ou(oc.r), o8g = ou(oc.g), o8b = ou(oc.b);
                   for (int y = 0; y < H; y++) {
                     size_t o = 0;
                     if (y == 0) { d[o++] = 0x78; d[o++] = 0x01; }     // zlib header
@@ -587,6 +602,7 @@ interval:
                       const uint8_t R = (v >> 11) & 31, G = (v >> 5) & 63, B = v & 31;
                       const uint8_t r8 = (R << 3) | (R >> 2), g8 = (G << 2) | (G >> 4), b8 = (B << 3) | (B >> 2);
                       const bool txt = r8 >= 128 || g8 >= 128 || b8 >= 128;   // only text colours were warmed
+                      if (pw2 > 0 && R == oR && G == oG && B == oB) { row[1 + x * 3] = o8r; row[2 + x * 3] = o8g; row[3 + x * 3] = o8b; continue; }
                       row[1 + x * 3] = txt ? INV[r8] : r8; row[2 + x * 3] = txt ? INV[g8] : g8; row[3 + x * 3] = txt ? INV[b8] : b8;
                     }
                     for (size_t i = 0; i < rl; i++) { a1 = (a1 + row[i]) % 65521; a2 = (a2 + a1) % 65521; }

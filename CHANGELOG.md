@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.10 - 2026-11-17 (beta)
+- Panel colour warmth keeps delays orange: at high warmth they had turned red and looked like cancellations
+
 ## 2.0.9 - 2026-11-17
 - New boards start with Panel colour warmth at 18, which matches the screenshots best on the CrowPanel's screen; the slider now goes up to 25. Boards that already have a setting keep it
 
