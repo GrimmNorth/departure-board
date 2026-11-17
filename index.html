@@ -17,6 +17,8 @@
   li:target { background:#2a2410; border-radius:6px; padding:.3rem .5rem; }
   img.shot { width:100%; height:auto; border-radius:6px; display:block; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; margin:1rem 0; }
+  figure { margin:0; }
+  figcaption { color:#ffb000; font-weight:600; font-size:.95rem; margin-bottom:.35rem; }
   .box { background:#1c1c1c; border:1px solid #333; border-radius:8px; padding:1rem 1.2rem; margin:1.2rem 0; }
   esp-web-install-button button { background:#ffb000; color:#111; border:0; border-radius:6px; padding:.8rem 1.4rem; font-size:1.1rem; cursor:pointer; }
   small { color:#999; }
@@ -34,8 +36,8 @@
 <p>A live UK train departure board for the <strong>Elecrow CrowPanel Basic 7.0&quot; (ESP32-S3)</strong>, fed by Home Assistant.</p>
 <img class="shot" src="docs/screenshots/board-demo.gif" alt="The departure board: live departures, train details, focus mode, London Underground and themes">
 <div class="grid">
-  <img class="shot" src="docs/screenshots/tfl-page1.png" alt="London Underground board">
-  <img class="shot" src="docs/screenshots/nr-detail.png" alt="Train detail page">
+  <figure><figcaption>Tap a train for its details</figcaption><img class="shot" src="docs/screenshots/nr-detail.png" alt="Train detail page"></figure>
+  <figure><figcaption>London Underground and DLR</figcaption><img class="shot" src="docs/screenshots/tfl-page1.png" alt="London Underground board"></figure>
 </div>
 <ul>
   <li>National Rail stations, plus London Underground and DLR</li>
