@@ -4,7 +4,7 @@ A UK train departure board for the **Elecrow CrowPanel Basic 7.0" (ESP32-S3, 800
 
 **Install page:** https://grimmnorth.github.io/departure-board/
 
-<img src="docs/screenshots/nr-calm-page1.png" width="600" alt="Departure board showing York departures">
+<img src="docs/screenshots/board-demo.gif" width="600" alt="The departure board: live departures, train details, focus mode, London Underground and themes">
 
 ## What you need
 - The CrowPanel Basic 7.0"
