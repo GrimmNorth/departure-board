@@ -2,18 +2,12 @@ blueprint:
   name: UK Departure Board - send trains to the board
   author: GrimmNorth
   description: >-
-    Sends your National Rail departures (from the My Rail Commute integration) to your
-    UK Departure Board every minute. Pick your board and your station or route.
-    Add more stations or routes to switch between them: tap the station name at the bottom of the board,
-    or change the board's "Station number" in Home Assistant.
-    At a busy station, 10 trains may only cover the next few minutes: add a My Rail Commute route
-    instead (e.g. Manchester Piccadilly to Leeds) to get the next 10 trains to where you are going.
-    Set up My Rail Commute with 10 services for the best result, and set its
-    Departed train grace period (Configure > Disruption) to 1 minute so departed
-    trains don't take up places on the board.
-    London Underground and DLR stations can be added too, from the London TfL integration (HACS):
-    they count down ("Due", "3 min") and show where each train is now.
-    Up to 5 stations in total. Use one automation per board.
+    Sends departures to your UK Departure Board every minute. Pick your board and a
+    My Rail Commute station or route (set it to 10 services and a 1-minute departed
+    train grace period). At busy stations, use a route (e.g. Manchester Piccadilly to Leeds).
+    Tube and DLR stations come from the London TfL integration (HACS).
+    Up to 5 stations in total; swipe or tap the station name on the board to switch.
+    Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:
@@ -48,10 +42,9 @@ blueprint:
     tfl_stations:
       name: London Underground / DLR stations (optional)
       description: >-
-        Tube or DLR stations from the London TfL integration (install it from HACS). They come after the
-        stations above, in order. Pick the station's main sensor (not the "All" or "Scheduled" one).
-        Several lines at the same station (one London TfL entry each) are merged and count as one station.
-        The board takes up to 5 stations in total.
+        Tube or DLR stations from the London TfL integration (HACS), after the stations above.
+        Pick each station's main sensor, not the "All" or "Scheduled" one. Several lines at one
+        station merge and count as one station. Up to 5 stations in total.
       default: []
       selector:
         entity:
@@ -62,9 +55,8 @@ blueprint:
     station_name:
       name: Names on the board (optional)
       description: >-
-        Usually leave this empty: the board uses each station's own name (e.g. "York").
-        To use different wording, type one name per station, in order, separated by commas
-        (e.g. "York, Leeds"); leave a name out (e.g. "York, , Leeds") to keep that station's own name.
+        Usually leave empty to use each station's own name. Otherwise, one name per station
+        in order, separated by commas (e.g. "York, , Leeds" keeps station 2's own name).
       default: ""
       selector:
         text:

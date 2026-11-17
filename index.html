@@ -6,10 +6,12 @@
 <title>UK Departure Board - install</title>
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
-  body { font-family: system-ui, sans-serif; background:#111; color:#eee; max-width:680px; margin:2rem auto; padding:0 1rem; line-height:1.5; }
-  h1 { color:#ffb000; }
+  body { font-family: system-ui, sans-serif; background:#111; color:#eee; max-width:720px; margin:2rem auto; padding:0 1rem; line-height:1.5; }
+  h1 { color:#ffb000; margin-bottom:.3rem; }
   a { color:#ffb000; }
-  ol li { margin-bottom:.8rem; }
+  ol li { margin-bottom:.9rem; }
+  img.shot { width:100%; height:auto; border-radius:6px; display:block; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; margin:1rem 0; }
   .box { background:#1c1c1c; border:1px solid #333; border-radius:8px; padding:1rem 1.2rem; margin:1.2rem 0; }
   esp-web-install-button button { background:#ffb000; color:#111; border:0; border-radius:6px; padding:.8rem 1.4rem; font-size:1.1rem; cursor:pointer; }
   small { color:#999; }
@@ -18,20 +20,23 @@
 <body>
 <h1>UK Departure Board</h1>
 <p>A live UK train departure board for the <strong>Elecrow CrowPanel Basic 7.0&quot; (ESP32-S3)</strong>, fed by Home Assistant.</p>
+<img class="shot" src="docs/screenshots/nr-calm-page1.png" alt="Departure board showing York departures">
+<div class="grid">
+  <img class="shot" src="docs/screenshots/tfl-page1.png" alt="London Underground board">
+  <img class="shot" src="docs/screenshots/nr-detail.png" alt="Train detail page">
+</div>
 <ul>
-  <li>Live departures from any UK station: times, platforms, delays, cancellations and calling points</li>
-  <li>Tap a train for its full details and route</li>
-  <li>Switch between several stations with a tap</li>
-  <li>National Rail station messages: tap the orange <strong>i</strong> in the footer to read them</li>
-  <li>London Underground and DLR stations too, with the London TfL integration from HACS</li>
-  <li>Pages through up to 10 trains, keeping the next one on top if you like</li>
-  <li>Dot-matrix look with six colour themes and your own logo</li>
-  <li>Night dimming, a clock screen, and updates straight from Home Assistant</li>
+  <li>National Rail stations, plus London Underground and DLR</li>
+  <li>Delays, cancellations, platforms and calling points; tap a train for its details</li>
+  <li>Up to 5 stations or routes, switched with a swipe</li>
+  <li>Station messages, Tube line status and a focus mode</li>
+  <li>Six themes, three layouts and your own logo</li>
+  <li>Updates straight from Home Assistant</li>
 </ul>
-<p><small><strong>What you need:</strong> the CrowPanel 7&quot;, Home Assistant 2026.11 or newer, the My Rail Commute integration (step 4) and a free National Rail Darwin token.</small></p>
+<p><small><strong>You need:</strong> the CrowPanel 7&quot;, Home Assistant 2026.11 or newer, and My Rail Commute (step 4) with a free National Rail Darwin token.</small></p>
 
 <div class="box">
-  <p><strong>1. Flash the board</strong> (Chrome or Edge on a computer; plug the board in with a USB cable first)</p>
+  <p><strong>1. Flash the board.</strong> Use Chrome or Edge on a computer, with the board plugged in by USB.</p>
   <esp-web-install-button manifest="manifest.json">
     <button slot="activate">Install firmware</button>
     <span slot="unsupported">This browser can't flash devices. Use Chrome or Edge on a computer.</span>
@@ -39,16 +44,15 @@
 </div>
 
 <ol start="2">
-  <li><strong>Give it Wi-Fi.</strong> When the install finishes, the page asks for your home Wi-Fi name and password: enter them there. (If it doesn't ask, join the Wi-Fi network called <em>Departure-Board</em> from your phone; a page opens, or go to 192.168.4.1, and pick your home Wi-Fi.)</li>
-  <li><strong>Add it to Home Assistant.</strong> It appears under Settings &gt; Devices &amp; services as a discovered ESPHome device. Click Add. No key is needed. (If it isn't discovered, choose Add integration &gt; ESPHome and type the board's IP address from your router.)</li>
-  <li><strong>Install My Rail Commute</strong> from the Home Assistant Marketplace (Settings &gt; Marketplace). The button below opens it for you; click <em>Install</em>:
-    <p><a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&amp;repository=my-rail-commute&amp;category=integration"><img alt="Open your Home Assistant instance and open My Rail Commute in the Marketplace." src="https://my.home-assistant.io/badges/hacs_repository.svg"></a></p>
-    Then add your station, choosing <strong>10 services</strong>. You need a free Darwin token from National Rail. Afterwards open the station's <em>Configure &gt; Disruption</em> settings and set <strong>Departed train grace period</strong> to <strong>1 minute</strong> (the default, 5, keeps trains that have already left in the list, so the board shows fewer upcoming ones).
-    <p><a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=my_rail_commute"><img alt="Open your Home Assistant instance and start setting up My Rail Commute." src="https://my.home-assistant.io/badges/config_flow_start.svg"></a></p></li>
-  <li><strong>Connect them.</strong> Click the button below to add the blueprint to Home Assistant, then go to Settings &gt; Automations &amp; scenes &gt; Blueprints &gt; UK Departure Board &gt; Create automation. Pick your board and your station, then Save. Want more than one station? Add them under <em>More stations or routes</em> and tap the station name on the board to switch. The board fills in within a minute.<br><small><strong>Busy station?</strong> 10 trains may only cover the next few minutes there. In My Rail Commute, add a <em>route</em> instead (your station with a destination, e.g. Manchester Piccadilly to Leeds) and pick that: you get the next 10 trains to where you are going, each with its arrival time.</small>
-    <p><a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FGrimmNorth%2Fdeparture-board%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fdeparture-board.yaml"><img alt="Open your Home Assistant instance and import this blueprint." src="https://my.home-assistant.io/badges/blueprint_import.svg"></a></p></li>
+  <li><strong>Wi-Fi.</strong> Enter your Wi-Fi details when the page asks. If it doesn't ask, join the <em>Departure-Board</em> Wi-Fi from your phone and pick your network.</li>
+  <li><strong>Add to Home Assistant.</strong> Go to Settings &gt; Devices &amp; services and add the discovered ESPHome device. No key is needed.</li>
+  <li><strong>Install My Rail Commute</strong> and add your station with <strong>10 services</strong>. Then, in the station's <em>Configure &gt; Disruption</em>, set <strong>Departed train grace period</strong> to <strong>1 minute</strong>.
+    <p><a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=adamf83&amp;repository=my-rail-commute&amp;category=integration"><img alt="Open My Rail Commute in your Home Assistant." src="https://my.home-assistant.io/badges/hacs_repository.svg"></a>
+    <a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=my_rail_commute"><img alt="Start setting up My Rail Commute." src="https://my.home-assistant.io/badges/config_flow_start.svg"></a></p></li>
+  <li><strong>Connect them.</strong> Import the blueprint, then go to Settings &gt; Automations &amp; scenes &gt; Blueprints &gt; UK Departure Board &gt; Create automation. Pick your board and station, then Save.
+    <p><a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FGrimmNorth%2Fdeparture-board%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fdeparture-board.yaml"><img alt="Import this blueprint into your Home Assistant." src="https://my.home-assistant.io/badges/blueprint_import.svg"></a></p>
+    <small><strong>Busy station?</strong> Add a <em>route</em> in My Rail Commute (your station with a destination) and pick that instead. <strong>Tube or DLR?</strong> Install London TfL from HACS and pick it under <em>London Underground / DLR stations</em>.</small></li>
 </ol>
-<p>Updates arrive in Home Assistant as an &quot;Update&quot; button on the board's device page.</p>
-<p><small>Full guide and source: <a href="https://github.com/GrimmNorth/departure-board">GitHub</a>. Not affiliated with National Rail or Elecrow.</small></p>
+<p><small>Full guide, settings and troubleshooting: <a href="https://github.com/GrimmNorth/departure-board#readme">GitHub</a>. Not affiliated with National Rail, TfL or Elecrow.</small></p>
 </body>
 </html>
