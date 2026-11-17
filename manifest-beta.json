@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.0.8.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.0.9.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "97192600d5f6ac91e182a2916340f943",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.8.ota.bin",
-        "summary": "Warmth fixes, Tube scrolling, platform and delay tweaks"
+        "md5": "d0055a48adac7ddc2426f4a13bbc2073",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.9.ota.bin",
+        "summary": "London Underground and DLR, project logo, panel colour warmth, and many fixes"
       }
     }
   ]
