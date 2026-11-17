@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.0.8"
+    version: "2.0.9"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1039,10 +1039,10 @@ number:
     id: pc_warm
     icon: mdi:palette
     min_value: 0
-    max_value: 20
+    max_value: 25
     step: 1
     mode: slider
-    initial_value: 10
+    initial_value: 18
     restore_value: true
     optimistic: true
     entity_category: config

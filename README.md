@@ -70,7 +70,9 @@ Every setting is on the board (tap the clock) and in Home Assistant on the board
 - **Extras:** highlight a stop, disruption banner, logo, focus mode, clock screen, footer colour
 - **Screen:** brightness, night dimming (set times or sunset/sunrise), screen off at night, idle dimming
 - **Style:** fade cancelled trains, column headings, page animation, TfL line colours
-- **Home Assistant only:** background (*Dot matrix*, *Rows* or *Plain*), page interval, 12-hour clock, demo mode, and *Station number* for switching station from your own automations
+- **Home Assistant only:** background (*Dot matrix*, *Rows* or *Plain*), page interval, 12-hour clock, demo mode, *Panel colour warmth*, and *Station number* for switching station from your own automations
+
+If the text looks more yellow than amber on your screen, turn up **Panel colour warmth** (new boards start at 18). It only changes the text colours, and screenshots aren't affected.
 
 ### Custom logos
 The footer shows a track logo on National Rail boards and a tunnel logo on Tube boards. To use your own:
