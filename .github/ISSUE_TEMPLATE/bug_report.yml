@@ -7,7 +7,7 @@ body:
     attributes:
       label: Firmware version
       description: Shown on the startup screen, under Settings > Status > Firmware on the board, or on the board's device page in Home Assistant.
-      placeholder: "1.9.2"
+      placeholder: "2.0.5"
     validations:
       required: true
   - type: dropdown
@@ -19,7 +19,7 @@ body:
     id: what
     attributes:
       label: What happened?
-      description: What you expected, what you saw instead, and roughly when. A photo of the screen helps a lot.
+      description: What you expected, what you saw instead, and roughly when. A screenshot helps a lot: open http://<board-ip>/screenshot.png and save it.
     validations:
       required: true
   - type: textarea
