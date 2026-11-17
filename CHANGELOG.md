@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.6 - 2026-11-17 (beta)
+- New project logo, a dot-matrix train: it drives onto the start-up screen as the title wipes in, sits above the setup messages (connecting to Wi-Fi, waiting for Home Assistant or the first train data) and in the corner of the Status page. It is drawn in the theme colour
+- README and install page: the logo, and a browser tab icon
+
 ## 2.0.5 - 2026-11-17 (beta)
 - Tube Focus mode: "Arriving" or where the train is now (instead of "On time"), the line and direction underneath, and the line colour bar
 - Tube boards: shorter second lines ("Jubilee - N/bound - Left West Hampstead") so where the train is fits
