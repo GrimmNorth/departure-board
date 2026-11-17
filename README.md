@@ -74,6 +74,13 @@ Every setting is on the board (tap the clock) and in Home Assistant on the board
 
 If the text looks more yellow than amber on your screen, turn up **Panel colour warmth** (new boards start at 18). It only changes the text colours, and screenshots aren't affected.
 
+### Home Assistant dashboard
+A ready-made dashboard with every control and setting for your board, using only built-in cards.
+
+The easy way is **Get the dashboard** on the [install page](https://grimmnorth.github.io/departure-board/#dashboard): paste one of your board's entity IDs, click **Copy dashboard**, then paste it into a new dashboard's **Raw configuration editor** (Settings > Dashboards > Add dashboard, open it, pencil, ⋮).
+
+To do it by hand, paste [`dashboard/departure-board.yaml`](dashboard/departure-board.yaml) into the raw editor instead and replace every `departure_board_xxxxxx` with your board's prefix. You'll find the prefix in any of its entity IDs: `select.departure_board_ab12cd_layout` gives `departure_board_ab12cd`.
+
 ### Custom logos
 The footer shows a track logo on National Rail boards and a tunnel logo on Tube boards. To use your own:
 1. Make a PNG about 56 x 35 pixels with a transparent background. It is drawn in the footer colour. On a coloured logo, the coloured parts are filled and the white parts are cut out.

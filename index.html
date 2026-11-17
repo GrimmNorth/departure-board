@@ -19,6 +19,13 @@
   .box { background:#1c1c1c; border:1px solid #333; border-radius:8px; padding:1rem 1.2rem; margin:1.2rem 0; }
   esp-web-install-button button { background:#ffb000; color:#111; border:0; border-radius:6px; padding:.8rem 1.4rem; font-size:1.1rem; cursor:pointer; }
   small { color:#999; }
+  ol.dash { padding-left:1.2rem; margin:.4rem 0 0; }
+  ol.dash li { margin-bottom:.7rem; }
+  #dash-id { display:block; width:100%; box-sizing:border-box; margin-top:.4rem; padding:.55rem .7rem; background:#111; color:#eee; border:1px solid #444; border-radius:6px; font:inherit; font-family:ui-monospace,monospace; }
+  #dash-copy { background:#ffb000; color:#111; border:0; border-radius:6px; padding:.6rem 1.2rem; font-size:1rem; cursor:pointer; }
+  #dash-copy:disabled { background:#444; color:#888; cursor:default; }
+  .msg { display:block; font-size:.9rem; margin-top:.3rem; min-height:1.2em; }
+  .msg.ok { color:#6c6; } .msg.err { color:#f77; }
 </style>
 </head>
 <body>
@@ -57,6 +64,73 @@
     <p><a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FGrimmNorth%2Fdeparture-board%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fdeparture-board.yaml"><img alt="Import this blueprint into your Home Assistant." src="https://my.home-assistant.io/badges/blueprint_import.svg"></a></p>
     <small><strong>Busy station?</strong> Add a <em>route</em> in My Rail Commute (your station with a destination) and pick that instead. <strong>Tube or DLR?</strong> Install London TfL from HACS and pick it under <em>London Underground / DLR stations</em>.</small></li>
 </ol>
+<div class="box" id="dashboard">
+  <p><strong>Optional: get the dashboard.</strong> A Home Assistant dashboard with every control and setting for your board.</p>
+  <ol class="dash">
+    <li>In Home Assistant, open your board's device page, click any of its settings (Layout, say), then the cog, and copy the <strong>Entity ID</strong>. Paste it here:
+      <input id="dash-id" type="text" placeholder="select.departure_board_ab12cd_layout" spellcheck="false" autocomplete="off">
+      <span id="dash-msg" class="msg"></span></li>
+    <li><button id="dash-copy" type="button" disabled>Copy dashboard</button></li>
+    <li>Go to Settings &gt; Dashboards &gt; <strong>Add dashboard</strong> &gt; <em>New dashboard from scratch</em> and open it. Click the pencil, then ⋮ &gt; <strong>Raw configuration editor</strong>, replace everything with what you copied, and Save.</li>
+  </ol>
+</div>
+
 <p><small>Full guide, settings and troubleshooting: <a href="https://github.com/GrimmNorth/departure-board#readme">GitHub</a>. Not affiliated with National Rail, TfL or Elecrow.</small></p>
+<script>
+(function () {
+  // The board's own entity names, longest first, so "restart_in_safe_mode" wins over "restart".
+  const NAMES = ["factory_reset_clears_wi_fi_and_settings","national_rail_board_logo_image","largest_free_memory_block",
+    "tfl_board_logo_image","restart_in_safe_mode","fade_cancelled_trains","panel_colour_warmth","display_frame_time",
+    "destination_filter","clock_screen_after","night_follows_sun","disruption_banner","station_messages","favourite_trains",
+    "night_screen_off","tfl_line_colours","night_brightness","column_headings","idle_brightness","update_channel",
+    "station_number","restart_reason","pin_next_train","page_animation","favourite_stop","departed_grace","idle_dim_after",
+    "scrolling_text","footer_colour","night_dimming","page_interval","show_platform","hide_cancelled","clock_seconds",
+    "12_hour_clock","wi_fi_signal","walking_time","scroll_speed","night_starts","free_memory","data_source","night_ends",
+    "screenshot","background","brightness","focus_mode","large_text","show_logo","demo_mode","countdown","data_age",
+    "leave_in","firmware","restart","uptime","layout","paging","theme","route"].sort((a, b) => b.length - a.length);
+  const PLACEHOLDER = "departure_board_xxxxxx";
+  const input = document.getElementById("dash-id"), msg = document.getElementById("dash-msg"), btn = document.getElementById("dash-copy");
+  let template = null, prefix = null;
+
+  fetch("dashboard/departure-board.yaml", {cache: "no-cache"})
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(t => { template = t.split("\n").filter(l => !l.startsWith("#")).join("\n").trim() + "\n"; update(); })
+    .catch(() => say("Couldn't load the dashboard. Get it from GitHub instead: dashboard/departure-board.yaml.", "err"));
+
+  function say(text, cls) { msg.textContent = text; msg.className = "msg" + (cls ? " " + cls : ""); }
+
+  function findPrefix(raw) {
+    const id = raw.trim().toLowerCase().replace(/^.*\//, "");       // tolerate a pasted URL ending in the ID
+    const m = id.match(/^[a-z_]+\.([a-z0-9_]+?)(?:_\d+)?$/);
+    if (!m) return null;
+    for (const n of NAMES) if (m[1].endsWith("_" + n)) return m[1].slice(0, -(n.length + 1));
+    return null;
+  }
+
+  function update() {
+    prefix = null; btn.disabled = true;
+    if (!input.value.trim()) { say(""); return; }
+    const p = findPrefix(input.value);
+    if (!p) { say("That doesn't look like one of the board's entity IDs. Copy it from one of the board's settings, e.g. Layout.", "err"); return; }
+    prefix = p;
+    if (template) { btn.disabled = false; say("Found your board: " + p, "ok"); }
+  }
+
+  input.addEventListener("input", update);
+  btn.addEventListener("click", () => {
+    if (!prefix || !template) return;
+    const text = template.split(PLACEHOLDER).join(prefix);
+    const done = () => { btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy dashboard", 2000); };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => fallback(text, done));
+    else fallback(text, done);
+  });
+  function fallback(text, done) {
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) { say("Copy didn't work in this browser. Select and copy it from GitHub instead.", "err"); }
+    document.body.removeChild(ta);
+  }
+})();
+</script>
 </body>
 </html>

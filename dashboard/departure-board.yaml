@@ -1,0 +1,526 @@
+# UK Departure Board - Home Assistant dashboard
+#
+# 1. Settings > Dashboards > Add dashboard > New dashboard from scratch, name it "Departure Board".
+# 2. Open it, then the pencil (Edit dashboard) > three dots > Raw configuration editor.
+# 3. Delete what's there and paste this whole file.
+# 4. Replace every "departure_board_xxxxxx" with your board's prefix, then Save.
+#    Find the prefix in any of the board's entity IDs: select.departure_board_ab12cd_layout -> departure_board_ab12cd
+#    (Ctrl+F in the editor, or Cmd+F on a Mac, opens find and replace.)
+#
+# Only built-in cards are used, so nothing else needs installing.
+
+views:
+- title: 🚆 Board
+  path: board
+  type: sections
+  max_columns: 3
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: Controls
+      icon: mdi:gesture-tap
+      heading_style: title
+    - type: tile
+      entity: number.departure_board_xxxxxx_station_number
+      name: Station
+      grid_options:
+        columns: 12
+      icon: mdi:map-marker
+      features:
+      - type: numeric-input
+        style: buttons
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_focus_mode
+      name: Focus mode
+      grid_options:
+        columns: 6
+      icon: mdi:image-filter-center-focus
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_countdown
+      name: Countdown
+      grid_options:
+        columns: 6
+      icon: mdi:timer-outline
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_brightness
+      name: Brightness
+      grid_options:
+        columns: 12
+      icon: mdi:brightness-6
+      features:
+      - type: numeric-input
+        style: slider
+      features_position: bottom
+    - type: tile
+      entity: select.departure_board_xxxxxx_demo_mode
+      name: Demo mode
+      grid_options:
+        columns: 12
+      icon: mdi:presentation-play
+      features:
+      - type: select-options
+      features_position: bottom
+  - type: grid
+    cards:
+    - type: heading
+      heading: Firmware
+      icon: mdi:chip
+      heading_style: title
+    - type: tile
+      entity: update.departure_board_xxxxxx_firmware
+      name: Firmware
+      grid_options:
+        columns: 12
+      features:
+      - type: update-actions
+      features_position: bottom
+    - type: tile
+      entity: select.departure_board_xxxxxx_update_channel
+      name: Update channel
+      grid_options:
+        columns: 12
+      icon: mdi:source-branch
+      features:
+      - type: select-options
+      features_position: bottom
+  header: &id001
+    layout: start
+    card:
+      type: markdown
+      text_only: true
+      content: <img src="https://raw.githubusercontent.com/GrimmNorth/departure-board/main/docs/logo/banner.png" height="56" alt="UK Departure Board">
+- title: ⚙️ Settings
+  path: settings
+  type: sections
+  max_columns: 3
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: Look
+      icon: mdi:palette
+      heading_style: title
+    - type: tile
+      entity: select.departure_board_xxxxxx_theme
+      name: Theme
+      grid_options:
+        columns: 12
+      icon: mdi:palette-swatch
+      features:
+      - type: select-options
+      features_position: bottom
+    - type: tile
+      entity: select.departure_board_xxxxxx_layout
+      name: Layout
+      grid_options:
+        columns: 12
+      icon: mdi:view-agenda
+      features:
+      - type: select-options
+      features_position: bottom
+    - type: tile
+      entity: select.departure_board_xxxxxx_background
+      name: Background
+      grid_options:
+        columns: 6
+      icon: mdi:dots-grid
+      features:
+      - type: select-options
+      features_position: bottom
+    - type: tile
+      entity: select.departure_board_xxxxxx_footer_colour
+      name: Footer colour
+      grid_options:
+        columns: 6
+      icon: mdi:format-color-fill
+      features:
+      - type: select-options
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_panel_colour_warmth
+      name: Panel colour warmth
+      grid_options:
+        columns: 12
+      icon: mdi:thermometer
+      features:
+      - type: numeric-input
+        style: slider
+      features_position: bottom
+    - type: tile
+      entity: select.departure_board_xxxxxx_scroll_speed
+      name: Scroll speed
+      grid_options:
+        columns: 12
+      icon: mdi:speedometer
+      features:
+      - type: select-options
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_scrolling_text
+      name: Scrolling text
+      grid_options:
+        columns: 6
+      icon: mdi:format-text-wrapping-overflow
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_large_text
+      name: Large text
+      grid_options:
+        columns: 6
+      icon: mdi:format-size
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_column_headings
+      name: Column headings
+      grid_options:
+        columns: 6
+      icon: mdi:table-headers-eye
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_page_animation
+      name: Page animation
+      grid_options:
+        columns: 6
+      icon: mdi:animation
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_fade_cancelled_trains
+      name: Fade cancelled
+      grid_options:
+        columns: 6
+      icon: mdi:opacity
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_tfl_line_colours
+      name: TfL line colours
+      grid_options:
+        columns: 6
+      icon: mdi:subway-variant
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_show_logo
+      name: Show logo
+      grid_options:
+        columns: 6
+      icon: mdi:image
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_clock_seconds
+      name: Clock seconds
+      grid_options:
+        columns: 6
+      icon: mdi:clock-digital
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_12_hour_clock
+      name: 12-hour clock
+      grid_options:
+        columns: 6
+      icon: mdi:clock-time-twelve-outline
+      features:
+      - type: toggle
+      features_position: bottom
+  - type: grid
+    cards:
+    - type: heading
+      heading: Trains
+      icon: mdi:train-variant
+      heading_style: title
+    - type: tile
+      entity: switch.departure_board_xxxxxx_paging
+      name: Paging
+      grid_options:
+        columns: 6
+      icon: mdi:book-open-page-variant
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_pin_next_train
+      name: Pin next train
+      grid_options:
+        columns: 6
+      icon: mdi:pin
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_page_interval
+      name: Page interval
+      grid_options:
+        columns: 12
+      icon: mdi:timer-sand
+      features:
+      - type: numeric-input
+        style: slider
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_show_platform
+      name: Show platform
+      grid_options:
+        columns: 6
+      icon: mdi:sign-direction
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_hide_cancelled
+      name: Hide cancelled
+      grid_options:
+        columns: 6
+      icon: mdi:eye-off
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_disruption_banner
+      name: Disruption banner
+      grid_options:
+        columns: 6
+      icon: mdi:alert
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_walking_time
+      name: Walking time
+      grid_options:
+        columns: 6
+      icon: mdi:walk
+      features:
+      - type: numeric-input
+        style: buttons
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_departed_grace
+      name: Departed grace
+      grid_options:
+        columns: 6
+      icon: mdi:clock-end
+      features:
+      - type: numeric-input
+        style: buttons
+      features_position: bottom
+    - type: entities
+      title: Filters and favourites
+      icon: mdi:star
+      entities:
+      - entity: text.departure_board_xxxxxx_destination_filter
+        name: Calling-at filter
+      - entity: text.departure_board_xxxxxx_favourite_stop
+        name: Highlight a stop
+      - entity: text.departure_board_xxxxxx_favourite_trains
+        name: Favourite trains
+  - type: grid
+    cards:
+    - type: heading
+      heading: Screen and night
+      icon: mdi:weather-night
+      heading_style: title
+    - type: tile
+      entity: switch.departure_board_xxxxxx_night_dimming
+      name: Night dimming
+      grid_options:
+        columns: 6
+      icon: mdi:weather-night
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_night_follows_sun
+      name: Follow sunset
+      grid_options:
+        columns: 6
+      icon: mdi:weather-sunset
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: entities
+      title: Night hours
+      icon: mdi:clock-outline
+      entities:
+      - entity: time.departure_board_xxxxxx_night_starts
+        name: Night starts
+      - entity: time.departure_board_xxxxxx_night_ends
+        name: Night ends
+    - type: tile
+      entity: number.departure_board_xxxxxx_night_brightness
+      name: Night brightness
+      grid_options:
+        columns: 12
+      icon: mdi:brightness-4
+      features:
+      - type: numeric-input
+        style: slider
+      features_position: bottom
+    - type: tile
+      entity: switch.departure_board_xxxxxx_night_screen_off
+      name: Screen off at night
+      grid_options:
+        columns: 12
+      icon: mdi:monitor-off
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_idle_dim_after
+      name: Idle dim after
+      grid_options:
+        columns: 6
+      icon: mdi:sleep
+      features:
+      - type: numeric-input
+        style: buttons
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_idle_brightness
+      name: Idle brightness
+      grid_options:
+        columns: 6
+      icon: mdi:brightness-5
+      features:
+      - type: numeric-input
+        style: buttons
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_clock_screen_after
+      name: Clock screen after
+      grid_options:
+        columns: 12
+      icon: mdi:clock
+      features:
+      - type: numeric-input
+        style: buttons
+      features_position: bottom
+  header: *id001
+- title: 🔧 System
+  path: system
+  type: sections
+  max_columns: 3
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: Status
+      icon: mdi:heart-pulse
+      heading_style: title
+    - type: tile
+      entity: sensor.departure_board_xxxxxx_wi_fi_signal
+      name: Wi-Fi signal
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: sensor.departure_board_xxxxxx_uptime
+      name: Uptime
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: sensor.departure_board_xxxxxx_free_memory
+      name: Free memory
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: sensor.departure_board_xxxxxx_display_frame_time
+      name: Frame time
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: sensor.departure_board_xxxxxx_restart_reason
+      name: Last restart
+      grid_options:
+        columns: 12
+    - type: tile
+      entity: sensor.departure_board_xxxxxx_station_messages
+      name: Station messages
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: sensor.departure_board_xxxxxx_leave_in
+      name: Leave in
+      grid_options:
+        columns: 6
+  - type: grid
+    cards:
+    - type: heading
+      heading: Logos
+      icon: mdi:image-edit
+      heading_style: title
+    - type: entities
+      title: Custom logo images
+      icon: mdi:link
+      entities:
+      - entity: text.departure_board_xxxxxx_national_rail_board_logo_image
+        name: National Rail board
+      - entity: text.departure_board_xxxxxx_tfl_board_logo_image
+        name: TfL board
+    - type: markdown
+      text_only: true
+      content: <sub>A PNG about 56 x 35 pixels in your Home Assistant `www` folder, e.g. `http://<home-assistant-ip>:8123/local/logo.png`. Clear it for the built-in logo.</sub>
+  - type: grid
+    cards:
+    - type: heading
+      heading: Maintenance
+      icon: mdi:wrench
+      heading_style: title
+    - type: tile
+      entity: button.departure_board_xxxxxx_restart
+      name: Restart
+      grid_options:
+        columns: 6
+      tap_action:
+        action: perform-action
+        perform_action: button.press
+        target:
+          entity_id: button.departure_board_xxxxxx_restart
+        confirmation:
+          text: Restart the departure board?
+    - type: tile
+      entity: button.departure_board_xxxxxx_restart_in_safe_mode
+      name: Safe mode
+      grid_options:
+        columns: 6
+      tap_action:
+        action: perform-action
+        perform_action: button.press
+        target:
+          entity_id: button.departure_board_xxxxxx_restart_in_safe_mode
+        confirmation:
+          text: Restart in safe mode? The board shows nothing until it is updated or restarted.
+    - type: tile
+      entity: button.departure_board_xxxxxx_factory_reset_clears_wi_fi_and_settings
+      name: Factory reset
+      grid_options:
+        columns: 12
+      icon: mdi:restore-alert
+      tap_action:
+        action: perform-action
+        perform_action: button.press
+        target:
+          entity_id: button.departure_board_xxxxxx_factory_reset_clears_wi_fi_and_settings
+        confirmation:
+          text: Factory reset clears the board's Wi-Fi and every setting. Continue?
+  header: *id001
