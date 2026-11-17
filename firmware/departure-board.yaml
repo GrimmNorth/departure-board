@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.0.6"
+    version: "2.0.7"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -456,13 +456,17 @@ script:
               {{0, 0, 0}, {255, 230, 0}, {255, 255, 255}, {255, 64, 64}, {80, 255, 80}, {150, 150, 150}, {0, 255, 255}, {24, 24, 24}},
               {{244, 241, 232}, {26, 26, 26}, {179, 92, 0}, {196, 30, 30}, {30, 122, 46}, {150, 150, 150}, {0, 70, 180}, {226, 221, 206}}
           };
-          static int applied = -1;
+          static int applied = -1, applied_w = -1;
           int t = id(theme_select).active_index().value_or(0);
           if (t == 5 && (id(dim_state) == 1 || id(dim_state) == 2)) t = 0;   // no bright screen at night
-          if (t == applied) return;
-          applied = t;
+          const int w = id(pc_warm).has_state() ? (int) id(pc_warm).state : 0;
+          if (t == applied && w == applied_w) return;
+          applied = t; applied_w = w;
+          // panel warmth: a gamma curve that darkens mid-tones (amber's green) and leaves full and zero alone
+          const float g = 1.0f + 0.1f * w;
+          auto gm = [&](uint8_t c) -> uint8_t { return w == 0 ? c : (uint8_t) lroundf(255.0f * powf(c / 255.0f, g)); };
           Color *dst[8] = {&id(bg_col), &id(amber), &id(orange), &id(red), &id(green), &id(grey), &id(hilite), &id(band_col)};
-          for (int k = 0; k < 8; k++) *dst[k] = Color(P[t][k][0], P[t][k][1], P[t][k][2]);
+          for (int k = 0; k < 8; k++) *dst[k] = Color(gm(P[t][k][0]), gm(P[t][k][1]), gm(P[t][k][2]));
   - id: update_dim
     mode: single
     then:
@@ -562,6 +566,9 @@ interval:
                   const size_t rl = 1 + W * 3;                       // filter byte + RGB
                   std::vector<uint8_t> d(2 + 5 + rl + 4);
                   uint32_t a1 = 1, a2 = 0;                           // Adler-32 of the image data
+                  uint8_t INV[256];
+                  { const int w = id(pc_warm).has_state() ? (int) id(pc_warm).state : 0; const float ig = 1.0f / (1.0f + 0.1f * w);
+                    for (int k = 0; k < 256; k++) INV[k] = w == 0 ? k : (uint8_t) lroundf(255.0f * powf(k / 255.0f, ig)); }
                   for (int y = 0; y < H; y++) {
                     size_t o = 0;
                     if (y == 0) { d[o++] = 0x78; d[o++] = 0x01; }     // zlib header
@@ -574,7 +581,7 @@ interval:
                     for (int x = 0; x < W; x++) {
                       const uint16_t v = __builtin_bswap16(p[x]);
                       const uint8_t R = (v >> 11) & 31, G = (v >> 5) & 63, B = v & 31;
-                      row[1 + x * 3] = (R << 3) | (R >> 2); row[2 + x * 3] = (G << 2) | (G >> 4); row[3 + x * 3] = (B << 3) | (B >> 2);
+                      row[1 + x * 3] = INV[(R << 3) | (R >> 2)]; row[2 + x * 3] = INV[(G << 2) | (G >> 4)]; row[3 + x * 3] = INV[(B << 3) | (B >> 2)];
                     }
                     for (size_t i = 0; i < rl; i++) { a1 = (a1 + row[i]) % 65521; a2 = (a2 + a1) % 65521; }
                     o += rl;
@@ -1021,6 +1028,21 @@ number:
     unit_of_measurement: "s"
     mode: box
     entity_category: config
+  - platform: template
+    name: "Panel colour warmth"
+    id: pc_warm
+    icon: mdi:palette
+    min_value: 0
+    max_value: 10
+    step: 1
+    mode: slider
+    initial_value: 0
+    restore_value: true
+    optimistic: true
+    entity_category: config
+    on_value:
+      - script.execute: apply_theme
+      - lambda: 'id(main_display).update();'
   - platform: template
     name: "Brightness"
     id: brightness_num
