@@ -294,6 +294,15 @@ globals:
   - id: demo_kind          # demo board: 0 off, 1 National Rail (York), 2 London Underground (Green Park)
     type: int
     initial_value: "0"
+  - id: shot_req           # a screenshot is waiting for a finished frame
+    type: bool
+    initial_value: "false"
+  - id: shot_ready         # the frame has been copied to shot_buf
+    type: bool
+    initial_value: "false"
+  - id: shot_buf           # copy of the screen for a screenshot (in PSRAM, made on first use)
+    type: uint16_t *
+    initial_value: "nullptr"
   - id: msg_text           # National Rail station messages, one per line; sent by the blueprint
     type: std::string
     initial_value: '""'
@@ -371,8 +380,8 @@ script:
             pub(6, hm(24), hm(24), "9", "", "on_time", "", "", "LNER", "0", "", st({{"Darlington", 54}, {"Durham", 71}, {"Newcastle", 84}}), calls({"Darlington", "Durham", "Newcastle"}));
             pub(7, hm(31), hm(31), "10", "", "on_time", "", "", "Northern", "0", "", st({{"Leeds", 58}, {"Bradford Interchange", 80}, {"Blackpool North", 170}}), calls({"Leeds", "Bradford Interchange", "Blackpool North"}));
             pub(8, hm(37), hm(41), "3", "", "delayed", "This train has been delayed by a late running train in front of this one", "", "LNER", "4", "", st({{"Newcastle", 101}, {"Berwick-upon-Tweed", 147}, {"Edinburgh", 192}}), calls({"Newcastle", "Berwick-upon-Tweed", "Edinburgh"}));
-            pub(9, "", "", "", "", "", "", "", "", "", "", "", "[]");
-            pub(10, "", "", "", "", "", "", "", "", "", "", "", "[]");
+            pub(9, hm(44), hm(44), "5", "", "on_time", "", "", "Northern", "0", "", st({{"Malton", 71}, {"Scarborough", 96}}), calls({"Malton", "Scarborough"}));
+            pub(10, hm(52), hm(52), "11", "", "on_time", "", "", "CrossCountry", "0", "", st({{"Doncaster", 76}, {"Sheffield", 103}, {"Birmingham New Street", 177}}), calls({"Doncaster", "Sheffield", "Birmingham New Street"}));
           } else {
             struct T { int off; const char *dest, *plat, *line, *dir, *loc, *col; };
             const T tt[10] = {
@@ -519,9 +528,13 @@ interval:
               }
               void handleRequest(AsyncWebServerRequest *request) override {
                 httpd_req_t *r = *request;
-                uint16_t *fb = ShotBuf::get(id(main_display));
                 const int W = id(main_display).get_width(), H = id(main_display).get_height();
-                if (fb == nullptr || W <= 0 || H <= 0) { httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Screen not ready"); return; }
+                // a finished frame: the display copies it at the start of its next redraw
+                id(shot_ready) = false;
+                id(shot_req) = true;
+                for (int w = 0; w < 100 && !id(shot_ready); w++) vTaskDelay(pdMS_TO_TICKS(20));
+                uint16_t *fb = id(shot_ready) ? id(shot_buf) : nullptr;
+                if (fb == nullptr || W <= 0 || H <= 0) { id(shot_req) = false; httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Screen not ready"); return; }
                 char ub2[AsyncWebServerRequest::URL_BUF_SIZE];
                 if (request->url_to(ub2) == "/screenshot.png") {
                   // PNG (what Home Assistant cameras and GitHub show), stored without compression: one IDAT chunk per row
@@ -1902,6 +1915,17 @@ display:
       green: [GPIO9, GPIO46, GPIO3, GPIO8, GPIO16, GPIO1]
       blue: [GPIO15, GPIO7, GPIO6, GPIO5, GPIO4]
     lambda: |-
+      if (id(shot_req)) {
+        // a screenshot: the buffer still holds the last finished frame, so copy it before drawing the next
+        struct ShotSrc : public mipi_rgb::MipiRgb {
+          static uint16_t *get(mipi_rgb::MipiRgb *d) { return d->*(&ShotSrc::buffer_); }
+        };
+        uint16_t *src = ShotSrc::get(id(main_display));
+        const size_t n = (size_t) it.get_width() * it.get_height();
+        if (id(shot_buf) == nullptr) id(shot_buf) = (uint16_t *) heap_caps_malloc(n * 2, MALLOC_CAP_SPIRAM);
+        if (src != nullptr && id(shot_buf) != nullptr) { memcpy(id(shot_buf), src, n * 2); id(shot_ready) = true; }
+        id(shot_req) = false;
+      }
       it.fill(bg_col);
 
       // start-up: the title wipes in like an LED board, then the details appear
