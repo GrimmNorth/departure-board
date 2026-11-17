@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.7 - 2026-11-17 (beta)
+- New "Panel colour warmth" slider (0 to 10) in Home Assistant: some panels show amber too yellow, and turning this up warms the colours back towards the intended amber. Screenshots still show the intended colours
+
 ## 2.0.6 - 2026-11-17 (beta)
 - New project logo, a dot-matrix train: it drives onto the start-up screen as the title wipes in, sits above the setup messages (connecting to Wi-Fi, waiting for Home Assistant or the first train data) and in the corner of the Status page. It is drawn in the theme colour
 - README and install page: the logo, and a browser tab icon
