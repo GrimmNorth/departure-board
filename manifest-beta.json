@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.0.4.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.0.5.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "dcb30b3d032f53b165e05aeb9a7f08a8",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.4.ota.bin",
-        "summary": "Clean screenshots, 10-train demo"
+        "md5": "7f094a4f4962beae3151909292996dae",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.0.5.ota.bin",
+        "summary": "Tube Focus mode, shorter Tube lines, full-width stop names"
       }
     }
   ]
