@@ -104,8 +104,9 @@ jobs:
           ver, summary, ch = os.environ["VER"], os.environ["SUMMARY"], os.environ["CHANNEL"]
           entry = f"## {ver} - {datetime.date.today().isoformat()}{' (beta)' if ch == 'beta' else ''}\n- {summary}\n\n"
           text = open("CHANGELOG.md").read()
-          head, sep, rest = text.partition("\n## ")
-          open("CHANGELOG.md", "w").write(head.rstrip() + "\n\n" + entry + (("## " + rest) if sep else ""))
+          if f"\n## {ver} " not in text:  # keep a hand-written entry if there is one
+              head, sep, rest = text.partition("\n## ")
+              open("CHANGELOG.md", "w").write(head.rstrip() + "\n\n" + entry + (("## " + rest) if sep else ""))
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
