@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2.0.4 - 2026-11-17 (beta)
+- Clean screenshots, 10-train demo
+
+## 2.0.4 - 2026-11-17 (beta)
 - Screenshots are taken from one finished frame (they could mix frames and miss text)
 - National Rail demo board has 10 trains, so it no longer shows "Last train" late in the evening
 
