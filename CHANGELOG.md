@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.9 - 2026-11-17 (beta)
+- New boards start with Panel colour warmth at 18, which matches the screenshots best on the CrowPanel's screen; the slider now goes up to 25. Boards that already have a setting keep it
+
 ## 2.0.8 - 2026-11-17 (beta)
 - Panel colour warmth only changes the text colours, so the dot-matrix background and row bands no longer disappear when it is turned up
 - Panel colour warmth goes up to 20 (was 10), and new boards start at 10, which suits the CrowPanel's screen
