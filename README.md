@@ -38,9 +38,9 @@ Tube boards count down and show *Arriving*, with each train's line, direction, c
 | Do this | To |
 |---|---|
 | Tap a train | Open its details. Tap left/right (or swipe) for the previous/next train, the middle to close |
-| Press and hold a train | Make it a favourite (its time is underlined every day) |
+| Press and hold a train | Make it a favourite: a heart shows under its time every day at that station. Hold it again to remove it |
 | Swipe across the board, or tap the station name | Switch station |
-| Tap the clock | Open settings (the last page, *Help*, lists every control) |
+| Tap the clock | Open settings (tap any setting to see what it does; the last page, *About*, shows the board's status) |
 | Tap the orange **i** | Read station messages or Tube line status |
 | Tap the orange arrow | Install a firmware update |
 
@@ -65,17 +65,22 @@ Classic amber (default), White LED, Modern LCD, Retro green, High contrast and D
 <img src="docs/screenshots/theme-white-led.png" width="260" alt="White LED"> <img src="docs/screenshots/theme-modern-lcd.png" width="260" alt="Modern LCD"> <img src="docs/screenshots/theme-retro-green.png" width="260" alt="Retro green">
 <img src="docs/screenshots/theme-high-contrast.png" width="260" alt="High contrast"> <img src="docs/screenshots/theme-daylight.png" width="260" alt="Daylight">
 
+### Favourite trains
+Press and hold a train to make it a favourite. It's saved as its time and station (e.g. *07:42 Brough*) in **Favourite trains** on the board's device page, where you can also type them, separated by commas. A time without a station counts at every station.
+
+To get a phone notification when a favourite is late, cancelled or changes platform, pick your phones (Home Assistant Companion app) under **Favourite train alerts** in the blueprint. You choose how late counts (5 minutes by default) and whether to include platform changes. A train only alerts again if it gets worse.
+
 ### Weather
 Pick a weather entity under **Weather** in the blueprint to show the temperature and an icon in the footer and on the clock screen. Hide it with **Show weather**.
 
 ### Settings
 Every setting is on the board (tap the clock) and on the board's device page in Home Assistant:
-- **Display:** theme, layout, text size, scroll speed, clock seconds
-- **Trains:** countdown, calling-at filter, hide cancelled, show platform, paging, pin next train, walking time
-- **Extras:** highlight a stop, disruption banner, logo, focus mode, clock screen, footer colour, weather
-- **Screen:** brightness, night dimming (set times or sunset/sunrise), screen off at night, idle dimming
-- **Style:** fade cancelled trains, column headings, page animation, TfL line colours
-- **Home Assistant only:** background (*Dot matrix*, *Rows* or *Plain*), page interval, 12-hour clock, demo mode, panel colour warmth, and *Station number* for switching station from your own automations
+- **Display:** theme, layout, background (*Dot matrix*, *Rows* or *Plain*), text size, column headings, page animation, scrolling text speed, TfL line colours
+- **Trains:** countdown, calling-at filter, cancelled trains (shown, faded or hidden), show platform, paging, pin next train, departed grace, walking time
+- **Screen:** brightness, panel colour warmth, night dimming (set times or sunset/sunrise), night brightness (down to screen off), idle dimming
+- **Extras:** highlight a stop, disruption banner, logo, focus mode, clock screen, 12/24-hour clock and seconds, footer colour, weather
+- **About:** Wi-Fi, IP address, Home Assistant link, data age, firmware, uptime, ESPHome version, free memory
+- **Home Assistant only:** page interval, demo mode, and *Station number* for switching station from your own automations
 
 If the text looks more yellow than amber, turn up **Panel colour warmth** (new boards start at 18). It only changes the screen, not screenshots.
 
@@ -106,6 +111,7 @@ The footer shows a track logo on National Rail boards and a tunnel logo on Tube 
 
 ## Updates and safety nets
 - **Updates** install themselves at about 03:00 (*Install updates automatically*, on by default). Turn it off to update by hand from Settings > Updates or the orange arrow. Set *Update channel* to *Beta* to get test versions first.
+- **The blueprint doesn't update itself.** Home Assistant keeps the copy you imported. When a release needs the new one, the board's About page and its *Blueprint* sensor say "Update available", and the changelog says what you'd get. To update: Settings > Automations & scenes > Blueprints > UK Departure Board > ⋮ > Re-import blueprint. Your automation keeps its settings.
 - **Stale data:** the footer turns red ("Data 7 min old") if Home Assistant stops sending trains.
 - **Safe mode:** after 5 failed starts, the board starts a minimal mode that can still receive an update over Wi-Fi.
 - **Memory watchdog:** the board restarts if memory runs critically low, or quietly at 03:30 if it's running down slowly.

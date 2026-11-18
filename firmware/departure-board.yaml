@@ -113,6 +113,12 @@ api:
             id(hist_pct) = pct;
             id(hist_avg) = avg;
     # Called by the Home Assistant blueprint (about once a minute).
+    # Called by the blueprint first, every minute: its version (BP_NEED below is the version this firmware expects)
+    - action: set_blueprint_version
+      variables:
+        ver: int
+      then:
+        - lambda: 'id(bp_ver) = ver;'
     - action: update_status
       variables:
         station: string
@@ -122,6 +128,8 @@ api:
             if (id(demo_kind) != 0) return;   // a demo board is showing
             id(station_ts).publish_state(station);
             id(stn_status).publish_state(status);
+            { const char *bs = id(bp_ver) >= 2 ? "Up to date" : "Update available: re-import it";   // BP_NEED = 2
+              if (!id(bp_ts).has_state() || id(bp_ts).state != bs) id(bp_ts).publish_state(bs); }
             id(data_ms_stn) = millis();
     - action: update_train
       variables:
@@ -158,6 +166,41 @@ api:
               case 9: id(stn_t9_scheduled_departure).publish_state(sched); id(stn_t9_expected_departure).publish_state(expct); id(stn_t9_platform).publish_state(plat); id(stn_t9_platform_changed).publish_state(pchg); id(stn_t9_status).publish_state(stat); id(stn_t9_delay_reason).publish_state(dreason); id(stn_t9_cancellation_reason).publish_state(creason); id(stn_t9_operator).publish_state(oper); id(stn_t9_delay_minutes).publish_state(delaym); id(stn_t9_scheduled_arrival).publish_state(sarr); id(stn_t9_estimated_arrival).publish_state(earr); id(stn_t9_previous_platform).publish_state(pprev); id(stn_t9_stops).publish_state(stops); id(stn_t9_calling_points).publish_state(cp); break;
               case 10: id(stn_t10_scheduled_departure).publish_state(sched); id(stn_t10_expected_departure).publish_state(expct); id(stn_t10_platform).publish_state(plat); id(stn_t10_platform_changed).publish_state(pchg); id(stn_t10_status).publish_state(stat); id(stn_t10_delay_reason).publish_state(dreason); id(stn_t10_cancellation_reason).publish_state(creason); id(stn_t10_operator).publish_state(oper); id(stn_t10_delay_minutes).publish_state(delaym); id(stn_t10_scheduled_arrival).publish_state(sarr); id(stn_t10_estimated_arrival).publish_state(earr); id(stn_t10_previous_platform).publish_state(pprev); id(stn_t10_stops).publish_state(stops); id(stn_t10_calling_points).publish_state(cp); break;
               default: break;
+            }
+            // a favourite train: tell Home Assistant when it becomes late, is cancelled or changes platform
+            if (!id(src_tfl) && departure::is_hhmm(sched.substr(0, 5)) && departure::fav_match(id(fav_times).state, sched, id(station_ts).state)) {
+              struct FavSeen { int bucket; bool canc; std::string plat; uint32_t ms; };
+              static std::map<std::string, FavSeen> seen;
+              const std::string key = sched.substr(0, 5) + "|" + id(station_ts).state;
+              std::string ls = stat;
+              for (auto &ch : ls) ch = tolower((unsigned char) ch);
+              const bool canc = ls.find("cancel") != std::string::npos;
+              int dm = atoi(delaym.c_str());
+              if (dm <= 0 && departure::is_hhmm(expct.substr(0, 5)))
+                dm = ((atoi(expct.substr(0, 2).c_str()) * 60 + atoi(expct.substr(3, 2).c_str())) - (atoi(sched.substr(0, 2).c_str()) * 60 + atoi(sched.substr(3, 2).c_str())) + 1440) % 1440;
+              if (dm > 720) dm = 0;
+              const int b = dm >= 30 ? 5 : dm >= 15 ? 4 : dm >= 10 ? 3 : dm >= 5 ? 2 : dm >= 1 ? 1 : 0;
+              const bool pc = departure::truthy(pchg) && departure::valid(pprev) && departure::valid(plat);
+              std::string kind;
+              auto f = seen.find(key);
+              if (f == seen.end() || millis() - f->second.ms > 6UL * 3600000UL) {   // first time seen today
+                if (seen.size() > 30) seen.clear();
+                if (canc) kind = "cancelled"; else if (b > 0) kind = "delayed"; else if (pc) kind = "platform";
+                seen[key] = {b, canc, plat, millis()};
+              } else {
+                FavSeen &s = f->second;
+                if (canc && !s.canc) kind = "cancelled";
+                else if (!canc && b > s.bucket) kind = "delayed";
+                else if (!canc && departure::valid(plat) && departure::valid(s.plat) && plat != s.plat) kind = "platform";
+                s.bucket = std::max(s.bucket, b); s.canc = s.canc || canc; s.ms = millis();
+                if (departure::valid(plat)) s.plat = plat;
+              }
+              if (!kind.empty()) {
+                const std::string r = canc ? creason : dreason;
+                id(fav_alert).execute(kind, sched.substr(0, 5), id(station_ts).state, departure::destination(cp, 40),
+                                      departure::is_hhmm(expct.substr(0, 5)) ? expct.substr(0, 5) : std::string(""), dm,
+                                      departure::valid(plat) ? plat : std::string(""), departure::valid(r) ? r : std::string(""));
+              }
             }
             id(data_ms_stn) = millis();
 
@@ -222,6 +265,23 @@ globals:
   - id: settings_page
     type: int
     initial_value: "0"
+  - id: set_row            # the settings row tapped last (for the hint line and the flash), -1 = none
+    type: int
+    initial_value: "-1"
+  - id: bp_ver             # blueprint version, sent each minute (0 = not sent: an older blueprint)
+    type: int
+    initial_value: "0"
+  - id: set_tap_t          # when that row was tapped
+    type: uint32_t
+    initial_value: "0"
+  - id: pick_opts          # the station picker (Calling at / Highlight stop): its choices, "" = Off
+    type: std::vector<std::string>
+  - id: pick_kind          # 0 = Calling at, 1 = Highlight stop
+    type: int
+    initial_value: "0"
+  - id: pick_page
+    type: int
+    initial_value: "0"
   - id: ui_screen          # 0 = departures, 1 = settings
     type: int
     initial_value: "0"
@@ -258,7 +318,7 @@ globals:
   - id: pending_detail
     type: int
     initial_value: "0"
-  - id: help_seen          # the first tap on the clock opens Help; the footer hint shows until then
+  - id: help_seen          # the footer says "Tap the clock for settings" until settings are first opened
     type: bool
     restore_value: true
     initial_value: "false"
@@ -459,28 +519,44 @@ script:
           switch (tn) { case 1: t = id(stn_t1_scheduled_departure).state; break; case 2: t = id(stn_t2_scheduled_departure).state; break; case 3: t = id(stn_t3_scheduled_departure).state; break; case 4: t = id(stn_t4_scheduled_departure).state; break; case 5: t = id(stn_t5_scheduled_departure).state; break; case 6: t = id(stn_t6_scheduled_departure).state; break; case 7: t = id(stn_t7_scheduled_departure).state; break; case 8: t = id(stn_t8_scheduled_departure).state; break; case 9: t = id(stn_t9_scheduled_departure).state; break; case 10: t = id(stn_t10_scheduled_departure).state; break; default: break; }
           if (!departure::valid(t) || t.size() < 5) return;
           t = t.substr(0, 5);
-          std::vector<std::string> v;
-          std::string cur;
-          for (char ch : id(fav_times).state + ",") { if (ch == ',' || ch == ' ') { if (!cur.empty()) v.push_back(cur); cur.clear(); } else cur += ch; }
-          bool had = false;
+          const std::string stn = id(station_ts).state;
           std::string out;
-          for (auto &s : v) {
-            if (s == t) { had = true; continue; }
-            if (!out.empty()) out += ", ";
-            out += s;
-          }
-          if (!had) {
-            if (out.size() + 7 > 80) { id(fav_toast) = "Favourites are full"; id(fav_toast_until) = millis() + 2500; id(main_display).update(); return; }
-            if (!out.empty()) out += ", ";
-            out += t;
+          bool added = false;
+          if (!departure::fav_toggle(id(fav_times).state, t, stn, 255, out, added)) {
+            id(fav_toast) = "Favourites are full"; id(fav_toast_until) = millis() + 2500; id(main_display).update(); return;
           }
           auto c = id(fav_times).make_call();
           c.set_value(out);
           c.perform();
-          id(fav_toast) = had ? t + " removed from favourites" : t + " is now a favourite";
+          id(fav_toast) = added ? t + " is now a favourite" : t + " removed from favourites";
           id(fav_toast_until) = millis() + 2500;
           if (!id(focus_mode).state) { id(flash_slot) = sl; id(flash_until) = millis() + 400; id(pending_detail) = 0; }
           id(main_display).update();
+  # Sent to Home Assistant; the blueprint turns it into a phone notification
+  - id: fav_alert
+    mode: queued
+    max_runs: 10
+    parameters:
+      kind: string
+      sched: string
+      stn: string
+      dest: string
+      expd: string
+      dmin: int
+      plat: string
+      reason: string
+    then:
+      - homeassistant.event:
+          event: esphome.departure_board_favourite
+          data:
+            kind: !lambda 'return kind;'
+            sched: !lambda 'return sched;'
+            station: !lambda 'return stn;'
+            destination: !lambda 'return dest;'
+            expected: !lambda 'return expd;'
+            delay: !lambda 'return to_string(dmin);'
+            platform: !lambda 'return plat;'
+            reason: !lambda 'return reason;'
   - id: apply_theme
     mode: single
     then:
@@ -813,28 +889,58 @@ touchscreen:
             id(tap_pending) = true;
             id(tap_t0) = now;
           } else {
-            if (y >= 424) {
-              if (x < 270) id(settings_page) = (id(settings_page) + 7 - 1) % 7;   // BACK
-              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 7;    // NEXT
+            if (id(ui_screen) == 5) {                    // station picker
+              const int n = id(pick_opts).size(), pages = std::max(1, (n + 15) / 16);
+              if (y >= 424) {
+                if (x < 270) id(ui_screen) = 1;                                        // back to settings
+                else if (x < 530) id(pick_page) = (id(pick_page) + 1) % pages;          // more
+                else id(ui_screen) = 0;                                                  // close
+              } else if (y >= 32 && y < 384) {
+                int r = (y - 32) / 44; if (r > 7) r = 7;
+                const int k = id(pick_page) * 16 + (x >= 400 ? 8 : 0) + r;            // left column first
+                if (k < n) {
+                  auto c = id(pick_kind) == 0 ? id(dest_filter).make_call() : id(fav_stop).make_call();
+                  c.set_value(id(pick_opts)[k]);
+                  c.perform();
+                  id(ui_screen) = 1; id(set_tap_t) = now;
+                }
+              }
+            } else if (y >= 424) {
+              if (x < 270) id(settings_page) = (id(settings_page) + 5 - 1) % 5;   // BACK
+              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 5;    // NEXT
               else id(ui_screen) = 0;                                                  // CLOSE
-            } else if (y >= 50 && y < 418) {
-              int row = (y - 50) / 46;
+              id(set_row) = -1;
+            } else if (y >= 32 && y < 384) {
+              int row = (y - 32) / 44;
+              if (row > 7) row = 7;
+              id(set_row) = row; id(set_tap_t) = now;
               bool plus = x > 640;
               bool minus = !plus && x >= 500;
               int si = id(station_select).active_index().value_or(0);
-              switch (id(settings_page)) {
-                case 0:
+              auto sw = [](switch_::Switch *s, bool on) { if (on) s->turn_on(); else s->turn_off(); };
+              const int sp0 = id(settings_page);
+              const bool inactive = (sp0 == 1 && row == 5 && !id(paging_on).state) ||               // greyed out: nothing to change
+                                    (sp0 == 2 && row >= 3 && row <= 5 && !id(night_dimming).state) ||
+                                    (sp0 == 2 && row == 7 && id(idle_minutes).state <= 0);
+              if (!inactive) switch (id(settings_page)) {
+                case 0:   // Display
                   switch (row) {
                     case 0: id(theme_select).make_call().select_next(true).perform(); break;
                     case 1: id(layout_select).make_call().select_next(true).perform(); break;
-                    case 2: id(text_large).toggle(); break;
-                    case 3: id(scroll_speed).make_call().select_next(true).perform(); break;
-                    case 4: id(scroll_enabled).toggle(); break;
-                    case 5: id(show_seconds).toggle(); break;
-                    case 6: id(clock_12h).toggle(); break;
+                    case 2: id(bg_style).make_call().select_next(true).perform(); break;
+                    case 3: id(text_large).toggle(); break;
+                    case 4: id(col_headings).toggle(); break;
+                    case 5: id(page_anim).toggle(); break;
+                    case 6: {                                   // Off -> Slow -> Medium -> Fast -> Off
+                      int sp = id(scroll_speed).active_index().value_or(1);
+                      if (!id(scroll_enabled).state) { id(scroll_speed).make_call().set_index(0).perform(); id(scroll_enabled).turn_on(); }
+                      else if (sp < 2) id(scroll_speed).make_call().set_index(sp + 1).perform();
+                      else id(scroll_enabled).turn_off();
+                    } break;
+                    case 7: id(tfl_colours).toggle(); break;
                   }
                   break;
-                case 1:
+                case 1:   // Trains
                   switch (row) {
                     case 0: id(countdown_mode).toggle(); break;
                     case 1: {
@@ -848,15 +954,13 @@ touchscreen:
                     switch (si) {
                       case 0: add(departure::destination(id(stn_t1_calling_points).state, 40)); add(departure::destination(id(stn_t2_calling_points).state, 40)); add(departure::destination(id(stn_t3_calling_points).state, 40)); add(departure::destination(id(stn_t4_calling_points).state, 40)); add(departure::destination(id(stn_t5_calling_points).state, 40)); add(departure::destination(id(stn_t6_calling_points).state, 40)); add(departure::destination(id(stn_t7_calling_points).state, 40)); add(departure::destination(id(stn_t8_calling_points).state, 40)); add(departure::destination(id(stn_t9_calling_points).state, 40)); add(departure::destination(id(stn_t10_calling_points).state, 40)); break;
                     }
-                    std::string cur = id(dest_filter).state;
-                    size_t idx = 0;
-                    for (size_t i = 0; i < opts.size(); i++) if (opts[i] == cur) idx = i;
-                    idx = (idx + 1) % opts.size();
-                    auto c = id(dest_filter).make_call();
-                    c.set_value(opts[idx]);
-                    c.perform();
+                    id(pick_opts) = opts; id(pick_kind) = 0; id(pick_page) = 0; id(ui_screen) = 5;
                   } break;
-                    case 2: id(hide_cancelled).toggle(); break;
+                    case 2:                                     // Shown -> Faded -> Hidden -> Shown
+                      if (id(hide_cancelled).state) { id(hide_cancelled).turn_off(); id(fade_cancelled).turn_off(); }
+                      else if (id(fade_cancelled).state) id(hide_cancelled).turn_on();
+                      else id(fade_cancelled).turn_on();
+                      break;
                     case 3: id(show_platform).toggle(); break;
                     case 4: id(paging_on).toggle(); break;
                     case 5: id(pin_next).toggle(); break;
@@ -864,7 +968,25 @@ touchscreen:
                     case 7: if (plus || minus) { float v = id(walk_minutes).state + (plus ? 1 : -1); if (v < 0) v = 0; if (v > 30) v = 30; auto c = id(walk_minutes).make_call(); c.set_value(v); c.perform(); } break;
                   }
                   break;
-                case 2:
+                case 2:   // Screen
+                  switch (row) {
+                    case 0: if (plus || minus) { float b = id(backlight).current_values.get_brightness() + (plus ? 0.1f : -0.1f); if (b < 0.1f) b = 0.1f; if (b > 1.0f) b = 1.0f; auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform(); } break;
+                    case 1: if (plus || minus) { float v = (id(pc_warm).has_state() ? id(pc_warm).state : 0) + (plus ? 1 : -1); if (v < 0) v = 0; if (v > 25) v = 25; auto c = id(pc_warm).make_call(); c.set_value(v); c.perform(); } break;
+                    case 2: if (!id(night_dimming).state) { id(night_sun).turn_off(); id(night_dimming).turn_on(); }   // Off -> Set times -> Sunset -> Off
+                            else if (!id(night_sun).state) id(night_sun).turn_on();
+                            else { id(night_sun).turn_off(); id(night_dimming).turn_off(); } break;
+                    case 3: if (plus || minus) {                // one step below the lowest level turns the screen off
+                              if (id(night_screen_off).state) { if (plus) id(night_screen_off).turn_off(); }
+                              else if (minus && id(night_level).state <= 1) id(night_screen_off).turn_on();
+                              else { float v = id(night_level).state + (plus ? 5 : -5); if (v < 1) v = 1; if (v > 100) v = 100; auto c = id(night_level).make_call(); c.set_value(v); c.perform(); }
+                            } break;
+                    case 4: if (id(night_dimming).state && id(night_sun).state) break; if (plus || minus) { int h = (id(night_start).hour + (plus ? 1 : 23)) % 24; auto c = id(night_start).make_call(); c.set_time(h, id(night_start).minute, 0); c.perform(); } break;
+                    case 5: if (id(night_dimming).state && id(night_sun).state) break; if (plus || minus) { int h = (id(night_end).hour + (plus ? 1 : 23)) % 24; auto c = id(night_end).make_call(); c.set_time(h, id(night_end).minute, 0); c.perform(); } break;
+                    case 6: if (plus || minus) { float v = id(idle_minutes).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(idle_minutes).make_call(); c.set_value(v); c.perform(); } break;
+                    case 7: if (plus || minus) { float v = id(idle_level).state + (plus ? 5 : -5); if (v < 5) v = 5; if (v > 100) v = 100; auto c = id(idle_level).make_call(); c.set_value(v); c.perform(); } break;
+                  }
+                  break;
+                case 3:   // Extras
                   switch (row) {
                     case 0: {
                     std::vector<std::string> opts;
@@ -877,47 +999,21 @@ touchscreen:
                     switch (si) {
                       case 0: for (auto &p : departure::points(id(stn_t1_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t2_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t3_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t4_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t5_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t6_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t7_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t8_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t9_calling_points).state)) add(p); for (auto &p : departure::points(id(stn_t10_calling_points).state)) add(p); break;
                     }
-                    std::string cur = id(fav_stop).state;
-                    size_t idx = 0;
-                    for (size_t i = 0; i < opts.size(); i++) if (opts[i] == cur) idx = i;
-                    idx = (idx + 1) % opts.size();
-                    auto c = id(fav_stop).make_call();
-                    c.set_value(opts[idx]);
-                    c.perform();
+                    id(pick_opts) = opts; id(pick_kind) = 1; id(pick_page) = 0; id(ui_screen) = 5;
                   } break;
                     case 1: id(disruption_banner).toggle(); break;
                     case 2: id(show_logo).toggle(); break;
                     case 3: id(focus_mode).toggle(); break;
                     case 4: if (plus || minus) { float v = id(clock_after).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(clock_after).make_call(); c.set_value(v); c.perform(); } break;
-                    case 5: id(footer_colour).make_call().select_next(true).perform(); break;
-                    case 6: id(show_weather).toggle(); break;
+                    case 5: {                                   // 24 hour -> + seconds -> 12 hour -> + seconds
+                      int k = ((id(clock_12h).state ? 2 : 0) + (id(show_seconds).state ? 1 : 0) + 1) % 4;
+                      sw(id(clock_12h), k >= 2); sw(id(show_seconds), k % 2 == 1);
+                    } break;
+                    case 6: id(footer_colour).make_call().select_next(true).perform(); break;
+                    case 7: id(show_weather).toggle(); break;
                   }
                   break;
-                case 3:
-                  switch (row) {
-                    case 0: if (plus || minus) { float b = id(backlight).current_values.get_brightness() + (plus ? 0.1f : -0.1f); if (b < 0.1f) b = 0.1f; if (b > 1.0f) b = 1.0f; auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform(); } break;
-                    case 1: if (!id(night_dimming).state) { id(night_sun).turn_off(); id(night_dimming).turn_on(); }   // Off -> Set times -> Sunset -> Off
-                            else if (!id(night_sun).state) id(night_sun).turn_on();
-                            else { id(night_sun).turn_off(); id(night_dimming).turn_off(); } break;
-                    case 2: if (plus || minus) { float v = id(night_level).state + (plus ? 5 : -5); if (v < 1) v = 1; if (v > 100) v = 100; auto c = id(night_level).make_call(); c.set_value(v); c.perform(); } break;
-                    case 3: if (id(night_dimming).state && id(night_sun).state) break; if (plus || minus) { int h = (id(night_start).hour + (plus ? 1 : 23)) % 24; auto c = id(night_start).make_call(); c.set_time(h, id(night_start).minute, 0); c.perform(); } break;
-                    case 4: if (id(night_dimming).state && id(night_sun).state) break; if (plus || minus) { int h = (id(night_end).hour + (plus ? 1 : 23)) % 24; auto c = id(night_end).make_call(); c.set_time(h, id(night_end).minute, 0); c.perform(); } break;
-                    case 5: id(night_screen_off).toggle(); break;
-                    case 6: if (plus || minus) { float v = id(idle_minutes).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(idle_minutes).make_call(); c.set_value(v); c.perform(); } break;
-                    case 7: if (plus || minus) { float v = id(idle_level).state + (plus ? 5 : -5); if (v < 5) v = 5; if (v > 100) v = 100; auto c = id(idle_level).make_call(); c.set_value(v); c.perform(); } break;
-                  }
-                  break;
-                case 4:
-                  switch (row) {
-                    case 0: id(fade_cancelled).toggle(); break;
-                    case 1: id(col_headings).toggle(); break;
-                    case 2: id(page_anim).toggle(); break;
-                    case 3: id(tfl_colours).toggle(); break;
-                  }
-                  break;
-                case 5:
-                  break;
-                case 6:
+                case 4:   // About
                   break;
               }
             }
@@ -992,7 +1088,7 @@ touchscreen:
             // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
             if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
             else if (y >= 410 && id(msg_icon_x) >= 0 && x >= id(msg_icon_x) && x < id(msg_icon_x) + 64) { id(ui_screen) = 3; id(msg_idx) = 0; }
-            else if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = id(help_seen) ? 0 : 6; id(help_seen) = true; }
+            else if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = 0; id(set_row) = -1; id(help_seen) = true; }
             else if (y < 406) {
               // tap a train for its details
               int sl = -1;
@@ -1405,10 +1501,10 @@ text:
     id: fav_times
     mode: text
     min_length: 0
-    max_length: 80
+    max_length: 255
     optimistic: true
     restore_value: true
-    initial_value: ""     # departure times to underline, e.g. "07:42, 08:15"
+    initial_value: ""     # favourite trains, e.g. "07:42 Brough, 08:15" (a time on its own counts at every station)
 
 select:
   - platform: template
@@ -1504,6 +1600,12 @@ select:
     options: ["DotGothic"]
 
 text_sensor:
+  - platform: template
+    id: bp_ts
+    name: "Blueprint"
+    icon: mdi:file-document-refresh
+    entity_category: diagnostic
+    update_interval: never
   - platform: template
     id: shot_ts
     name: "Screenshot"
@@ -2057,6 +2159,54 @@ display:
         id(shot_req) = false;
       }
       it.fill(bg_col);
+      // ---- fast background: write the row bands and the LED grid straight into the display's frame copy ----
+      // (ESPHome otherwise draws them one pixel at a time, about half a second per frame); falls back if unavailable
+      struct FastBuf : public mipi_rgb::MipiRgb {
+        static uint16_t *get(mipi_rgb::MipiRgb *d) { return d->*(&FastBuf::buffer_); }
+      };
+      uint16_t *fbuf = (it.get_rotation() == display::DISPLAY_ROTATION_0_DEGREES) ? FastBuf::get(id(main_display)) : nullptr;
+      const int FBW = it.get_width(), FBH = it.get_height();
+      uint16_t v_band = 0, v_bg = 0;
+      if (fbuf != nullptr) {
+        // learn how the display stores each colour by drawing one corner pixel and reading it back
+        it.draw_pixel_at(0, 0, band_col); v_band = fbuf[0];
+        it.draw_pixel_at(0, 0, bg_col); v_bg = fbuf[0];
+      }
+      auto frect = [&](int x, int y, int w, int h) {            // one band, in the band colour
+        if (fbuf == nullptr) { it.filled_rectangle(x, y, w, h, band_col); return; }
+        const int x0 = std::max(0, x), x1 = std::min(FBW, x + w), y0 = std::max(0, y), y1 = std::min(FBH, y + h);
+        for (int yy = y0; yy < y1; yy++) if (x1 > x0) std::fill_n(fbuf + yy * FBW + x0, x1 - x0, v_band);
+      };
+      auto fgrid = [&]() {                                       // the dark gaps between LEDs
+        if (fbuf == nullptr) {
+          for (int x = 12; x < 790; x += 4) it.vertical_line(x, 0, 476, bg_col);
+          for (int y = 1; y < 476; y += 4) it.horizontal_line(10, y, 780, bg_col);
+          return;
+        }
+        for (int yy = 0; yy < 476 && yy < FBH; yy++) {
+          uint16_t *row = fbuf + yy * FBW;
+          if (yy % 4 == 1) std::fill_n(row + 10, 780, v_bg);
+          else for (int xx = 12; xx < 790; xx += 4) row[xx] = v_bg;
+        }
+      };
+      // a band that follows the Background setting: nothing on Plain, a band on Rows, a band with LED gaps on Dot matrix
+      const int bgs0 = id(bg_style).active_index().value_or(1);
+      auto lband = [&](int x, int y, int w, int h) {
+        if (bgs0 == 0) return;
+        frect(x, y, w, h);
+        if (bgs0 != 2) return;
+        const int x0 = std::max(10, x), x1 = std::min(790, x + w), y0 = std::max(0, y), y1 = std::min(476, y + h);
+        if (fbuf == nullptr) {
+          for (int xx = 12; xx < x1; xx += 4) if (xx >= x0) it.vertical_line(xx, y0, y1 - y0, bg_col);
+          for (int yy = y0; yy < y1; yy++) if (yy % 4 == 1) it.horizontal_line(x0, yy, x1 - x0, bg_col);
+          return;
+        }
+        for (int yy = y0; yy < y1 && yy < FBH; yy++) {
+          uint16_t *row = fbuf + yy * FBW;
+          if (yy % 4 == 1) { if (x1 > x0) std::fill_n(row + x0, x1 - x0, v_bg); }
+          else for (int xx = 12 + ((std::max(x0, 12) - 12 + 3) / 4) * 4; xx < x1; xx += 4) row[xx] = v_bg;
+        }
+      };
 
       // panel warmth for colours that are not from the theme (Tube line colours)
       const int pw = id(pc_warm).has_state() ? (int) id(pc_warm).state : 0;
@@ -2179,6 +2329,53 @@ display:
         case 0: dms = id(data_ms_stn); disr = id(stn_status).state; break;
       }
 
+      // ---------------- station picker (Calling at / Highlight stop) ----------------
+      if (id(ui_screen) == 5 && (millis() - id(last_fresh) > 30000 || millis() - id(last_touch_any) > 60000)) id(ui_screen) = 0;
+      if (id(ui_screen) == 5) {
+        const auto &o = id(pick_opts);
+        const int n = o.size(), pages = std::max(1, (n + 15) / 16);
+        if (id(pick_page) >= pages) id(pick_page) = 0;
+        const int page = id(pick_page);
+        const bool dest = id(pick_kind) == 0;
+        const std::string cur = dest ? id(dest_filter).state : id(fav_stop).state;
+        const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);
+        it.printf(20, 6, id(f_hdr_0), hc, "%s", dest ? "Settings: Trains > Calling at" : "Settings: Extras > Highlight stop");
+        if (pages > 1) it.printf(780, 6, id(f_hdr_0), hc, TextAlign::TOP_RIGHT, "%d/%d", page + 1, pages);
+        for (int i = 0; i < 16; i++) {
+          const int k = page * 16 + i;
+          if (k >= n) break;
+          const int x0 = 10 + (i / 8) * 395, y0 = 32 + (i % 8) * 44;
+          lband(x0, y0, 385, 42);
+          const bool sel = o[k] == cur;
+          std::string s = o[k].empty() ? std::string("Off") : o[k];
+          int bx, by, bw, bh;
+          it.get_text_bounds(0, 0, s.c_str(), id(f_row_0), TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+          if (bw > 330) {                              // too long: shorten with ".."
+            std::string t = s;
+            while (t.size() > 2) {
+              t.pop_back();
+              std::string u = t + "..";
+              it.get_text_bounds(0, 0, u.c_str(), id(f_row_0), TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
+              if (bw <= 330) { s = u; break; }
+            }
+          }
+          if (sel) it.filled_circle(x0 + 365, y0 + 21, 7, green);
+          it.printf(x0 + 10, y0 + 21, id(f_row_0), sel ? green : amber, TextAlign::CENTER_LEFT, "%s", s.c_str());
+        }
+        const char *h = n <= 1 ? "No stops yet: try again when trains are showing"
+                               : (dest ? "Only show trains that call at the stop you tap" : "The stop you tap is shown in white in the calling points");
+        it.printf(400, 404, id(f_hdr_0), amber, TextAlign::CENTER, "%s", h);
+        const char *PB[3] = {"< Settings", "More >", "Close"};
+        for (int b = 0; b < 3; b++) {
+          const int bx = 20 + b * 260;
+          const bool live = b != 1 || pages > 1;
+          if (live) lband(bx, 426, 240, 46);
+          it.rectangle(bx, 426, 240, 46, live ? amber : grey);
+          if (live) it.printf(bx + 120, 449, id(f_row_0), amber, TextAlign::CENTER, "%s", PB[b]);
+        }
+        return;
+      }
+
       // ---------------- settings screen (tap the clock to open) ----------------
       if (id(ui_screen) == 1 && millis() - id(last_touch_any) > 60000) id(ui_screen) = 0;   // settings close after a minute
       if (id(ui_screen) == 1) {
@@ -2186,111 +2383,157 @@ display:
           id(ui_screen) = 0;                    // close after 30 s without a touch
         } else {
           static const char *SPEEDN[3] = {"Slow", "Medium", "Fast"};
+          const int RY0 = 32, RP = 44;                    // eight rows: top and pitch
+          const int pg = id(settings_page);
+          const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
           int R = 0;
+          bool dimr = false;                              // this row doesn't apply right now: drawn in grey
+          auto why_off = [&](int p, int r) -> const char * {
+            if (p == 1 && r == 5 && !id(paging_on).state) return "Turn on Paging to use this";
+            if (p == 2 && r >= 3 && r <= 5 && !id(night_dimming).state) return "Turn on Night dimming to use this";
+            if (p == 2 && (r == 4 || r == 5) && id(night_sun).state) return "Follows sunset and sunrise";
+            if (p == 2 && r == 7 && id(idle_minutes).state <= 0) return "Set Idle dim after to use this";
+            return nullptr;
+          };
+          auto ry = [&](int row) { return RY0 + row * RP; };
           auto lab = [&](int row, const char *s) {
-            it.printf(20, 50 + row * 46 + 21, id(f_row_0), amber, TextAlign::CENTER_LEFT, "%s", s);
+            it.printf(20, ry(row) + 21, id(f_row_0), dimr ? grey : amber, TextAlign::CENTER_LEFT, "%s", s);
           };
           auto val = [&](int row, Color c, const char *s) {
-            it.printf(776, 50 + row * 46 + 21, id(f_row_0), c, TextAlign::CENTER_RIGHT, "%s", s);
+            it.printf(776, ry(row) + 21, id(f_row_0), c, TextAlign::CENTER_RIGHT, "%s", s);
           };
           auto pm = [&](int row, const char *v) {
-            int ry = 50 + row * 46;
-            it.rectangle(510, ry, 80, 42, amber);
-            it.printf(550, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "-");
-            it.rectangle(700, ry, 80, 42, amber);
-            it.printf(740, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "+");
-            it.printf(645, ry + 21, id(f_row_0), amber, TextAlign::CENTER, "%s", v);
+            int y0 = ry(row) + 1;
+            const Color pc = dimr ? grey : amber;
+            it.rectangle(510, y0, 80, 40, pc);
+            it.printf(550, y0 + 20, id(f_row_0), pc, TextAlign::CENTER, "-");
+            it.rectangle(700, y0, 80, 40, pc);
+            it.printf(740, y0 + 20, id(f_row_0), pc, TextAlign::CENTER, "+");
+            it.printf(645, y0 + 20, id(f_row_0), pc, TextAlign::CENTER, "%s", v);
           };
-          auto onoff = [&](int row, bool on) { val(row, on ? green : grey, on ? "On" : "Off"); };
+          auto onoff = [&](int row, bool on) {            // an LED beside the word: lit green when on, hollow when off
+            int cy = ry(row) + 21;
+            const Color oc = dimr ? grey : green;
+            if (on) it.filled_circle(712, cy, 7, oc); else { it.circle(712, cy, 7, grey); it.circle(712, cy, 6, grey); }
+            val(row, on ? oc : grey, on ? "On" : "Off");
+          };
           auto cyc = [&](int row, const char *s) {        // a value you tap to change: text plus a small arrow
-            int cy = 50 + row * 46 + 21;
-            it.printf(752, cy, id(f_row_0), amber, TextAlign::CENTER_RIGHT, "%s", s);
+            int cy = ry(row) + 21;
+            it.printf(752, cy, id(f_row_0), dimr ? grey : amber, TextAlign::CENTER_RIGHT, "%s", s);
             it.filled_triangle(764, cy - 7, 764, cy + 7, 774, cy, grey);
           };
-          auto band = [&](int row) { it.filled_rectangle(10, 50 + row * 46 - 2, 780, 44, band_col); };
+          auto band = [&](int row) {                      // follows the Background setting; flashes when tapped
+            dimr = why_off(pg, row) != nullptr;
+            lband(10, ry(row), 780, 42);
+            if (row == id(set_row) && millis() - id(set_tap_t) < 300) {
+              it.rectangle(10, ry(row), 780, 42, hilite); it.rectangle(11, ry(row) + 1, 778, 40, hilite);
+            }
+          };
           char buf[40];
           const bool wifi_ok = wifi::global_wifi_component->is_connected();
           const bool api_ok = api::global_api_server->is_connected();
-          static const char *PAGE_NAMES[7] = {"Display", "Trains", "Extras", "Screen", "Style", "Status", "Help"};
-          it.printf(20, 25, id(f_row_0), hilite, TextAlign::CENTER_LEFT, "Settings");
-          { int hx, hy, hw, hh; it.get_text_bounds(20, 25, "Settings", id(f_row_0), TextAlign::CENTER_LEFT, &hx, &hy, &hw, &hh);
-            it.printf(20 + hw + 24, 25, id(f_row_0), amber, TextAlign::CENTER_LEFT, "%s", PAGE_NAMES[id(settings_page)]); }
-          if (id(settings_page) == 5) draw_logo(596, 10, 3, 1, 0, amber, amber, 0);
-          for (int d = 0; d < 7; d++) {                         // page dots
-            int dx = 776 - (7 - 1 - d) * 24;
-            if (d == id(settings_page)) it.filled_circle(dx, 25, 7, hilite); else it.circle(dx, 25, 6, grey);
+
+          // heading: small and white, like the board's column headings
+          static const char *PAGE_NAMES[5] = {"Display", "Trains", "Screen", "Extras", "About"};
+          it.printf(20, 6, id(f_hdr_0), hc, "Settings: %s", PAGE_NAMES[pg]);
+          for (int d = 0; d < 5; d++) {                         // page dots
+            int dx = 776 - (5 - 1 - d) * 18;
+            if (d == pg) it.filled_circle(dx, 14, 5, hc); else it.circle(dx, 14, 4, grey);
           }
-          if (id(settings_page) == 0) {
+
+          static const char *HINTS[4][8] = {
+            {"Colours for the whole board", "Classic, Calm (first train scrolls) or Compact (more trains)",
+             "What sits behind the text: Dot matrix, Rows or Plain", "Large text shows fewer trains",
+             "Small headings above the trains", "Slide between pages of trains",
+             "How fast the calling points scroll, or Off", "Tube boards: each line in its own colour"},
+            {"Minutes to go instead of times", "Only trains that call at a stop: tap to pick one",
+             "Cancelled trains: shown, faded or hidden", "The platform column",
+             "Turn pages when there are more trains than fit", "Keep the next train on the top row while pages turn",
+             "How long a departed train stays on the board", "The footer shows when to leave, with a walking figure"},
+            {"Daytime brightness", "Turn up if the amber looks yellow (screen only, not screenshots)",
+             "Dim at set times, or from sunset to sunrise", "Go below the lowest step to turn the screen off",
+             "When night dimming starts", "When night dimming ends",
+             "Dim when nobody has touched the board", "Brightness while idle"},
+            {"A stop shown in white in the calling points: tap to pick one", "A banner when the line is disrupted",
+             "The logo in the footer", "Just the next train, big",
+             "Switch to the big clock after this long", "12 or 24 hour, with or without seconds",
+             "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"}};
+          static const char *ABOUT_HINTS[8] = {"The Wi-Fi network and its signal", "The board's address on your network",
+             "The link to Home Assistant", "Time since the last trains arrived",
+             "Updates install themselves at about 03:00", "Time since the board last restarted",
+             "The Home Assistant blueprint that sends the trains", "Memory left on the board"};
+
+          if (pg == 0) {
             R = 0; band(R); lab(R, "Theme"); cyc(R, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
             R = 1; band(R); lab(R, "Layout"); { static const char *LN[3] = {"Classic", "Calm", "Compact"}; cyc(R, LN[id(layout_select).active_index().value_or(0)]); }
-            R = 2; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
-            R = 3; band(R); lab(R, "Scroll speed"); cyc(R, SPEEDN[id(scroll_speed).active_index().value_or(1)]);
-            R = 4; band(R); lab(R, "Scrolling text"); onoff(R, id(scroll_enabled).state);
-            R = 5; band(R); lab(R, "Clock seconds"); onoff(R, id(show_seconds).state);
-            R = 6; band(R); lab(R, "12 hour clock"); onoff(R, id(clock_12h).state);
+            R = 2; band(R); lab(R, "Background"); { static const char *BN[3] = {"Plain", "Rows", "Dot matrix"}; cyc(R, BN[id(bg_style).active_index().value_or(1)]); }
+            R = 3; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
+            R = 4; band(R); lab(R, "Column headings"); onoff(R, id(col_headings).state);
+            R = 5; band(R); lab(R, "Page animation"); onoff(R, id(page_anim).state);
+            R = 6; band(R); lab(R, "Scrolling text"); cyc(R, id(scroll_enabled).state ? SPEEDN[id(scroll_speed).active_index().value_or(1)] : "Off");
+            R = 7; band(R); lab(R, "TfL line colours"); onoff(R, id(tfl_colours).state);
           }
-          else if (id(settings_page) == 1) {
+          else if (pg == 1) {
             R = 0; band(R); lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
-            R = 1; band(R); lab(R, "Calling at"); { std::string f = id(dest_filter).state; val(R, f.empty() ? grey : green, f.empty() ? "Off" : f.c_str()); }
-            R = 2; band(R); lab(R, "Hide cancelled"); onoff(R, id(hide_cancelled).state);
+            R = 1; band(R); lab(R, "Calling at"); { std::string f = id(dest_filter).state; cyc(R, f.empty() ? "Off" : f.c_str()); }
+            R = 2; band(R); lab(R, "Cancelled trains"); cyc(R, id(hide_cancelled).state ? "Hidden" : (id(fade_cancelled).state ? "Faded" : "Shown"));
             R = 3; band(R); lab(R, "Show platform"); onoff(R, id(show_platform).state);
             R = 4; band(R); lab(R, "Paging"); onoff(R, id(paging_on).state);
             R = 5; band(R); lab(R, "Pin next train"); onoff(R, id(pin_next).state);
             R = 6; band(R); lab(R, "Departed grace"); snprintf(buf, sizeof(buf), "%d min", (int) id(departed_grace).state); pm(R, buf);
             R = 7; band(R); lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
           }
-          else if (id(settings_page) == 2) {
-            R = 0; band(R); lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; val(R, f.empty() ? grey : green, f.empty() ? "Off" : f.c_str()); }
+          else if (pg == 2) {
+            R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
+            R = 1; band(R); lab(R, "Panel warmth"); snprintf(buf, sizeof(buf), "%d", id(pc_warm).has_state() ? (int) id(pc_warm).state : 0); pm(R, buf);
+            R = 2; band(R); lab(R, "Night dimming"); if (!id(night_dimming).state) onoff(R, false); else cyc(R, id(night_sun).state ? "Sunset" : "Set times");
+            R = 3; band(R); lab(R, "Night brightness"); if (id(night_screen_off).state) snprintf(buf, sizeof(buf), "Off"); else snprintf(buf, sizeof(buf), "%d%%", (int) id(night_level).state); pm(R, buf);
+            R = 4; band(R); lab(R, "Night starts"); if (id(night_dimming).state && id(night_sun).state) val(R, grey, "Sunset"); else { snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf); }
+            R = 5; band(R); lab(R, "Night ends"); if (id(night_dimming).state && id(night_sun).state) val(R, grey, "Sunrise"); else { snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf); }
+            R = 6; band(R); lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
+            R = 7; band(R); lab(R, "Idle brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(idle_level).state); pm(R, buf);
+          }
+          else if (pg == 3) {
+            R = 0; band(R); lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; cyc(R, f.empty() ? "Off" : f.c_str()); }
             R = 1; band(R); lab(R, "Disruption banner"); onoff(R, id(disruption_banner).state);
             R = 2; band(R); lab(R, "Show logo"); onoff(R, id(show_logo).state);
             R = 3; band(R); lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
             R = 4; band(R); lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
-            R = 5; band(R); lab(R, "Footer colour"); cyc(R, id(footer_colour).active_index().value_or(0) == 1 ? "White" : "Theme");
-            R = 6; band(R); lab(R, "Weather"); if (id(wx_temp).empty() && id(show_weather).state) val(R, grey, "Not set up"); else onoff(R, id(show_weather).state);
+            R = 5; band(R); lab(R, "Clock"); { static const char *CN[4] = {"24 hour", "24h + secs", "12 hour", "12h + secs"}; cyc(R, CN[(id(clock_12h).state ? 2 : 0) + (id(show_seconds).state ? 1 : 0)]); }
+            R = 6; band(R); lab(R, "Footer colour"); cyc(R, id(footer_colour).active_index().value_or(0) == 1 ? "White" : "Theme");
+            R = 7; band(R); lab(R, "Weather"); if (id(wx_temp).empty() && id(show_weather).state) val(R, grey, "Not set up"); else onoff(R, id(show_weather).state);
           }
-          else if (id(settings_page) == 3) {
-            R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
-            R = 1; band(R); lab(R, "Night dimming"); if (!id(night_dimming).state) val(R, grey, "Off"); else cyc(R, id(night_sun).state ? "Sunset" : "Set times");
-            R = 2; band(R); lab(R, "Night brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(night_level).state); pm(R, buf);
-            R = 3; band(R); lab(R, "Night starts"); if (id(night_dimming).state && id(night_sun).state) val(R, grey, "Sunset"); else { snprintf(buf, sizeof(buf), "%02d:%02d", id(night_start).hour, id(night_start).minute); pm(R, buf); }
-            R = 4; band(R); lab(R, "Night ends"); if (id(night_dimming).state && id(night_sun).state) val(R, grey, "Sunrise"); else { snprintf(buf, sizeof(buf), "%02d:%02d", id(night_end).hour, id(night_end).minute); pm(R, buf); }
-            R = 5; band(R); lab(R, "Night screen off"); onoff(R, id(night_screen_off).state);
-            R = 6; band(R); lab(R, "Idle dim after"); if (id(idle_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(idle_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
-            R = 7; band(R); lab(R, "Idle brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) id(idle_level).state); pm(R, buf);
-          }
-          else if (id(settings_page) == 4) {
-            R = 0; band(R); lab(R, "Fade cancelled"); onoff(R, id(fade_cancelled).state);
-            R = 1; band(R); lab(R, "Column headings"); onoff(R, id(col_headings).state);
-            R = 2; band(R); lab(R, "Page animation"); onoff(R, id(page_anim).state);
-            R = 3; band(R); lab(R, "TfL line colours"); onoff(R, id(tfl_colours).state);
-          }
-          else if (id(settings_page) == 5) {
+          else {
             R = 0; band(R); lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
             R = 1; band(R); lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
             R = 2; band(R); lab(R, "Home Assistant"); val(R, api_ok ? green : red, api_ok ? "Connected" : "Offline");
             R = 3; band(R); lab(R, "Data age"); if (dms == 0) val(R, amber, "No data yet"); else { unsigned am = (millis() - dms) / 60000; snprintf(buf, sizeof(buf), "%u min", am); val(R, am >= 5 ? red : green, buf); }
-            R = 4; band(R); lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
-            R = 5; band(R); lab(R, "ESPHome"); val(R, amber, id(esphome_ver_ts).state.c_str());
-            R = 6; band(R); lab(R, "Firmware");
+            R = 4; band(R); lab(R, "Firmware");
             if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) { snprintf(buf, sizeof(buf), "%s, %s ready", ESPHOME_PROJECT_VERSION, id(fw_update).update_info.latest_version.c_str()); val(R, orange, buf); }
             else { snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf); }
-            if (id(grace_warn)) { R = 7; band(R); lab(R, "Tip"); val(R, orange, "Grace period: set 1 min"); }
-            else { R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "..."); }
+            R = 5; band(R); lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
+            R = 6; band(R); lab(R, "Blueprint"); if (dms == 0) val(R, grey, "Not sending yet"); else if (id(bp_ver) >= 2) val(R, green, "Up to date"); else val(R, orange, "Update available");
+            R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
           }
-          else if (id(settings_page) == 6) {
-            R = 0; band(R); lab(R, "Tap a train"); val(R, amber, "Its details and stops");
-            R = 1; band(R); lab(R, "Swipe, or tap station"); val(R, amber, "Change station or route");
-            R = 2; band(R); lab(R, "Tap the clock"); val(R, amber, "These settings");
-            R = 3; band(R); lab(R, "Train details"); val(R, amber, "Tap sides: prev / next");
-            R = 4; band(R); lab(R, "Screen off at night"); val(R, amber, "Tap once to wake");
-            R = 5; band(R); lab(R, "Orange arrow in footer"); val(R, amber, "Update ready: tap it");
-            R = 6; band(R); lab(R, "Orange i in footer"); val(R, amber, "Messages, line status");
-            R = 7; band(R); lab(R, "Hold a train"); val(R, amber, "Make it a favourite");
+
+          // hint line: what the last tapped setting does; on About, rotating tips
+          {
+            const int hy = RY0 + 8 * RP + 20;
+            const char *h = nullptr; Color c = grey;
+            const int sr = id(set_row);
+            const bool bp_old = dms != 0 && id(bp_ver) < 2;
+            if (pg == 4 && id(grace_warn)) { h = "Tip: set Departed grace to 1 min (Trains page)"; c = orange; }
+            else if (pg == 4 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
+            else if (sr >= 0 && sr < 8 && why_off(pg, sr) != nullptr) { h = why_off(pg, sr); c = amber; }
+            else if (sr >= 0 && sr < 8) { h = pg < 4 ? HINTS[pg][sr] : ABOUT_HINTS[sr]; c = amber; }
+            else if (pg == 4) h = nullptr;
+            else h = "Tap a setting to change it";
+            if (h != nullptr) it.printf(400, hy, id(f_hdr_0), c, TextAlign::CENTER, "%s", h);
           }
           const char *BTN[3] = {"< Back", "Next >", "Close"};
           for (int b = 0; b < 3; b++) {
             int bx = 20 + b * 260;
-            it.filled_rectangle(bx, 426, 240, 46, band_col);
+            lband(bx, 426, 240, 46);
             it.rectangle(bx, 426, 240, 46, amber);
             it.printf(bx + 120, 449, id(f_row_0), amber, TextAlign::CENTER, "%s", BTN[b]);
           }
@@ -2303,7 +2546,7 @@ display:
           (millis() - id(last_touch_any) > 60000 || id(fw_update).state != update::UPDATE_STATE_AVAILABLE)) id(ui_screen) = 0;
       if (id(ui_screen) == 4) {
         font::Font *mf = id(f_row_0);
-        it.filled_rectangle(10, 4, 780, 44, band_col);
+        lband(10, 4, 780, 44);
         it.circle(34, 26, 16, orange);
         it.circle(34, 26, 15, orange);
         it.filled_triangle(34, 16, 26, 26, 42, 26, orange);
@@ -2322,7 +2565,7 @@ display:
           const char *BTN[2] = {"Install now", "Close"};
           for (int b = 0; b < 2; b++) {
             const int bx = 120 + b * 300;
-            it.filled_rectangle(bx, 426, 260, 46, band_col);
+            lband(bx, 426, 260, 46);
             it.rectangle(bx, 426, 260, 46, b == 0 ? orange : amber);
             it.printf(bx + 130, 449, mf, b == 0 ? orange : amber, TextAlign::CENTER, "%s", BTN[b]);
           }
@@ -2349,7 +2592,7 @@ display:
           font::Font *mf = id(f_row_0);
           auto wid = [&](const std::string &s) { int bx, by, bw, bh; it.get_text_bounds(0, 0, s.c_str(), mf, TextAlign::TOP_LEFT, &bx, &by, &bw, &bh); return bw; };
           // heading: the icon, "Station message" and which one this is
-          it.filled_rectangle(10, 4, 780, 44, band_col);
+          lband(10, 4, 780, 44);
           it.circle(34, 26, 16, orange);
           it.circle(34, 26, 15, orange);
           it.printf(34, 26, mf, orange, TextAlign::CENTER, "i");
@@ -2382,7 +2625,7 @@ display:
           for (int b = 0; b < 3; b++) {
             const bool on = (b == 1) || (b == 0 && mi > 0) || (b == 2 && mi < nm - 1);
             int bx = 20 + b * 260;
-            it.filled_rectangle(bx, 426, 240, 46, band_col);
+            lband(bx, 426, 240, 46);
             it.rectangle(bx, 426, 240, 46, on ? amber : grey);
             it.printf(bx + 120, 449, mf, on ? amber : grey, TextAlign::CENTER, "%s", BTN[b]);
           }
@@ -2522,54 +2765,6 @@ display:
           cy += gap;
         }
       }
-      // ---- fast background: write the row bands and the LED grid straight into the display's frame copy ----
-      // (ESPHome otherwise draws them one pixel at a time, about half a second per frame); falls back if unavailable
-      struct FastBuf : public mipi_rgb::MipiRgb {
-        static uint16_t *get(mipi_rgb::MipiRgb *d) { return d->*(&FastBuf::buffer_); }
-      };
-      uint16_t *fbuf = (it.get_rotation() == display::DISPLAY_ROTATION_0_DEGREES) ? FastBuf::get(id(main_display)) : nullptr;
-      const int FBW = it.get_width(), FBH = it.get_height();
-      uint16_t v_band = 0, v_bg = 0;
-      if (fbuf != nullptr) {
-        // learn how the display stores each colour by drawing one corner pixel and reading it back
-        it.draw_pixel_at(0, 0, band_col); v_band = fbuf[0];
-        it.draw_pixel_at(0, 0, bg_col); v_bg = fbuf[0];
-      }
-      auto frect = [&](int x, int y, int w, int h) {            // one band, in the band colour
-        if (fbuf == nullptr) { it.filled_rectangle(x, y, w, h, band_col); return; }
-        const int x0 = std::max(0, x), x1 = std::min(FBW, x + w), y0 = std::max(0, y), y1 = std::min(FBH, y + h);
-        for (int yy = y0; yy < y1; yy++) if (x1 > x0) std::fill_n(fbuf + yy * FBW + x0, x1 - x0, v_band);
-      };
-      auto fgrid = [&]() {                                       // the dark gaps between LEDs
-        if (fbuf == nullptr) {
-          for (int x = 12; x < 790; x += 4) it.vertical_line(x, 0, 476, bg_col);
-          for (int y = 1; y < 476; y += 4) it.horizontal_line(10, y, 780, bg_col);
-          return;
-        }
-        for (int yy = 0; yy < 476 && yy < FBH; yy++) {
-          uint16_t *row = fbuf + yy * FBW;
-          if (yy % 4 == 1) std::fill_n(row + 10, 780, v_bg);
-          else for (int xx = 12; xx < 790; xx += 4) row[xx] = v_bg;
-        }
-      };
-      // a band that follows the Background setting: nothing on Plain, a band on Rows, a band with LED gaps on Dot matrix
-      const int bgs0 = id(bg_style).active_index().value_or(1);
-      auto lband = [&](int x, int y, int w, int h) {
-        if (bgs0 == 0) return;
-        frect(x, y, w, h);
-        if (bgs0 != 2) return;
-        const int x0 = std::max(10, x), x1 = std::min(790, x + w), y0 = std::max(0, y), y1 = std::min(476, y + h);
-        if (fbuf == nullptr) {
-          for (int xx = 12; xx < x1; xx += 4) if (xx >= x0) it.vertical_line(xx, y0, y1 - y0, bg_col);
-          for (int yy = y0; yy < y1; yy++) if (yy % 4 == 1) it.horizontal_line(x0, yy, x1 - x0, bg_col);
-          return;
-        }
-        for (int yy = y0; yy < y1 && yy < FBH; yy++) {
-          uint16_t *row = fbuf + yy * FBW;
-          if (yy % 4 == 1) { if (x1 > x0) std::fill_n(row + x0, x1 - x0, v_bg); }
-          else for (int xx = 12 + ((std::max(x0, 12) - 12 + 3) / 4) * 4; xx < x1; xx += 4) row[xx] = v_bg;
-        }
-      };
       static int anim_page = -1;
       static uint32_t anim_t0 = 0;
       if (view == 0 && !detail && pages > 1 && page != anim_page) {
@@ -2644,6 +2839,14 @@ display:
       }
 
       // shorten s with "..." until it fits in maxw pixels
+      auto heart = [&](int cx, int cy, int s, Color c) {
+        static const char *HB[6] = {".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."};
+        const int x0 = cx - 7 * s / 2, y0 = cy - 3 * s;
+        for (int r = 0; r < 6; r++)
+          for (int k = 0; k < 7; k++)
+            if (HB[r][k] == 'X') it.filled_rectangle(x0 + k * s, y0 + r * s, s, s, c);
+      };
+      const std::string fav_stn = id(station_ts).state;
       auto fit = [&](std::string &s, font::Font *f, int maxw) {
         if (maxw < 20) { s.clear(); return; }
         int fbx, fby, fbw, fbh;
@@ -3246,10 +3449,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -3495,10 +3701,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -3744,10 +3953,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -3993,10 +4205,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4242,10 +4457,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4491,10 +4709,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4740,10 +4961,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4989,10 +5213,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -5238,10 +5465,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -5487,10 +5717,13 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::in_list(favs, sched)) {
+          if (departure::fav_match(favs, sched, fav_stn)) {
             int ux, uy, uw, uh;
             it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
+              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
           }
           it.printf(DX, y, fr, c0, "%s", dest.c_str());
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -5698,6 +5931,20 @@ display:
           it.printf(400, 235, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", sb);
         }
       }
+      {
+        static uint32_t pop_for = 0, pop_until = 0;
+        const uint32_t sw_ms = id(stn_switch_ms);
+        if (sw_ms != 0 && sw_ms != pop_for && id(data_ms_stn) >= sw_ms) { pop_for = sw_ms; pop_until = millis() + 2000; }
+        if (pop_until != 0 && (int32_t) (pop_until - millis()) > 0 && view == 0 && !detail) {
+          std::string pn = stn_name;
+          if (!id(route_to).empty()) pn += " to " + id(route_to);
+          it.filled_rectangle(60, 170, 680, 90, band_col);
+          it.rectangle(60, 170, 680, 90, hilite);
+          it.rectangle(61, 171, 678, 88, hilite);
+          fit(pn, F_ROWL[fi], 640);
+          it.printf(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, "%s", pn.c_str());
+        } else pop_until = 0;
+      }
       if (id(fav_toast_until) != 0) {
         if ((int32_t) (id(fav_toast_until) - millis()) > 0) {
           it.filled_rectangle(100, 180, 600, 64, band_col);
@@ -5792,6 +6039,7 @@ display:
       const int fy = 418;
       std::string info;
       Color infoc = amber;
+      bool walk_ic = false;                      // draw a walking figure before the info text
       uint32_t age_min = dms ? (millis() - dms) / 60000 : 0;
       if (detail) { info = "< Prev  Close  Next >"; infoc = amber; }
       else if (!wifi_ok) { info = "No Wi-Fi"; infoc = red; }
@@ -5808,13 +6056,16 @@ display:
       }
       else if (walk > 0 && leave_mins >= 0) {
         char lb[32];
-        if (leave_mins <= 0) snprintf(lb, sizeof(lb), "Leave now");
-        else snprintf(lb, sizeof(lb), "Leave in %d min", leave_mins);
+        if (leave_mins <= 0) snprintf(lb, sizeof(lb), "Now");
+        else snprintf(lb, sizeof(lb), "%d min", leave_mins);
         info = lb;
-        infoc = green;
+        if (leave_mins > 2) infoc = green;
+        else if (leave_mins > 0) infoc = orange;
+        else infoc = (millis() / 700) % 2 ? orange : grey;   // "Now": a slow blink
+        walk_ic = true;
       }
       else if (!id(help_seen) && view == 0) {
-        info = "Tap the clock for help";
+        info = "Tap the clock for settings";
         infoc = sub_col;
       }
       else if (pages > 1) {
@@ -5927,11 +6178,26 @@ display:
       }
       int info_left = clk_left;
       if (!info.empty()) {
-        fit(info, F_SUB[fi], clk_left - 24 - (fx + 160));
+        fit(info, F_SUB[fi], clk_left - 24 - (fx + 160) - (walk_ic ? 34 : 0));
         int ibx, iby, ibw, ibh;
         it.get_text_bounds(0, 0, info.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &ibx, &iby, &ibw, &ibh);
         info_left = clk_left - 24 - ibw;
         it.printf(clk_left - 24, fb, F_SUB[fi], infoc, TextAlign::BASELINE_RIGHT, "%s", info.c_str());
+        if (walk_ic) {
+          // a walking figure, 28 px tall, standing on the text baseline
+          const int wx = info_left - 20, wt = fb - 28;
+          auto thick = [&](int x0, int y0, int x1, int y1) {
+            for (int d = -1; d <= 1; d++) it.line(x0 + d, y0, x1 + d, y1, infoc);
+          };
+          it.filled_circle(wx + 3, wt + 4, 4, infoc);          // head
+          thick(wx + 2, wt + 10, wx, wt + 19);                 // body
+          thick(wx + 1, wt + 12, wx - 6, wt + 17);             // back arm
+          thick(wx + 2, wt + 12, wx + 8, wt + 16);             // front arm
+          thick(wx, wt + 19, wx - 6, wt + 28);                 // back leg
+          thick(wx, wt + 19, wx + 4, wt + 23);                 // front leg, bent at the knee
+          thick(wx + 4, wt + 23, wx + 6, wt + 28);
+          info_left -= 34;
+        }
       }
       fit(foot, F_SUB[fi], info_left - 20 - fx);
       it.printf(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
