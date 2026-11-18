@@ -133,9 +133,11 @@ variables:
   # minutes since the station's data stopped coming (-1 when it's fine)
   data_bad_for: >-
     {% set e = (tfl_members[0] if tfl_members else '') if is_tfl else summary_ent %}{% if e and states(e) in ['unavailable', 'unknown'] and states[e] is not none %}{{ ((now() - states[e].last_changed).total_seconds() / 60) | int }}{% elif not e %}0{% else %}-1{% endif %}
-  # trains that left more than 3 minutes ago but are still listed: My Rail Commute's grace period is too long
+  # trains that had left more than 3 minutes before My Rail Commute last fetched them but were still listed:
+  # its grace period is too long. Measured from the fetch time, not now, so a train that leaves between
+  # two updates (or while updates pause at night) doesn't count.
   stale_trains: >-
-    {% set ns = namespace(n=0) %}{% set nm = now().hour * 60 + now().minute %}{% for t in all_trains if t is mapping and not t.get('is_cancelled', false) %}{% set ex = t.get('expected_departure', '') | string %}{% set tm = ex if ex | regex_match('^[0-9]{2}:[0-9]{2}') else t.get('scheduled_departure', '') | string %}{% if tm | regex_match('^[0-9]{2}:[0-9]{2}') %}{% set d = (nm - ((tm[:2] | int) * 60 + (tm[3:5] | int))) % 1440 %}{% if 3 < d < 720 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endif %}{% endfor %}{{ ns.n }}
+    {% set lu = state_attr(summary_ent, 'last_updated') if summary_ent != '' else none %}{% set dt = (lu | as_datetime(none)) if lu is string else lu %}{% set ft = as_local(dt) if dt else now() %}{% set ns = namespace(n=0) %}{% set nm = ft.hour * 60 + ft.minute %}{% for t in all_trains if t is mapping and not t.get('is_cancelled', false) %}{% set ex = t.get('expected_departure', '') | string %}{% set tm = ex if ex | regex_match('^[0-9]{2}:[0-9]{2}') else t.get('scheduled_departure', '') | string %}{% if tm | regex_match('^[0-9]{2}:[0-9]{2}') %}{% set d = (nm - ((tm[:2] | int) * 60 + (tm[3:5] | int))) % 1440 %}{% if 3 < d < 720 %}{% set ns.n = ns.n + 1 %}{% endif %}{% endif %}{% endfor %}{{ ns.n }}
   # London TfL: live trains from every line at the station (timetable-only ones left out), sorted by time,
   # each with its line's name and colour; the station's name; and the lines' status from London Underground
   tfl_lines: >-
@@ -296,4 +298,9 @@ actions:
           message: >-
             My Rail Commute is still listing trains that left a few minutes ago, so they take up rows on the board.
             Open {{ label if label else 'your station' }} in Settings > Devices & services > My Rail Commute, choose
-            Configure > Disruption, and set "Departed train grace period" to 1 minute. Then dismiss this notification.
+            Configure > Disruption, and set "Departed train grace period" to 1 minute. This message goes away by itself once it's fixed.
+    else:
+      - action: persistent_notification.dismiss
+        continue_on_error: true
+        data:
+          notification_id: "{{ note_id }}_grace"
