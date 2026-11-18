@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.1 - 2026-11-18 (beta)
+## 2.1.1 - 2026-11-18
 **Re-import the blueprint** to get favourite train alerts (Settings > Automations & scenes > Blueprints > UK Departure Board > ⋮ > Re-import blueprint). Your automation keeps its settings. Without it, everything else still works.
 
 - The board knows when the blueprint is out of date: the About page and a new *Blueprint* sensor say "Update available"
