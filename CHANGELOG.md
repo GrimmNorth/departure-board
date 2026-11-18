@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.1 - 2026-11-18 (beta)
+**Re-import the blueprint** to get favourite train alerts (Settings > Automations & scenes > Blueprints > UK Departure Board > ⋮ > Re-import blueprint). Your automation keeps its settings. Without it, everything else still works.
+
+- The board knows when the blueprint is out of date: the About page and a new *Blueprint* sensor say "Update available"
+- Settings: five pages of eight (Display, Trains, Screen, Extras, About) instead of seven. Background and Panel warmth are now on the board too. Cancelled trains, scrolling text and the clock format are one row each that you tap through; night brightness goes down to screen off
+- Settings: tap a setting and a line above the buttons says what it does; the row flashes when tapped; On/Off has a green light beside it; a smaller white heading like the board's column headings
+- About page replaces Status; the Help page is gone (the touch controls are in the README). The footer hint now says "Tap the clock for settings" and settings always open on Display
+- Settings, update and message screens follow the Background setting (LED gaps on Dot matrix, no bands on Plain)
+- Footer: a walking figure and "5 min" or "Now" instead of "Leave in 5 min". It turns orange in the last 2 minutes and "Now" blinks slowly
+- Settings: rows that don't apply are greyed out (night rows with night dimming off, Pin next train with paging off, idle brightness with idle dimming off), and the hint says why
+- Settings: Calling at and Highlight stop open a list of today's stops to tap, instead of stepping through them one at a time
+- After switching station or route, its name shows large for 2 seconds once the trains arrive
+- Favourite trains show a small heart under the time instead of an underline (Compact's one-line rows keep the underline)
+- Favourites are saved with their station ("07:42 Brough"), so they only count there. Times saved before, without a station, still count everywhere. Room for about 10 favourites with station names
+- Favourite train alerts: pick phones in the blueprint to be notified when a favourite is late (5 min or more by default), cancelled or changes platform. The board sends an esphome.departure_board_favourite event you can use in your own automations too
+
 ## 2.1.0 - 2026-11-17
 - Weather: pick a weather entity in the blueprint and the temperature and an icon show in the footer and beside the date on the clock screen. Switch it off with "Show weather" (in Home Assistant, or Settings > Extras on the board)
 - Train details: how the station's trains have run this week ("Station: 58% on time, avg 8 min late"), from My Rail Commute

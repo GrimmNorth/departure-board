@@ -7,7 +7,8 @@ blueprint:
     train grace period). At busy stations, use a route (e.g. Manchester Piccadilly to Leeds).
     Tube and DLR stations come from the London TfL integration (Marketplace).
     Up to 5 stations in total; swipe or tap the station name on the board to switch.
-    Use one automation per board.
+    Optionally, get a phone notification when one of your favourite trains (press and hold
+    a train on the board) is late, cancelled or changes platform. Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:
@@ -62,6 +63,33 @@ blueprint:
         entity:
           filter:
             - domain: weather
+    fav_phones:
+      name: Favourite train alerts (optional)
+      description: >-
+        Phones (Home Assistant Companion app) to notify when one of your favourite trains is late,
+        cancelled or changes platform. Press and hold a train on the board to make it a favourite.
+      default: []
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
+    fav_min_delay:
+      name: Late by at least
+      description: Only tell you about a delay of at least this many minutes.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: min
+          mode: slider
+    fav_platform:
+      name: Platform changes
+      description: Also tell you when a favourite train changes platform.
+      default: true
+      selector:
+        boolean:
     station_name:
       name: Names on the board (optional)
       description: >-
@@ -71,7 +99,8 @@ blueprint:
       selector:
         text:
 
-mode: single
+mode: queued
+max: 5
 max_exceeded: silent
 
 triggers:
@@ -82,6 +111,12 @@ triggers:
   # the board asks for new data straight away when you switch station
   - trigger: event
     event_type: esphome.departure_board_station
+    event_data:
+      device_id: !input board
+  # the board says a favourite train is late, cancelled or has changed platform
+  - trigger: event
+    id: fav
+    event_type: esphome.departure_board_favourite
     event_data:
       device_id: !input board
 
@@ -153,6 +188,50 @@ variables:
     {% if is_tfl %}{{ tfl_status }}{% else %}{% set ns = namespace(out=[]) %}{% set raw = state_attr(summary_ent, 'nrcc_messages') if summary_ent != '' else none %}{% for m in (raw if raw is list else []) %}{% if m is mapping %}{% set v = m.get('Value', m.get('value', '')) %}{% else %}{% set v = m %}{% endif %}{% set v = (v | string) | regex_replace('<[^>]*>', '') | replace('&amp;', '&') | replace('&quot;', '"') | replace('&#39;', "'") | replace('&lt;', '<') | replace('&gt;', '>') | replace('&nbsp;', ' ') | regex_replace('[‘’]', "'") | regex_replace('[“”]', '"') | regex_replace('[–—]', '-') | regex_replace('[^\x20-\x7E]', ' ') | regex_replace('\s+', ' ') | trim | truncate(400, true, '...') %}{% if v %}{% set ns.out = ns.out + [v] %}{% endif %}{% endfor %}{{ ns.out | join('\n') }}{% endif %}
 
 actions:
+  # a favourite train alert from the board: notify the chosen phones, then stop (no trains to send)
+  - if:
+      - "{{ trigger.id == 'fav' }}"
+    then:
+      - variables:
+          phones_in: !input fav_phones
+          min_delay: !input fav_min_delay
+          want_plat: !input fav_platform
+          phones: "{{ phones_in if phones_in is list else ([phones_in] if phones_in else []) }}"
+          fd: "{{ trigger.event.data }}"
+          dmin: "{{ fd.delay | int(0) }}"
+          train: >-
+            {{ fd.sched }}{{ ' from ' ~ fd.station if fd.station else '' }}{{ ' to ' ~ fd.destination if fd.destination else '' }}
+          reason: "{{ (' ' ~ fd.reason ~ '.') | replace('..', '.') if fd.reason else '' }}"
+          send: >-
+            {{ phones | count > 0 and (fd.kind == 'cancelled' or (fd.kind == 'delayed' and dmin >= min_delay | int)
+               or (fd.kind == 'platform' and want_plat and fd.platform)) }}
+          title: >-
+            {% if fd.kind == 'cancelled' %}{{ fd.sched }} cancelled{% elif fd.kind == 'delayed' %}{{ fd.sched }} running {{ dmin }} min late{% else %}{{ fd.sched }}: now platform {{ fd.platform }}{% endif %}
+          message: >-
+            {% if fd.kind == 'cancelled' %}Your {{ train }} has been cancelled.{{ reason }}{% elif fd.kind == 'delayed' %}Your {{ train }} is running {{ dmin }} minutes late{{ ', now expected at ' ~ fd.expected if fd.expected else '' }}.{{ reason }}{% else %}Your {{ train }} now leaves from platform {{ fd.platform }}.{% endif %}
+      - if:
+          - "{{ send }}"
+        then:
+          - repeat:
+              for_each: "{{ phones }}"
+              sequence:
+                - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                  continue_on_error: true
+                  data:
+                    title: "{{ title }}"
+                    message: "{{ message }}"
+                    data:
+                      tag: "departure_board_{{ fd.sched | replace(':', '') }}"
+      - stop: Favourite train alert handled
+  # this blueprint's version, so the board can say when it needs re-importing. Raise it whenever a
+  # change needs the new blueprint (and BP_NEED in the firmware). Only newer boards have the action.
+  - if:
+      - "{{ device_entities(board_id) | select('search', '_blueprint$') | list | count > 0 }}"
+    then:
+      - action: "esphome.{{ svc }}_set_blueprint_version"
+        continue_on_error: true
+        data:
+          ver: 2
   - action: "esphome.{{ svc }}_update_status"
     continue_on_error: true
     data:

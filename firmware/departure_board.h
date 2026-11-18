@@ -130,6 +130,61 @@ inline bool ieq(const std::string &a, const std::string &b) {
   return true;
 }
 
+// Favourite trains, e.g. "07:42 Brough, 08:15": a time followed by a station only counts at that
+// station; a time on its own counts everywhere. Times can also be separated by spaces ("07:42 08:15").
+struct Fav { std::string hhmm, station; };
+inline bool is_hhmm(const std::string &s) {
+  return s.size() == 5 && isdigit((unsigned char) s[0]) && isdigit((unsigned char) s[1]) && s[2] == ':' &&
+         isdigit((unsigned char) s[3]) && isdigit((unsigned char) s[4]);
+}
+inline std::vector<Fav> favs(const std::string &list) {
+  std::vector<Fav> out;
+  std::string tok;
+  auto flush = [&]() {
+    if (tok.empty()) return;
+    if (is_hhmm(tok)) out.push_back({tok, ""});
+    else if (!out.empty()) out.back().station += (out.back().station.empty() ? "" : " ") + tok;
+    tok.clear();
+  };
+  for (char ch : list + ",") {
+    if (ch == ',') { flush(); if (!out.empty() && !out.back().station.empty()) out.push_back({"", ""}); }
+    else if (ch == ' ') flush();
+    else tok += ch;
+  }
+  std::vector<Fav> clean;                       // drop the separators added above
+  for (auto &f : out) if (!f.hhmm.empty()) clean.push_back(f);
+  return clean;
+}
+inline bool fav_match(const std::string &list, const std::string &hhmm, const std::string &station) {
+  if (list.empty() || hhmm.size() < 5) return false;
+  const std::string t = hhmm.substr(0, 5);
+  for (auto &f : favs(list))
+    if (f.hhmm == t && (f.station.empty() || ieq(f.station, station))) return true;
+  return false;
+}
+// Press and hold: removes the favourite that matches this train, or adds "HH:MM Station".
+// Returns false (and leaves `out` alone) when there's no room.
+inline bool fav_toggle(const std::string &list, const std::string &hhmm, const std::string &station,
+                       size_t maxlen, std::string &out, bool &added) {
+  const std::string t = hhmm.substr(0, 5);
+  std::string res;
+  bool removed = false;
+  for (auto &f : favs(list)) {
+    if (f.hhmm == t && (f.station.empty() || ieq(f.station, station))) { removed = true; continue; }
+    if (!res.empty()) res += ", ";
+    res += f.hhmm + (f.station.empty() ? "" : " " + f.station);
+  }
+  if (!removed) {
+    std::string e = station.empty() ? t : t + " " + station;
+    if (res.size() + 2 + e.size() > maxlen) return false;
+    if (!res.empty()) res += ", ";
+    res += e;
+  }
+  out = res;
+  added = !removed;
+  return true;
+}
+
 // Finds the stop `fav` inside a scrolling "Calling at A 10:00, B 10:10" string.
 // Returns the start index and sets `end` to one past the end of that stop's entry
 // (name and time), or returns -1 if the stop is not there.
