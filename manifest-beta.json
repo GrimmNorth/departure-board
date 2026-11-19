@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.1.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "aedfef611905b49e193602771aa2e770",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.0.ota.bin",
-        "summary": "Smaller, faster drawing code (about 95 KB smaller); all ten trains arrive in one message"
+        "md5": "577482fff4c77aa04c336ae7280b4189",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.1.ota.bin",
+        "summary": "Screen put back in step after sounds; announcements on any Home Assistant speaker; simpler README"
       }
     }
   ]
