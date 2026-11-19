@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.2 - 2026-11-19 (beta)
+- Blueprint (already out, fixed on 19 Nov): the 2.2.1 blueprint stopped sending trains to the board; re-import it if your board shows no trains. *Favourites only* announcements now switch on too
+- Announcements: a delayed train with a new time is announced again a few minutes before its new time ("The next train to depart from platform 1 will be the delayed 10:37 Northern service to Hull, now expected at 11:25"), as well as the apology at its booked time. Before, a late train was never announced near when it actually left. Re-import the blueprint
+- Screen: no more doubled or ghosted text while things move (scrolling lines, page changes, the departure slide). The board copied each new frame to the screen while the screen was mid-refresh, so for a moment part showed the old frame and part the new one. It now waits for the screen to finish a refresh first
+
 ## 2.2.1 - 2026-11-19 (beta)
 - Announcement settings are now on the board (Settings > Sound) and its device page: *Announcements* (Off, All trains, Delays only, or Favourites only: just your favourite trains, whether on time, late or cancelled), *Announce before*, *Chime first* and *Quiet at night* (follows the board's night times). Only the voice and extra speakers stay in the automation, under **Announcement voice and speakers**. Re-import the blueprint, then turn Announcements on from the board
 - Sound settings say they need a speaker plugged into the board
