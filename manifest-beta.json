@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.2.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.2.2.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "58861d17adadeb826cb1270606da123a",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.2.1.ota.bin",
-        "summary": "Sound settings on the board, Favourites only announcements, announcements follow the station on screen"
+        "md5": "c76e0265cde59b80ba03ed8bdca6b5c7",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.2.2.ota.bin",
+        "summary": "No more doubled text while things move; delayed trains announced again near their new time"
       }
     }
   ]
