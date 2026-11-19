@@ -8,7 +8,8 @@ blueprint:
     Tube and DLR stations come from the London TfL integration (Marketplace).
     Up to 5 stations in total; swipe or tap the station name on the board to switch.
     Optionally, get a phone notification when one of your favourite trains (press and hold
-    a train on the board) is late, cancelled or changes platform. Use one automation per board.
+    a train on the board) is late, cancelled or changes platform, and station-style announcements
+    on the board's speaker. Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:
@@ -90,6 +91,86 @@ blueprint:
       default: true
       selector:
         boolean:
+    announcements:
+      name: Announcements (optional)
+      icon: mdi:bullhorn-outline
+      description: >-
+        Station-style announcements a few minutes before each train from your first station or route,
+        on the board's own speaker (or any speakers you pick). Off unless you turn it on.
+      collapsed: true
+      input:
+        ann_on:
+          name: Announcements
+          default: false
+          selector:
+            boolean:
+        ann_which:
+          name: Announce
+          default: [on_time, delayed, cancelled]
+          selector:
+            select:
+              multiple: true
+              options:
+                - label: Trains running on time
+                  value: on_time
+                - label: Delayed trains
+                  value: delayed
+                - label: Cancelled trains
+                  value: cancelled
+        ann_before:
+          name: Minutes before the train
+          description: How long before each train's booked time to announce it.
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 30
+              unit_of_measurement: min
+              mode: slider
+        ann_speakers:
+          name: Speakers
+          description: Leave empty to use the board's own speaker.
+          default: []
+          selector:
+            entity:
+              multiple: true
+              filter:
+                - domain: media_player
+        ann_tts:
+          name: Voice service
+          description: >-
+            A text-to-speech service, e.g. Google Translate (free, built in), Piper (runs on your own
+            Home Assistant) or Home Assistant Cloud. Leave empty to use the first one you have.
+          default: ""
+          selector:
+            entity:
+              filter:
+                - domain: tts
+        ann_voice:
+          name: Voice (optional)
+          description: >-
+            A voice name for services that have several, e.g. "en_GB-northern_english_male-medium" for Piper.
+            Leave empty for the service's own voice.
+          default: ""
+          selector:
+            text:
+        ann_chime:
+          name: Chime first
+          description: Play the board's chime before each announcement (on the board's own speaker).
+          default: true
+          selector:
+            boolean:
+        ann_quiet_from:
+          name: Quiet from
+          description: No announcements between these times. Set both the same for none.
+          default: "22:00:00"
+          selector:
+            time:
+        ann_quiet_to:
+          name: Quiet until
+          default: "07:00:00"
+          selector:
+            time:
     station_name:
       name: Names on the board (optional)
       description: >-
@@ -127,6 +208,7 @@ variables:
   tfl_in: !input tfl_stations
   label_in: !input station_name
   weather_in: !input weather
+  ann_on: !input ann_on
   # the temperature, rounded ("" when there's no weather entity or it isn't available)
   wx_temp: >-
     {% set t = state_attr(weather_in, 'temperature') if weather_in else none %}{{ (t | float) | round(0) | int if t is number or (t is string and t | float(none) is not none) else '' }}
@@ -387,3 +469,66 @@ actions:
         continue_on_error: true
         data:
           notification_id: "{{ note_id }}_grace"
+  # announcements: a few minutes before each train from the first station or route (not Tube / DLR), once a minute
+  - if:
+      - "{{ ann_on and trigger is defined and trigger.platform == 'time_pattern' }}"
+    then:
+      - variables:
+          which: !input ann_which
+          before: !input ann_before
+          spk_in: !input ann_speakers
+          tts_in: !input ann_tts
+          voice: !input ann_voice
+          chime: !input ann_chime
+          q_from: !input ann_quiet_from
+          q_to: !input ann_quiet_to
+          speakers: >-
+            {% set l = spk_in if spk_in is list else ([spk_in] if spk_in else []) %}{{ l if l else device_entities(board_id) | select('match', 'media_player\\.') | list }}
+          tts_ent: "{{ tts_in if tts_in else (states.tts | map(attribute='entity_id') | first | default('')) }}"
+          quiet: >-
+            {% set n = now().strftime('%H:%M:%S') %}{% if q_from == q_to %}false{% elif q_from < q_to %}{{ q_from <= n < q_to }}{% else %}{{ n >= q_from or n < q_to }}{% endif %}
+          a_ents: "{{ device_entities(first_station) }}"
+          a_sum: "{{ a_ents | select('search', '_summary$') | first | default('') }}"
+          a_all: "{% set v = state_attr(a_sum, 'all_trains') if a_sum else none %}{{ v if v is list else [] }}"
+          # the trains booked to leave exactly that many minutes from now, of the kinds chosen
+          due: >-
+            {% set ns = namespace(l=[]) %}{% set nm = now().hour * 60 + now().minute %}{% for i in range(1, 11) %}{% set t = a_ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% if t %}{% set sd = state_attr(t, 'scheduled_departure') | string %}{% if sd | regex_match('^[0-9]{2}:[0-9]{2}$') and ((sd[:2] | int) * 60 + (sd[3:5] | int) - nm) % 1440 == before | int %}{% set ex = state_attr(t, 'expected_departure') | string %}{% set k = 'cancelled' if state_attr(t, 'is_cancelled') or state_attr(t, 'status') == 'cancelled' else ('delayed' if (state_attr(t, 'delay_minutes') | int(0)) > 0 or (ex | regex_match('^[0-9]{2}:[0-9]{2}$') and ex != sd) or ex | lower == 'delayed' else 'on_time') %}{% if k in which %}{% set ns.l = ns.l + [[t, k]] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.l }}
+      - condition: "{{ not quiet and tts_ent != '' and speakers | count > 0 and due | count > 0 }}"
+      - repeat:
+          for_each: "{{ due }}"
+          sequence:
+            - variables:
+                t: "{{ repeat.item[0] }}"
+                kind: "{{ repeat.item[1] }}"
+                sd: "{{ state_attr(t, 'scheduled_departure') }}"
+                ex: "{{ state_attr(t, 'expected_departure') | string }}"
+                plat: "{{ state_attr(t, 'platform') or '' }}"
+                oper: "{{ state_attr(t, 'operator') or '' }}"
+                cps: "{% set c = state_attr(t, 'calling_points') %}{{ c if c is list else [] }}"
+                dest: >-
+                  {% set sid = state_attr(t, 'service_id') %}{% set d = (a_all | selectattr('service_id', 'eq', sid) | map(attribute='destination') | first | default('')) if sid else '' %}{{ d if d else (cps[-1] if cps else '') }}
+                stops: >-
+                  {% set c = cps[:10] %}{% if c and c[-1] == dest %}{% if c | count > 1 %}Calling at {{ c[:-1] | join(', ') }} and {{ c[-1] }}.{% endif %}{% elif c %}Calling at {{ c[:-1] | join(', ') ~ ' and ' if c | count > 1 else '' }}{{ c[-1] }}, then on to {{ dest }}.{% endif %}
+                svc_name: "the {{ sd }} {{ oper ~ ' ' if oper else '' }}service to {{ dest }}"
+                reason: >-
+                  {% set r = state_attr(t, 'cancellation_reason') if kind == 'cancelled' else state_attr(t, 'delay_reason') %}{{ (' ' ~ r ~ '.') | replace('..', '.') if r else '' }}
+                message: >-
+                  {% if kind == 'cancelled' %}We are sorry to announce that {{ svc_name }} has been cancelled.{{ reason }}{% elif kind == 'delayed' %}We are sorry to announce that {{ svc_name }} is delayed{{ ', and is now expected at ' ~ ex if ex | regex_match('^[0-9]{2}:[0-9]{2}$') else '' }}.{{ reason }}{% else %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }} will be {{ svc_name }}. {{ stops }}{% endif %}{% if kind != 'cancelled' and state_attr(t, 'platform_changed') and plat %} Please note, this train will now depart from platform {{ plat }}.{% endif %}
+            - if:
+                - "{{ chime and device_entities(board_id) | select('search', '_test_sound$') | list | count > 0 }}"
+              then:
+                - action: "esphome.{{ svc }}_play_chime"
+                  continue_on_error: true
+                - delay: 2
+            - action: tts.speak
+              continue_on_error: true
+              target:
+                entity_id: "{{ tts_ent }}"
+              data:
+                media_player_entity_id: "{{ speakers }}"
+                message: "{{ message }}"
+                options: "{{ {'voice': voice} if voice else {} }}"
+            # let it finish before the next one
+            - delay: 3
+            - wait_template: "{{ speakers | select('is_state', ['playing', 'buffering']) | list | count == 0 }}"
+              timeout: 60

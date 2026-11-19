@@ -132,6 +132,16 @@ api:
             id(hist_avg) = avg;
     # Called by the Home Assistant blueprint (about once a minute).
     # Called by the blueprint first, every minute: its version (BP_NEED below is the version this firmware expects)
+    - action: play_chime
+      then:
+        - if:
+            condition:
+              lambda: 'return !id(board_media).is_muted();'
+            then:
+              - media_player.speaker.play_on_device_media_file:
+                  id: board_media
+                  media_file: chime_sound
+                  announcement: true
     - action: set_blueprint_version
       variables:
         ver: int
@@ -261,6 +271,12 @@ debug:
   update_interval: 60s
 
 button:
+  - platform: template
+    name: "Test sound"
+    id: test_sound_btn
+    icon: mdi:bell-ring-outline
+    on_press:
+      - script.execute: test_sound
   - platform: template
     name: "Next station"
     icon: mdi:chevron-right
@@ -431,6 +447,9 @@ globals:
   - id: msg_idx            # which message is open
     type: int
     initial_value: "0"
+  - id: spk_icon_x         # left edge of the footer speaker icon's tap area (-1 = not shown)
+    type: int
+    initial_value: "-1"
   - id: msg_icon_x         # left edge of the footer message icon's tap area (-1 = not shown)
     type: int
     initial_value: "-1"
@@ -485,6 +504,13 @@ time:
 # Decides every 2 seconds whether the screen should be normal, dimmed for the night,
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
+  - id: test_sound
+    then:
+      - lambda: 'if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
+      - media_player.speaker.play_on_device_media_file:
+          id: board_media
+          media_file: chime_sound
+          announcement: true
   # fills the board with a made-up station, every train's time counted from now
   - id: demo_fill
     then:
@@ -950,8 +976,8 @@ touchscreen:
                 }
               }
             } else if (y >= 424) {
-              if (x < 270) id(settings_page) = (id(settings_page) + 5 - 1) % 5;   // BACK
-              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 5;    // NEXT
+              if (x < 270) id(settings_page) = (id(settings_page) + 6 - 1) % 6;   // BACK
+              else if (x < 530) id(settings_page) = (id(settings_page) + 1) % 6;    // NEXT
               else id(ui_screen) = 0;                                                  // CLOSE
               id(set_row) = -1;
             } else if (y >= 32 && y < 384) {
@@ -1065,7 +1091,18 @@ touchscreen:
                     case 7: id(show_weather).toggle(); break;
                   }
                   break;
-                case 4:   // About
+                case 4:   // Sound
+                  switch (row) {
+                    case 0: id(sounds_sw).toggle(); break;
+                    case 1: if (plus || minus) {
+                              float v = id(board_media).volume + (plus ? 0.1f : -0.1f);
+                              if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+                              id(board_media).make_call().set_volume(v).perform();
+                            } break;
+                    case 2: id(test_sound).execute(); break;
+                  }
+                  break;
+                case 5:   // About
                   break;
               }
             }
@@ -1138,7 +1175,11 @@ touchscreen:
               return;
             }
             // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
-            if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
+            if (y >= 410 && id(spk_icon_x) >= 0 && x >= id(spk_icon_x) && x < id(spk_icon_x) + 54) {
+              if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();
+              else id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).set_announcement(true).perform();
+            }
+            else if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
             else if (y >= 410 && id(msg_icon_x) >= 0 && x >= id(msg_icon_x) && x < id(msg_icon_x) + 64) { id(ui_screen) = 3; id(msg_idx) = 0; }
             else if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = 0; id(set_row) = -1; id(help_seen) = true; }
             else if (y < 406) {
@@ -1201,7 +1242,10 @@ media_player:
     id: board_media
     buffer_size: 32768          # about a second of speech: downloads gently instead of in one burst that upsets the screen
     volume_min: 0.4             # the slider's bottom end is quiet, not silent, so the middle of the scale is useful
-    volume_initial: 0.8
+    volume_initial: 1.0
+    files:
+      - id: chime_sound
+        file: sounds/chime.wav  # an original three-note chime, played on the board itself
     announcement_pipeline:
       speaker: board_speaker
       format: WAV               # Home Assistant converts it; the board has nothing to decode
@@ -1414,6 +1458,15 @@ datetime:
     initial_value: "06:00:00"
 
 switch:
+  - platform: template
+    name: "Sounds"
+    id: sounds_sw
+    icon: mdi:volume-high
+    lambda: 'return !id(board_media).is_muted();'   # the speaker's mute, so Home Assistant's mute button matches
+    turn_on_action:
+      - lambda: 'id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
+    turn_off_action:
+      - lambda: 'id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_MUTE).perform();'
   - platform: template
     name: "Paging"
     id: paging_on
@@ -2541,14 +2594,14 @@ display:
           const bool api_ok = api::global_api_server->is_connected();
 
           // heading: small and white, like the board's column headings
-          static const char *PAGE_NAMES[5] = {"Display", "Trains", "Screen", "Extras", "About"};
+          static const char *PAGE_NAMES[6] = {"Display", "Trains", "Screen", "Extras", "Sound", "About"};
           it.printf(20, 6, id(f_hdr_0), hc, "Settings: %s", PAGE_NAMES[pg]);
-          for (int d = 0; d < 5; d++) {                         // page dots
-            int dx = 776 - (5 - 1 - d) * 18;
+          for (int d = 0; d < 6; d++) {                         // page dots
+            int dx = 776 - (6 - 1 - d) * 18;
             if (d == pg) it.filled_circle(dx, 14, 5, hc); else it.circle(dx, 14, 4, grey);
           }
 
-          static const char *HINTS[4][8] = {
+          static const char *HINTS[5][8] = {
             {"Colours for the whole board", "Classic, Calm, Compact, or Platform (the next train in full)",
              "Slide between pages of trains", "What sits behind the text: Dot matrix, Rows or Plain",
              "Large text shows fewer trains", "Small headings above the trains",
@@ -2564,7 +2617,9 @@ display:
             {"A stop shown in white in the calling points: tap to pick one", "Minor or Major Delays in the footer, only when disrupted",
              "The logo in the footer", "Hidden, Icon only, or scroll along the footer every 2, 5 or 10 min",
              "Switch to the big clock after this long", "12 or 24 hour, with or without seconds",
-             "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"}};
+             "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"},
+            {"Off mutes the speaker; a grey speaker shows in the footer", "How loud announcements and the chime are",
+             "Play the chime", "", "", "", "", ""}};
           static const char *ABOUT_HINTS[8] = {"The Wi-Fi network and its signal", "The board's address on your network",
              "The link to Home Assistant", "Time since the last trains arrived",
              "Updates install themselves at about 03:00", "Time since the board last restarted",
@@ -2611,6 +2666,12 @@ display:
             R = 6; band(R); lab(R, "Footer colour"); cyc(R, id(footer_colour).active_index().value_or(0) == 1 ? "White" : "Theme");
             R = 7; band(R); lab(R, "Weather"); if (id(wx_temp).empty() && id(show_weather).state) val(R, grey, "Not set up"); else onoff(R, id(show_weather).state);
           }
+          else if (pg == 4) {
+            R = 0; band(R); lab(R, "Sounds"); onoff(R, !id(board_media).is_muted());
+            R = 1; band(R); lab(R, "Volume"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(board_media).volume * 100.0f + 0.5f)); pm(R, buf);
+            R = 2; band(R); lab(R, "Test sound"); cyc(R, "Play");
+            it.printf(400, ry(4) + 21, id(f_hdr_0), grey, TextAlign::CENTER, "%s", "Announcements are set up in the Home Assistant blueprint");
+          }
           else {
             R = 0; band(R); lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
             R = 1; band(R); lab(R, "IP address"); val(R, amber, id(wifi_ip_ts).state.c_str());
@@ -2630,15 +2691,15 @@ display:
             const char *h = nullptr; Color c = grey;
             const int sr = id(set_row);
             const bool bp_old = dms != 0 && id(bp_ver) < 3;
-            if (pg == 4 && id(grace_warn)) { h = "Tip: set Departed grace to 1 min (Trains page)"; c = orange; }
-            else if (pg == 4 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
+            if (pg == 5 && id(grace_warn)) { h = "Tip: set Departed grace to 1 min (Trains page)"; c = orange; }
+            else if (pg == 5 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
             else if (sr >= 0 && sr < 8 && why_off(pg, sr) != nullptr) { h = why_off(pg, sr); c = amber; }
             else if (pg == 0 && sr == 7 && !id(src_tfl)) { h = "1st, 2nd, 3rd dimmed under each time"; c = amber; }
             else if (pg == 2 && sr == 0 && id(dim_state) != 0) { h = "Daytime brightness (the screen is dimmed just now)"; c = amber; }
             else if (pg == 0 && sr == 1 && id(layout_select).active_index().value_or(0) == 3) { h = "Platform: choose a platform in the row below, or leave All"; c = amber; }
             else if (pg == 0 && sr == 2 && id(layout_select).active_index().value_or(0) == 3) { h = "Show only one platform's trains: tap to pick, or All"; c = amber; }
-            else if (sr >= 0 && sr < 8) { h = pg < 4 ? HINTS[pg][sr] : ABOUT_HINTS[sr]; c = amber; }
-            else if (pg == 4) h = nullptr;
+            else if (sr >= 0 && sr < 8) { h = pg < 5 ? HINTS[pg][sr] : ABOUT_HINTS[sr]; c = amber; }
+            else if (pg == 5) h = nullptr;
             else h = "Tap a setting to change it";
             if (h != nullptr) it.printf(400, hy, id(f_hdr_0), c, TextAlign::CENTER, "%s", h);
           }
@@ -6484,6 +6545,38 @@ display:
         }
         id(msg_icon_x) = icx - 30;
         clk_left = icx - 20;
+      }
+      id(spk_icon_x) = -1;
+      {
+        const bool muted = id(board_media).is_muted();
+        const auto mst = id(board_media).state;
+        const bool talking = mst == media_player::MEDIA_PLAYER_STATE_ANNOUNCING || mst == media_player::MEDIA_PLAYER_STATE_PLAYING;
+        if ((muted || talking) && !detail && !switching) {
+          const int scx = clk_left - 40, scy = fb - 11;
+          const Color sc = muted ? grey : amber;
+          it.filled_rectangle(scx - 14, scy - 5, 6, 11, sc);                         // the box
+          it.filled_rectangle(scx - 8, scy - 5, 8, 11, sc);                          // the cone
+          it.filled_triangle(scx - 8, scy - 5, scx - 1, scy - 12, scx - 1, scy - 5, sc);
+          it.filled_triangle(scx - 8, scy + 5, scx - 1, scy + 12, scx - 1, scy + 5, sc);
+          if (muted) {
+            for (int d = -1; d <= 1; d++) {                                            // a cross where the waves would be
+              it.line(scx + 5 + d, scy - 6, scx + 15 + d, scy + 6, sc);
+              it.line(scx + 15 + d, scy - 6, scx + 5 + d, scy + 6, sc);
+            }
+          } else {
+            const int nw = 1 + (millis() / 300) % 3;                                   // one, two, three waves, over and over
+            for (int w = 0; w < nw; w++) {
+              const int r0 = 6 + w * 6;
+              for (int a = -50; a <= 50; a += 3) {
+                const float rad = a * 3.14159f / 180.0f;
+                for (int r = r0; r <= r0 + 1; r++)
+                  it.draw_pixel_at(scx + (int) (r * cosf(rad)), scy + (int) (r * sinf(rad)), sc);
+              }
+            }
+          }
+          id(spk_icon_x) = scx - 24;
+          clk_left = scx - 26;
+        }
       }
       id(upd_icon_x) = -1;
       if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE && !detail && !switching) {
