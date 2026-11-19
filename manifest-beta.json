@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.2.2.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.2.3.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "c76e0265cde59b80ba03ed8bdca6b5c7",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.2.2.ota.bin",
-        "summary": "No more doubled text while things move; delayed trains announced again near their new time"
+        "md5": "47d81c314ea14a6de9cebf2fbd61fd4b",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.2.3.ota.bin",
+        "summary": "Sounds master switch (off by default) and a separate Mute; sound marked experimental"
       }
     }
   ]
