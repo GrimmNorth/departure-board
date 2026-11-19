@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.5 - 2026-11-19 (beta)
 - Sound: the chime is clean again. In 2.3.4 it was handed to the speaker a little at a time, and the screen's drawing sometimes held that up long enough to leave tiny gaps, which sounded distorted. The whole chime is now handed over at once
 
 ## 2.3.4 - 2026-11-19 (beta)
