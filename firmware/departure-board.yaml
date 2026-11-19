@@ -18,7 +18,7 @@ esphome:
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
   project:
     name: "community.uk_departure_board"
-    version: "2.1.2"
+    version: "2.1.3"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
