@@ -545,6 +545,50 @@ script:
                                     departure::valid(plat) ? plat : std::string(""), departure::valid(r) ? r : std::string(""));
             }
           }
+          // any train on the board: tell Home Assistant when it becomes 5 or more minutes late, or is cancelled, so it can
+          // be announced straight away (only changes seen while it's on the board, not trains already late when they appear)
+          if (!id(src_tfl) && departure::is_hhmm(sched.substr(0, 5))) {
+            struct Seen { bool late; bool canc; uint32_t ms; };
+            static std::map<std::string, Seen> seen;
+            const std::string key = sched.substr(0, 5) + "|" + id(station_ts).state + "|" + departure::destination(cp, 40);
+            std::string ls = stat;
+            for (auto &ch : ls) ch = tolower((unsigned char) ch);
+            const bool canc = ls.find("cancel") != std::string::npos;
+            int dm = atoi(delaym.c_str());
+            if (dm <= 0 && departure::is_hhmm(expct.substr(0, 5)))
+              dm = ((atoi(expct.substr(0, 2).c_str()) * 60 + atoi(expct.substr(3, 2).c_str())) - (atoi(sched.substr(0, 2).c_str()) * 60 + atoi(sched.substr(3, 2).c_str())) + 1440) % 1440;
+            if (dm > 720) dm = 0;
+            const bool late = dm >= 5;
+            auto f = seen.find(key);
+            if (f == seen.end() || millis() - f->second.ms > 6UL * 3600000UL) {
+              if (seen.size() > 40) seen.clear();
+              seen[key] = {late, canc, millis()};
+            } else {
+              Seen &sn = f->second;
+              std::string kind;
+              if (canc && !sn.canc) kind = "cancelled";
+              else if (!canc && late && !sn.late) kind = "delayed";
+              sn.late = sn.late || late; sn.canc = sn.canc || canc; sn.ms = millis();
+              if (!kind.empty()) id(change_alert).execute(kind, n, sched.substr(0, 5), id(station_ts).state);
+            }
+          }
+  # a train on the board has just become late or been cancelled: Home Assistant may announce it
+  - id: change_alert
+    mode: queued
+    max_runs: 10
+    parameters:
+      kind: string
+      n: int
+      sched: string
+      stn: string
+    then:
+      - homeassistant.event:
+          event: esphome.departure_board_change
+          data:
+            kind: !lambda 'return kind;'
+            train: !lambda 'return to_string(n);'
+            sched: !lambda 'return sched;'
+            station: !lambda 'return stn;'
   - id: test_sound
     then:
       - if:

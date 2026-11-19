@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- Announcements: a train that becomes 5 or more minutes late, or is cancelled, while it's on the board is announced straight away ("We are sorry to announce that the 17:42 ... is delayed, and is now expected at 17:50"), instead of waiting for its usual slot. Works with *All trains*, *Delays only* and *Favourites only*. Re-import the blueprint
+- Examples in the docs and code use York and Leeds
+
 ## 2.3.1 - 2026-11-19 (beta)
 - README and install page: shorter and simpler, with a fresh screenshot instead of the animation
 - Screen: if the picture slips and jitters at the left edge after a sound, the board now puts it back in step as soon as the sound ends. The screen is also fed slightly slower (14 MHz instead of 15), which leaves more room for sound and the picture at the same time
