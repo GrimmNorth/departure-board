@@ -92,7 +92,7 @@ blueprint:
       selector:
         boolean:
     announcements:
-      name: Announcement voice and speakers (optional)
+      name: Announcement voice and speakers (optional, experimental)
       icon: mdi:bullhorn-outline
       description: >-
         Spoken train announcements need a speaker plugged into the board's speaker socket. Turn them on
@@ -166,7 +166,10 @@ variables:
   weather_in: !input weather
   # announcements are switched on and set up on the board (Settings > Sound)
   ann_sel: "{{ device_entities(board_id) | select('match', 'select\\..*_announcements$') | first | default('') }}"
-  ann_mode: "{{ states(ann_sel) if ann_sel else 'Off' }}"
+  # Sounds off (no speaker) or muted: no announcements at all
+  ann_sound: >-
+    {% set e = device_entities(board_id) %}{{ is_state(e | select('match', 'switch\\..*_sounds$') | first | default(''), 'on') and not is_state(e | select('match', 'switch\\..*_mute$') | first | default(''), 'on') }}
+  ann_mode: "{{ states(ann_sel) if ann_sel and ann_sound else 'Off' }}"
   # the temperature, rounded ("" when there's no weather entity or it isn't available)
   wx_temp: >-
     {% set t = state_attr(weather_in, 'temperature') if weather_in else none %}{{ (t | float) | round(0) | int if t is number or (t is string and t | float(none) is not none) else '' }}
