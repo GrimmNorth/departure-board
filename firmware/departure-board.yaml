@@ -28,7 +28,7 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.2"
+    version: "2.3.3"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -141,7 +141,7 @@ api:
               - media_player.speaker.play_on_device_media_file:
                   id: board_media
                   media_file: chime_sound
-                  announcement: true
+                  announcement: false   # the chime's own input, so speech can join it
     - action: set_blueprint_version
       variables:
         ver: int
@@ -599,7 +599,7 @@ script:
             - media_player.speaker.play_on_device_media_file:
                 id: board_media
                 media_file: chime_sound
-                announcement: true
+                announcement: false
   # fills the board with a made-up station, every train's time counted from now
   - id: demo_fill
     then:
@@ -1274,7 +1274,10 @@ touchscreen:
             // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
             if (y >= 410 && id(spk_icon_x) >= 0 && x >= id(spk_icon_x) && x < id(spk_icon_x) + 54) {
               if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();
-              else id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).set_announcement(true).perform();
+              else {   // stop the speech and the chime
+                id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).set_announcement(true).perform();
+                id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).perform();
+              }
             }
             else if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
             else if (y >= 410 && id(msg_icon_x) >= 0 && x >= id(msg_icon_x) && x < id(msg_icon_x) + 64) { id(ui_screen) = 3; id(msg_idx) = 0; }
@@ -1332,6 +1335,15 @@ speaker:
     i2s_dout_pin: GPIO17
     dac_type: external
     channel: mono
+  # two inputs mixed into the one speaker: announcements (Home Assistant's speech) and the board's own chime, so the
+  # voice can come in over the end of the chime, like a real station, instead of waiting for it or cutting it off
+  - platform: mixer
+    id: board_mixer
+    output_speaker: board_speaker
+    num_channels: 1
+    source_speakers:
+      - id: ann_spk_in
+      - id: chime_spk_in
 
 media_player:
   - platform: speaker
@@ -1344,12 +1356,29 @@ media_player:
       - id: chime_sound
         file: sounds/chime.flac  # an original three-note chime, played on the board itself (compressed: a third of the size)
     announcement_pipeline:
-      speaker: board_speaker
+      speaker: ann_spk_in
       format: WAV               # Home Assistant converts it; the board has nothing to decode
       num_channels: 1
       sample_rate: 16000
-    # after each sound: put the screen's picture back in step, in case the busy moment made it slip (jitter at the left edge)
+    # the chime plays here, so speech arriving part-way through doesn't stop it (both are 16 kHz mono)
+    media_pipeline:
+      speaker: chime_spk_in
+      format: WAV
+      num_channels: 1
+      sample_rate: 16000
+    # when the voice starts, fade the rest of the chime down under it
+    on_announcement:
+      - mixer_speaker.apply_ducking:
+          id: chime_spk_in
+          decibel_reduction: 12
+          duration: 0.4s
+    # after each sound: undo the fade, and put the screen's picture back in step, in case the busy moment made it slip
+    # (jitter at the left edge)
     on_idle:
+      - mixer_speaker.apply_ducking:
+          id: chime_spk_in
+          decibel_reduction: 0
+          duration: 0s
       - script.execute: panel_resync
 
 font:

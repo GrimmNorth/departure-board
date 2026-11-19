@@ -521,10 +521,11 @@ actions:
               then:
                 - action: "esphome.{{ svc }}_play_chime"
                   continue_on_error: true
-                # ask for the speech almost straight away: making and fetching it takes a second or two, so the
-                # voice arrives as the chime fades (waiting for the chime to finish first left a long gap)
+                # ask for the speech straight away: making and fetching it takes a second or two. Boards from 2.3.3
+                # play the voice over the end of the chime; older ones would cut the chime off, so wait a little there
                 - delay:
-                    milliseconds: 600
+                    milliseconds: >-
+                      {% set u = board_ents | select('match', 'update\\.') | first | default('') %}{% set v = (state_attr(u, 'installed_version') or '0') | string %}{% set p = (v.split('.') + ['0', '0'])[:3] | map('int', 0) | list %}{{ 0 if p[0] * 10000 + p[1] * 100 + p[2] >= 20303 else 600 }}
             - if:
                 - "{{ lang != '' }}"
               then:
