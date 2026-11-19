@@ -543,16 +543,18 @@ views:
       - type: toggle
       features_position: bottom
     - type: tile
-      entity: button.departure_board_xxxxxx_test_sound
-      name: Test sound
+      entity: switch.departure_board_xxxxxx_mute
+      name: Mute
       grid_options:
         columns: 6
-      icon: mdi:bell-ring-outline
-      tap_action:
-        action: perform-action
-        perform_action: button.press
-        target:
-          entity_id: button.departure_board_xxxxxx_test_sound
+      icon: mdi:volume-off
+      features:
+      - type: toggle
+      features_position: bottom
+      visibility:
+      - condition: state
+        entity: switch.departure_board_xxxxxx_sounds
+        state: "on"
     - type: tile
       entity: media_player.departure_board_xxxxxx_speaker
       name: Volume
@@ -562,6 +564,25 @@ views:
       features:
       - type: media-player-volume-slider
       features_position: bottom
+      visibility:
+      - condition: state
+        entity: switch.departure_board_xxxxxx_sounds
+        state: "on"
+    - type: tile
+      entity: button.departure_board_xxxxxx_test_sound
+      name: Test sound
+      grid_options:
+        columns: 12
+      icon: mdi:bell-ring-outline
+      tap_action:
+        action: perform-action
+        perform_action: button.press
+        target:
+          entity_id: button.departure_board_xxxxxx_test_sound
+      visibility:
+      - condition: state
+        entity: switch.departure_board_xxxxxx_sounds
+        state: "on"
     - type: tile
       entity: select.departure_board_xxxxxx_announcements
       name: Announcements
@@ -571,6 +592,10 @@ views:
       features:
       - type: select-options
       features_position: bottom
+      visibility:
+      - condition: state
+        entity: switch.departure_board_xxxxxx_sounds
+        state: "on"
     - type: tile
       entity: number.departure_board_xxxxxx_announce_before
       name: Announce before
@@ -585,6 +610,9 @@ views:
       - condition: state
         entity: select.departure_board_xxxxxx_announcements
         state_not: "Off"
+      - condition: state
+        entity: switch.departure_board_xxxxxx_sounds
+        state: "on"
     - type: tile
       entity: switch.departure_board_xxxxxx_chime_first
       name: Chime first
@@ -598,6 +626,9 @@ views:
       - condition: state
         entity: select.departure_board_xxxxxx_announcements
         state_not: "Off"
+      - condition: state
+        entity: switch.departure_board_xxxxxx_sounds
+        state: "on"
     - type: tile
       entity: switch.departure_board_xxxxxx_quiet_at_night
       name: Quiet at night
@@ -611,8 +642,11 @@ views:
       - condition: state
         entity: select.departure_board_xxxxxx_announcements
         state_not: "Off"
+      - condition: state
+        entity: switch.departure_board_xxxxxx_sounds
+        state: "on"
     - type: markdown
-      content: Needs a speaker plugged into the board. To change the voice or add other speakers, open your departure board automation (Settings > Automations & scenes) and expand **Announcement voice and speakers**.
+      content: Needs a speaker plugged into the board. To change the voice or add other speakers, open your departure board automation (Settings > Automations & scenes) and expand **Announcement voice and speakers (optional, experimental)**.
 - title: 🔧 System
   path: system
   type: sections

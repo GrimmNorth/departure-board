@@ -67,12 +67,14 @@ Press and hold a train to make it a favourite. It's saved as its time and statio
 
 To get a phone notification when a favourite is late, cancelled or changes platform, pick your phones (Home Assistant Companion app) under **Favourite train alerts** in the blueprint. You choose how late counts (5 minutes by default) and whether to include platform changes. A train only alerts again if it gets worse.
 
-### Sound (optional)
+### Sound (optional, experimental)
+Sound is new and has only been tested on one board and speaker, with Google's voice, so expect some rough edges. Feedback is welcome.
+
 Sound needs a speaker plugged into the board's speaker socket (a small 4-8 ohm speaker of about 2-3 W). The board doesn't come with one, and without one these settings do nothing.
-- **On the board:** settings has a **Sound** page: *Sounds* on or off, *Volume*, *Announcements* (*Off*, *All trains*, *Delays only* or *Favourites only*), *Announce before* (5 minutes by default), *Chime first*, *Quiet at night* (silent between the board's Night starts and Night ends, or sunset to sunrise) and *Test sound*. The same settings are on the board's device page in Home Assistant.
+- **On the board:** settings has a **Sound** page. Turn on *Sounds* once a speaker is plugged in (it's off to start with, and while it's off nothing plays and no speaker icon shows). Then: *Mute*, *Volume*, *Announcements* (*Off*, *All trains*, *Delays only* or *Favourites only*), *Announce before* (5 minutes by default), *Chime first*, *Quiet at night* (silent between the board's Night starts and Night ends, or sunset to sunrise) and *Test sound*. The same settings are on the board's device page in Home Assistant.
 - **Announcements:** station-style, for the station or route the board is showing (not Tube / DLR), e.g. *"The next train to depart from platform 1 will be the 10:53 Northern service to Hull"*, or *"We are sorry to announce..."* when a train is delayed or cancelled. A delayed train with a new time is announced again a few minutes before it now leaves. Home Assistant does the speaking, using Google Translate (free, built in) unless you choose another voice.
-- **Voice and other speakers (optional):** in your departure board automation (Settings > Automations & scenes), expand **Announcement voice and speakers** to pick a voice service (e.g. Piper or Home Assistant Cloud), a voice, or other speakers to announce on too.
-- **Footer:** a speaker icon shows only while the board is speaking (amber; tap it to stop) or when sound is off (grey with a cross; tap it to turn sound back on).
+- **Voice and other speakers (optional):** in your departure board automation (Settings > Automations & scenes), expand **Announcement voice and speakers (optional, experimental)** to pick a voice service (e.g. Piper or Home Assistant Cloud), a voice, or other speakers to announce on too.
+- **Footer:** with Sounds on, a speaker icon shows only while the board is speaking (amber; tap it to stop) or when it's muted (grey with a cross; tap it to unmute).
 - You can also play your own announcements to the board's *Speaker* media player with `tts.speak`.
 
 ### Weather
@@ -84,7 +86,7 @@ Every setting is on the board (tap the clock) and on the board's device page in 
 - **Trains:** countdown, calling-at filter, cancelled trains (shown, faded or hidden), show platform, paging, pin next train, departed grace, walking time
 - **Screen:** brightness, panel colour warmth, night dimming (set times or sunset/sunrise), night brightness (down to screen off), idle dimming
 - **Extras:** highlight a stop, disruption alert, logo, station messages, clock screen, 12/24-hour clock and seconds, footer colour, weather
-- **Sound** (needs a speaker plugged in): sounds on or off, volume, announcements, announce before, chime first, quiet at night, test sound
+- **Sound** (needs a speaker plugged in): sounds on or off, mute, volume, announcements, announce before, chime first, quiet at night, test sound
 - **About:** Wi-Fi, IP address, Home Assistant link, data age, firmware, uptime, ESPHome version, free memory
 - **Home Assistant only:** page interval, demo mode, and *Station number* for switching station from your own automations
 

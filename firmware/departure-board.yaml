@@ -136,7 +136,7 @@ api:
       then:
         - if:
             condition:
-              lambda: 'return !id(board_media).is_muted();'
+              lambda: 'return id(sounds_sw).state && !id(board_media).is_muted();'
             then:
               - media_player.speaker.play_on_device_media_file:
                   id: board_media
@@ -506,11 +506,15 @@ time:
 script:
   - id: test_sound
     then:
-      - lambda: 'if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
-      - media_player.speaker.play_on_device_media_file:
-          id: board_media
-          media_file: chime_sound
-          announcement: true
+      - if:
+          condition:
+            lambda: 'return id(sounds_sw).state;'   # nothing with Sounds off
+          then:
+            - lambda: 'if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
+            - media_player.speaker.play_on_device_media_file:
+                id: board_media
+                media_file: chime_sound
+                announcement: true
   # fills the board with a made-up station, every train's time counted from now
   - id: demo_fill
     then:
@@ -992,7 +996,8 @@ touchscreen:
               const bool inactive = (sp0 == 1 && row == 5 && !id(paging_on).state) ||               // greyed out: nothing to change
                                     (sp0 == 2 && row >= 3 && row <= 5 && !id(night_dimming).state) ||
                                     (sp0 == 2 && row == 7 && id(idle_minutes).state <= 0) ||
-                                    (sp0 == 4 && row >= 3 && row <= 5 && id(ann_mode).active_index().value_or(0) == 0);
+                                    (sp0 == 4 && row >= 1 && !id(sounds_sw).state) ||
+                                    (sp0 == 4 && row >= 4 && row <= 6 && id(ann_mode).active_index().value_or(0) == 0);
               if (!inactive) switch (id(settings_page)) {
                 case 0:   // Display
                   switch (row) {
@@ -1095,16 +1100,17 @@ touchscreen:
                 case 4:   // Sound
                   switch (row) {
                     case 0: id(sounds_sw).toggle(); break;
-                    case 1: if (plus || minus) {
+                    case 1: id(mute_sw).toggle(); break;
+                    case 2: if (plus || minus) {
                               float v = id(board_media).volume + (plus ? 0.1f : -0.1f);
                               if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
                               id(board_media).make_call().set_volume(v).perform();
                             } break;
-                    case 2: id(ann_mode).make_call().select_next(true).perform(); break;
-                    case 3: if (plus || minus) { float v = id(ann_before).state + (plus ? 1 : -1); if (v < 1) v = 1; if (v > 30) v = 30; auto c = id(ann_before).make_call(); c.set_value(v); c.perform(); } break;
-                    case 4: id(ann_chime).toggle(); break;
-                    case 5: id(ann_quiet).toggle(); break;
-                    case 6: id(test_sound).execute(); break;
+                    case 3: id(ann_mode).make_call().select_next(true).perform(); break;
+                    case 4: if (plus || minus) { float v = id(ann_before).state + (plus ? 1 : -1); if (v < 1) v = 1; if (v > 30) v = 30; auto c = id(ann_before).make_call(); c.set_value(v); c.perform(); } break;
+                    case 5: id(ann_chime).toggle(); break;
+                    case 6: id(ann_quiet).toggle(); break;
+                    case 7: id(test_sound).execute(); break;
                   }
                   break;
                 case 5:   // About
@@ -1490,11 +1496,17 @@ switch:
     name: "Sounds"
     id: sounds_sw
     icon: mdi:volume-high
-    lambda: 'return !id(board_media).is_muted();'   # the speaker's mute, so Home Assistant's mute button matches
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF   # turn on when a speaker is plugged in; off: no announcements, no speaker icon
+  - platform: template
+    name: "Mute"
+    id: mute_sw
+    icon: mdi:volume-off
+    lambda: 'return id(board_media).is_muted();'   # the speaker's mute, so Home Assistant's mute button matches
     turn_on_action:
-      - lambda: 'id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
-    turn_off_action:
       - lambda: 'id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_MUTE).perform();'
+    turn_off_action:
+      - lambda: 'id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
   - platform: template
     name: "Paging"
     id: paging_on
@@ -2590,7 +2602,8 @@ display:
             if (p == 2 && r >= 3 && r <= 5 && !id(night_dimming).state) return "Turn on Night dimming to use this";
             if (p == 2 && (r == 4 || r == 5) && id(night_sun).state) return "Follows sunset and sunrise";
             if (p == 2 && r == 7 && id(idle_minutes).state <= 0) return "Set Idle dim after to use this";
-            if (p == 4 && r >= 3 && r <= 5 && id(ann_mode).active_index().value_or(0) == 0) return "Turn on Announcements to use this";
+            if (p == 4 && r >= 1 && !id(sounds_sw).state) return "Turn on Sounds to use this (needs a speaker plugged in)";
+            if (p == 4 && r >= 4 && r <= 6 && id(ann_mode).active_index().value_or(0) == 0) return "Turn on Announcements to use this";
             return nullptr;
           };
           auto ry = [&](int row) { return RY0 + row * RP; };
@@ -2632,7 +2645,7 @@ display:
           const bool api_ok = api::global_api_server->is_connected();
 
           // heading: small and white, like the board's column headings
-          static const char *PAGE_NAMES[6] = {"Display", "Trains", "Screen", "Extras", "Sound", "About"};
+          static const char *PAGE_NAMES[6] = {"Display", "Trains", "Screen", "Extras", "Sound (experimental)", "About"};
           it.printf(20, 6, id(f_hdr_0), hc, "Settings: %s", PAGE_NAMES[pg]);
           for (int d = 0; d < 6; d++) {                         // page dots
             int dx = 776 - (6 - 1 - d) * 18;
@@ -2656,10 +2669,10 @@ display:
              "The logo in the footer", "Hidden, Icon only, or scroll along the footer every 2, 5 or 10 min",
              "Switch to the big clock after this long", "12 or 24 hour, with or without seconds",
              "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"},
-            {"Needs a speaker plugged into the board. Off mutes it", "How loud announcements and the chime are",
-             "All trains, only delays, or only your favourite trains (hold a train)", "How long before each train's booked time",
-             "A chime before each announcement", "Silent between Night starts and Night ends",
-             "Play the chime (needs a speaker plugged in)", ""}};
+            {"Turn on if a speaker is plugged into the board", "Silence the speaker for now; a grey speaker shows in the footer",
+             "How loud announcements and the chime are", "All trains, only delays, or only your favourite trains (hold a train)",
+             "How long before each train's booked time", "A chime before each announcement",
+             "Silent between Night starts and Night ends", "Play the chime"}};
           static const char *ABOUT_HINTS[8] = {"The Wi-Fi network and its signal", "The board's address on your network",
              "The link to Home Assistant", "Time since the last trains arrived",
              "Updates install themselves at about 03:00", "Time since the board last restarted",
@@ -2707,13 +2720,14 @@ display:
             R = 7; band(R); lab(R, "Weather"); if (id(wx_temp).empty() && id(show_weather).state) val(R, grey, "Not set up"); else onoff(R, id(show_weather).state);
           }
           else if (pg == 4) {
-            R = 0; band(R); lab(R, "Sounds"); onoff(R, !id(board_media).is_muted());
-            R = 1; band(R); lab(R, "Volume"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(board_media).volume * 100.0f + 0.5f)); pm(R, buf);
-            R = 2; band(R); lab(R, "Announcements"); { static const char *AN[4] = {"Off", "All trains", "Delays only", "Favourites only"}; cyc(R, AN[std::min(3, (int) id(ann_mode).active_index().value_or(0))]); }
-            R = 3; band(R); lab(R, "Announce before"); snprintf(buf, sizeof(buf), "%d min", (int) id(ann_before).state); pm(R, buf);
-            R = 4; band(R); lab(R, "Chime first"); onoff(R, id(ann_chime).state);
-            R = 5; band(R); lab(R, "Quiet at night"); onoff(R, id(ann_quiet).state);
-            R = 6; band(R); lab(R, "Test sound"); cyc(R, "Play");
+            R = 0; band(R); lab(R, "Sounds"); onoff(R, id(sounds_sw).state);
+            R = 1; band(R); lab(R, "Mute"); onoff(R, id(board_media).is_muted());
+            R = 2; band(R); lab(R, "Volume"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(board_media).volume * 100.0f + 0.5f)); pm(R, buf);
+            R = 3; band(R); lab(R, "Announcements"); { static const char *AN[4] = {"Off", "All trains", "Delays only", "Favourites only"}; cyc(R, AN[std::min(3, (int) id(ann_mode).active_index().value_or(0))]); }
+            R = 4; band(R); lab(R, "Announce before"); snprintf(buf, sizeof(buf), "%d min", (int) id(ann_before).state); pm(R, buf);
+            R = 5; band(R); lab(R, "Chime first"); onoff(R, id(ann_chime).state);
+            R = 6; band(R); lab(R, "Quiet at night"); onoff(R, id(ann_quiet).state);
+            R = 7; band(R); lab(R, "Test sound"); cyc(R, "Play");
           }
           else {
             R = 0; band(R); lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
@@ -2738,7 +2752,7 @@ display:
             else if (pg == 5 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
             else if (sr >= 0 && sr < 8 && why_off(pg, sr) != nullptr) { h = why_off(pg, sr); c = amber; }
             else if (pg == 0 && sr == 7 && !id(src_tfl)) { h = "1st, 2nd, 3rd dimmed under each time"; c = amber; }
-            else if (pg == 4 && sr == 2 && id(ann_mode).active_index().value_or(0) != 0) { h = "Voice: Home Assistant > Automations > UK Departure Board"; c = amber; }
+            else if (pg == 4 && sr == 3 && id(sounds_sw).state && id(ann_mode).active_index().value_or(0) != 0) { h = "Voice: Home Assistant > Automations > UK Departure Board"; c = amber; }
             else if (pg == 2 && sr == 0 && id(dim_state) != 0) { h = "Daytime brightness (the screen is dimmed just now)"; c = amber; }
             else if (pg == 0 && sr == 1 && id(layout_select).active_index().value_or(0) == 3) { h = "Platform: choose a platform in the row below, or leave All"; c = amber; }
             else if (pg == 0 && sr == 2 && id(layout_select).active_index().value_or(0) == 3) { h = "Show only one platform's trains: tap to pick, or All"; c = amber; }
@@ -6595,7 +6609,7 @@ display:
         const bool muted = id(board_media).is_muted();
         const auto mst = id(board_media).state;
         const bool talking = mst == media_player::MEDIA_PLAYER_STATE_ANNOUNCING || mst == media_player::MEDIA_PLAYER_STATE_PLAYING;
-        if ((muted || talking) && !detail && !switching) {
+        if (id(sounds_sw).state && (muted || talking) && !detail && !switching) {
           const int scx = clk_left - 40, scy = fb - 11;
           const Color sc = muted ? grey : amber;
           it.filled_rectangle(scx - 14, scy - 5, 6, 11, sc);                         // the box

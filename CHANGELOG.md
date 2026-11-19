@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.3 - 2026-11-19 (beta)
+- Sound: *Sounds* now turns the whole sound feature on or off (off to start with, for boards without a speaker): while it's off nothing is announced, no speaker icon shows and the other Sound settings are greyed out. A new *Mute* setting silences the speaker for now; only then does the grey crossed speaker show in the footer. Your board starts with Sounds off after this update: turn it on under Settings > Sound
+- Sound is marked experimental: in the README, on the board's settings page (*Sound (experimental)*) and in the automation's announcement section. It's new and only tested on one board and speaker
+
 ## 2.2.2 - 2026-11-19 (beta)
 - Blueprint (already out, fixed on 19 Nov): the 2.2.1 blueprint stopped sending trains to the board; re-import it if your board shows no trains. *Favourites only* announcements now switch on too
 - Announcements: a delayed train with a new time is announced again a few minutes before its new time ("The next train to depart from platform 1 will be the delayed 10:37 Northern service to Hull, now expected at 11:25"), as well as the apology at its booked time. Before, a late train was never announced near when it actually left. Re-import the blueprint
