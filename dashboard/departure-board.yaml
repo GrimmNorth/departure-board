@@ -562,8 +562,57 @@ views:
       features:
       - type: media-player-volume-slider
       features_position: bottom
+    - type: tile
+      entity: select.departure_board_xxxxxx_announcements
+      name: Announcements
+      grid_options:
+        columns: 12
+      icon: mdi:bullhorn-outline
+      features:
+      - type: select-options
+      features_position: bottom
+    - type: tile
+      entity: number.departure_board_xxxxxx_announce_before
+      name: Announce before
+      grid_options:
+        columns: 12
+      icon: mdi:timer-outline
+      features:
+      - type: numeric-input
+        style: buttons
+      features_position: bottom
+      visibility:
+      - condition: state
+        entity: select.departure_board_xxxxxx_announcements
+        state_not: "Off"
+    - type: tile
+      entity: switch.departure_board_xxxxxx_chime_first
+      name: Chime first
+      grid_options:
+        columns: 6
+      icon: mdi:bell-outline
+      features:
+      - type: toggle
+      features_position: bottom
+      visibility:
+      - condition: state
+        entity: select.departure_board_xxxxxx_announcements
+        state_not: "Off"
+    - type: tile
+      entity: switch.departure_board_xxxxxx_quiet_at_night
+      name: Quiet at night
+      grid_options:
+        columns: 6
+      icon: mdi:sleep
+      features:
+      - type: toggle
+      features_position: bottom
+      visibility:
+      - condition: state
+        entity: select.departure_board_xxxxxx_announcements
+        state_not: "Off"
     - type: markdown
-      content: Announcements are set up in the blueprint, under **Announcements**.
+      content: Needs a speaker plugged into the board. To change the voice or add other speakers, open your departure board automation (Settings > Automations & scenes) and expand **Announcement voice and speakers**.
 - title: 🔧 System
   path: system
   type: sections

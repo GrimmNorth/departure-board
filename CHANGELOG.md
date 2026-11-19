@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1 - 2026-11-19 (beta)
+- Announcement settings are now on the board (Settings > Sound) and its device page: *Announcements* (Off, All trains, Delays only, or Favourites only: just your favourite trains, whether on time, late or cancelled), *Announce before*, *Chime first* and *Quiet at night* (follows the board's night times). Only the voice and extra speakers stay in the automation, under **Announcement voice and speakers**. Re-import the blueprint, then turn Announcements on from the board
+- Sound settings say they need a speaker plugged into the board
+- Announcements follow the station or route the board is showing, not just the first one (Tube and DLR stations stay quiet). Re-import the blueprint
+- The delay or cancellation reason on the scrolling line under the first train is orange (red when cancelled), like the rows below it. Before, only "Delayed 5 min" was orange and the reason was in the normal colour
+
 ## 2.2.0 - 2026-11-19 (beta)
 - Sound: optional station-style announcements from the blueprint (new **Announcements** section, off by default). A few minutes before each train from your first station or route: "The next train to depart from platform 1 will be..." or "We are sorry to announce..." for delays and cancellations. Choose which trains, how long before, the voice and speakers, a chime first, and quiet hours. Re-import the blueprint to get it
 - Sound: a new **Sound** page in the board's settings (Sounds on/off, volume, test chime), and *Sounds* and *Test sound* in Home Assistant
