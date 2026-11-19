@@ -24,7 +24,7 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "1.13.1"
+    version: "2.1.4"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio

@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.1.3.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.1.4.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "7528c9fd0c1f75ccb8adef9ce5c2c16c",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.1.3.ota.bin",
-        "summary": "Platform layout fixes, station messages options"
+        "md5": "93499ffa8ea720794f35a4aa691ff083",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.1.4.ota.bin",
+        "summary": "Speaker test, new themes, brightness fix"
       }
     }
   ]
