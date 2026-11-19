@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- Blueprint: the *Names on the board* option is gone; each station shows its own name
+- Announcements: pick the voice from a list (Google Translate British, five Piper voices, four Home Assistant Cloud voices) instead of typing a service and voice name. Announcements now use a British voice: before, Google used its American one. Re-import the blueprint
+
 ## 2.3.0 - 2026-11-19 (beta)
 - Faster and smaller: the board's drawing code was rewritten so the ten train rows share one piece of code instead of ten copies, and trains are read in place instead of being copied four times a second. The firmware is about 95 KB smaller (from 79% to 74% of the space an update can use), leaving room for future features
 - With the new blueprint, all ten trains arrive in one message each minute, so the board never shows a mix of new and old trains while they come in. Older blueprints still work
