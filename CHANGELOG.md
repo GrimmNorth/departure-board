@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.2 - 2026-11-19 (beta)
 - Announcements: a train that becomes 5 or more minutes late, or is cancelled, while it's on the board is announced straight away ("We are sorry to announce that the 17:42 ... is delayed, and is now expected at 17:50"), instead of waiting for its usual slot. Works with *All trains*, *Delays only* and *Favourites only*. Re-import the blueprint
 - Examples in the docs and code use York and Leeds
 
