@@ -167,9 +167,6 @@ variables:
   # announcements are switched on and set up on the board (Settings > Sound)
   ann_sel: "{{ device_entities(board_id) | select('match', 'select\\..*_announcements$') | first | default('') }}"
   ann_mode: "{{ states(ann_sel) if ann_sel else 'Off' }}"
-  # the station's name as the board shows it (favourites are saved with it, e.g. "07:42 Brough")
-  stn_name: >-
-    {{ label if label | length > 0 else tfl_name if is_tfl and tfl_name else (origin_name if origin_name | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True))) }}
   # the temperature, rounded ("" when there's no weather entity or it isn't available)
   wx_temp: >-
     {% set t = state_attr(weather_in, 'temperature') if weather_in else none %}{{ (t | float) | round(0) | int if t is number or (t is string and t | float(none) is not none) else '' }}
@@ -230,6 +227,9 @@ variables:
     {% set n = state_attr(station_id, 'station_name') if is_tfl else none %}{{ (n | string) | regex_replace('\\s+(Underground|DLR|Rail|Elizabeth line)?\\s*Station$', '', ignorecase=True) if n else '' }}
   tfl_status: >-
     {% set ns = namespace(m=[]) %}{% for e in tfl_members %}{% set tok = (e | replace('sensor.london_tfl_', '')).split('_')[0] %}{% set info = tfl_lines.get(tok) %}{% if info %}{% set st = 'sensor.london_underground_' ~ info[2] %}{% set v = states(st) %}{% if v not in ['Good Service', 'unknown', 'unavailable'] %}{% set dsc = (state_attr(st, 'Description') or '') | regex_replace('\\s+', ' ') | trim %}{% set m = dsc if dsc and dsc != 'Nothing to report' else info[0] ~ ': ' ~ v %}{% if m not in ns.m %}{% set ns.m = ns.m + [m] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.m | join('\n') }}
+  # the station's name as the board shows it (favourites are saved with it, e.g. "07:42 Brough")
+  stn_name: >-
+    {{ label if label | length > 0 else tfl_name if is_tfl and tfl_name else (origin_name if origin_name | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True))) }}
   # National Rail station messages (engineering works, strikes...), one per line, without the web links
   messages: >-
     {% if is_tfl %}{{ tfl_status }}{% else %}{% set ns = namespace(out=[]) %}{% set raw = state_attr(summary_ent, 'nrcc_messages') if summary_ent != '' else none %}{% for m in (raw if raw is list else []) %}{% if m is mapping %}{% set v = m.get('Value', m.get('value', '')) %}{% else %}{% set v = m %}{% endif %}{% set v = (v | string) | regex_replace('<[^>]*>', '') | replace('&amp;', '&') | replace('&quot;', '"') | replace('&#39;', "'") | replace('&lt;', '<') | replace('&gt;', '>') | replace('&nbsp;', ' ') | regex_replace('[‘’]', "'") | regex_replace('[“”]', '"') | regex_replace('[–—]', '-') | regex_replace('[^\x20-\x7E]', ' ') | regex_replace('\s+', ' ') | trim | truncate(400, true, '...') %}{% if v %}{% set ns.out = ns.out + [v] %}{% endif %}{% endfor %}{{ ns.out | join('\n') }}{% endif %}
@@ -431,7 +431,7 @@ actions:
           notification_id: "{{ note_id }}_grace"
   # announcements: a few minutes before each train from the station on the board (not Tube / DLR), once a minute
   - if:
-      - "{{ ann_mode in ['All trains', 'Delays only'] and trigger is defined and trigger.platform == 'time_pattern' }}"
+      - "{{ ann_mode in ['All trains', 'Delays only', 'Favourites only'] and trigger is defined and trigger.platform == 'time_pattern' }}"
     then:
       - variables:
           b_ents: "{{ device_entities(board_id) }}"
