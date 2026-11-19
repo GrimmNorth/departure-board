@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.4",
+  "version": "2.3.5",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.4.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.5.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "3a2d85d26e513626738b36a18c2136eb",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.4.ota.bin",
-        "summary": "The chime no longer plays again after each announcement. Trains shown as just Delayed no longer set off the My Rail Commute setting notification. Re-import the blueprint."
+        "md5": "cb34ea3a6d87bb0a465af7f3d181f577",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.5.ota.bin",
+        "summary": "The chime sounds clean again (it could sound distorted in 2.3.4)."
       }
     }
   ]
