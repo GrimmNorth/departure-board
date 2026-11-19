@@ -28,12 +28,13 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.3"
+    version: "2.3.4"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
   includes:
     - departure_board.h
+    - chime_pcm.h
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -138,10 +139,7 @@ api:
             condition:
               lambda: 'return id(sounds_sw).state && !id(board_media).is_muted();'
             then:
-              - media_player.speaker.play_on_device_media_file:
-                  id: board_media
-                  media_file: chime_sound
-                  announcement: false   # the chime's own input, so speech can join it
+              - script.execute: play_chime_now
     - action: set_blueprint_version
       variables:
         ver: int
@@ -293,6 +291,9 @@ button:
     entity_category: config
 
 globals:
+  - id: chime_pos            # how much of the chime has been handed to the speaker so far
+    type: size_t
+    initial_value: "0"
   - id: stn_count            # how many stations the blueprint offers (it sends this every minute)
     type: int
     restore_value: true
@@ -589,6 +590,30 @@ script:
             train: !lambda 'return to_string(n);'
             sched: !lambda 'return sched;'
             station: !lambda 'return stn;'
+  # the chime, fed straight into its own mixer input a piece at a time, at the speaker's volume. Not through the media
+  # player: there, speech arriving during the chime stopped it and played it again after the speech
+  - id: play_chime_now
+    mode: restart
+    then:
+      - lambda: |-
+          id(chime_pos) = 0;
+          id(chime_spk_in)->stop();
+          id(chime_spk_in)->set_audio_stream_info(audio::AudioStreamInfo(16, 1, 16000));
+          id(chime_spk_in)->set_volume(id(ann_spk_in)->get_volume());
+      - while:
+          condition:
+            lambda: 'return id(chime_pos) < departure::CHIME_PCM_LEN;'
+          then:
+            - lambda: |-
+                id(chime_pos) += id(chime_spk_in)->play(departure::CHIME_PCM + id(chime_pos),
+                                                         departure::CHIME_PCM_LEN - id(chime_pos));
+            - delay: 20ms
+      - lambda: 'id(chime_spk_in)->finish();'
+      - wait_until:
+          condition:
+            lambda: 'return !id(chime_spk_in)->is_running();'
+          timeout: 3s
+      - script.execute: panel_resync
   - id: test_sound
     then:
       - if:
@@ -596,10 +621,7 @@ script:
             lambda: 'return id(sounds_sw).state;'   # nothing with Sounds off
           then:
             - lambda: 'if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
-            - media_player.speaker.play_on_device_media_file:
-                id: board_media
-                media_file: chime_sound
-                announcement: false
+            - script.execute: play_chime_now
   # fills the board with a made-up station, every train's time counted from now
   - id: demo_fill
     then:
@@ -1276,7 +1298,8 @@ touchscreen:
               if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();
               else {   // stop the speech and the chime
                 id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).set_announcement(true).perform();
-                id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).perform();
+                id(play_chime_now).stop();
+                id(chime_spk_in)->stop();
               }
             }
             else if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
@@ -1352,33 +1375,14 @@ media_player:
     buffer_size: 32768          # about a second of speech: downloads gently instead of in one burst that upsets the screen
     volume_min: 0.4             # the slider's bottom end is quiet, not silent, so the middle of the scale is useful
     volume_initial: 1.0
-    files:
-      - id: chime_sound
-        file: sounds/chime.flac  # an original three-note chime, played on the board itself (compressed: a third of the size)
+    # the chime isn't played through here: see play_chime_now (an original three-note chime, chime_pcm.h)
     announcement_pipeline:
       speaker: ann_spk_in
       format: WAV               # Home Assistant converts it; the board has nothing to decode
       num_channels: 1
       sample_rate: 16000
-    # the chime plays here, so speech arriving part-way through doesn't stop it (both are 16 kHz mono)
-    media_pipeline:
-      speaker: chime_spk_in
-      format: WAV
-      num_channels: 1
-      sample_rate: 16000
-    # when the voice starts, fade the rest of the chime down under it
-    on_announcement:
-      - mixer_speaker.apply_ducking:
-          id: chime_spk_in
-          decibel_reduction: 12
-          duration: 0.4s
-    # after each sound: undo the fade, and put the screen's picture back in step, in case the busy moment made it slip
-    # (jitter at the left edge)
+    # after each sound: put the screen's picture back in step, in case the busy moment made it slip (jitter at the left edge)
     on_idle:
-      - mixer_speaker.apply_ducking:
-          id: chime_spk_in
-          decibel_reduction: 0
-          duration: 0s
       - script.execute: panel_resync
 
 font:
