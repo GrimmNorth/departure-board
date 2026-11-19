@@ -56,10 +56,10 @@ With more trains than rows, the board pages every 15 seconds (the footer shows *
 <img src="docs/screenshots/nr-classic.png" width="390" alt="Classic layout"> <img src="docs/screenshots/nr-compact.png" width="390" alt="Compact layout">
 
 ### Themes
-Classic amber (default), White LED, Modern LCD, Retro green, High contrast and Daylight (which turns amber at night).
+Classic amber (default), White LED, Modern LCD, Retro green, High contrast, Split-flap (white on grey flaps, like the old Solari boards), Airport (yellow on charcoal) and Night red (dim red, gentle in a bedroom at night).
 
 <img src="docs/screenshots/theme-white-led.png" width="260" alt="White LED"> <img src="docs/screenshots/theme-modern-lcd.png" width="260" alt="Modern LCD"> <img src="docs/screenshots/theme-retro-green.png" width="260" alt="Retro green">
-<img src="docs/screenshots/theme-high-contrast.png" width="260" alt="High contrast"> <img src="docs/screenshots/theme-daylight.png" width="260" alt="Daylight">
+<img src="docs/screenshots/theme-high-contrast.png" width="260" alt="High contrast">
 
 ### Favourite trains
 Press and hold a train to make it a favourite. It's saved as its time and station (e.g. *07:42 Brough*) in **Favourite trains** on the board's device page, where you can also type them, separated by commas. A time without a station counts at every station.

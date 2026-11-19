@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.4 - 2026-11-19 (beta)
+- Speaker test: the board's speaker socket now works as a media player (*Speaker*) in Home Assistant, for trying announcements. Nothing about sound shows on the board yet
+- *Brightness* is always the daytime brightness, in Home Assistant and on the board's Screen page. It's kept through restarts, night and idle dimming no longer change it, and after a restart in the day the screen goes back to it. Before, it could show the night level (or 10% after a restart at night), and a restart at night could leave the screen dim all the next day
+- *Daylight* theme removed. A board that was on Daylight switches to Split-flap; pick another under Theme
+- Three new themes: *Split-flap* (white on dark grey flaps, like the old Solari boards), *Airport* (yellow on charcoal, like flight screens) and *Night red* (dim red, gentle on night vision; on time and delays keep a dim green and orange)
+
 ## 2.1.3 - 2026-11-19 (beta)
 - Platform layout: the stops now show (with their times); they were missing at stations
 - Platform layout: the 2nd/3rd train line uses the row-size text, so destinations like Blackpool North fit instead of being cut short
