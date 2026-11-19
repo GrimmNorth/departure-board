@@ -519,7 +519,10 @@ actions:
               then:
                 - action: "esphome.{{ svc }}_play_chime"
                   continue_on_error: true
-                - delay: 2
+                # ask for the speech almost straight away: making and fetching it takes a second or two, so the
+                # voice arrives as the chime fades (waiting for the chime to finish first left a long gap)
+                - delay:
+                    milliseconds: 600
             - if:
                 - "{{ lang != '' }}"
               then:
