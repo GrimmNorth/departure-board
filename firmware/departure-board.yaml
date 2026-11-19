@@ -2208,7 +2208,7 @@ display:
           static const char *SPEEDN[3] = {"Slow", "Medium", "Fast"};
           const int RY0 = 32, RP = 44;                    // eight rows: top and pitch
           const int pg = id(settings_page);
-          const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
+          const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on a light background)
           int R = 0;
           bool dimr = false;                              // this row doesn't apply right now: drawn in grey
           auto why_off = [&](int p, int r) -> const char * {
@@ -2540,7 +2540,7 @@ display:
       int slot = 0;
       if (id(ui_screen) == 2 && millis() - id(last_fresh) > 30000) id(ui_screen) = 0;   // detail view times out
       const bool detail = (id(ui_screen) == 2);
-      // view: 0 = list, 1 = focus on the next train, 2 = clock screen (after idle time)
+      // view: 0 = list, 1 = the next train in full (Platform layout), 2 = clock screen (after idle time)
       const bool clock_idle = id(clock_after).state > 0 && (millis() - id(last_touch_any)) > (uint32_t) (id(clock_after).state * 60000.0f);
       const int view = detail ? 0 : (clock_idle ? 2 : (id(layout_select).active_index().value_or(0) == 3 ? 1 : 0));   // 1 = Platform layout
       bool dfound = false;
@@ -2671,7 +2671,7 @@ display:
           fgrid();
         }
       } else if (bgs > 0) {
-        // train details, focus mode and the clock screen: the footer band too
+        // train details, the Platform layout and the clock screen: the footer band too
         const int fb = 418 + 34;
         int ft = fb - std::max(F_SUB[fi]->get_capheight(), F_CLK[fi]->get_capheight()) - 7;
         int fbm = fb + std::abs(F_SUB[fi]->get_descender()) + 5;
@@ -2724,27 +2724,27 @@ display:
         it.print(x, 215, F_ROWL[fi], amber, TextAlign::CENTER_LEFT, id(wx_temp).c_str());
         it.circle(x + tw + 7, 215 - 14, 4, amber); it.circle(x + tw + 7, 215 - 14, 3, amber);   // degree sign
       };
-      // focus mode / clock screen: the trains are collected first, then the first one you can still catch is shown
-      struct FocusTrain {
+      // Platform layout / clock screen: the trains are collected first, then the first one you can still catch is shown
+      struct NextTrain {
         int n;
         std::string sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops;
         bool cancelled, late;
         int mins;
       };
-      static std::vector<FocusTrain> focus;
-      focus.clear();
-      auto focus_add = [&](int n, const std::string &sched, const std::string &exp, const std::string &plat,
+      static std::vector<NextTrain> nexts;
+      nexts.clear();
+      auto next_add = [&](int n, const std::string &sched, const std::string &exp, const std::string &plat,
                            const std::string &pchg, const std::string &pprev, const std::string &calls,
                            const std::string &oper, const std::string &delaym, const std::string &reason,
                            const std::string &stops, bool cancelled, bool late) {
-        if (focus.size() >= 10) return;
+        if (nexts.size() >= 10) return;
         const std::string pf = id(plat_filter).state;
         if (id(layout_select).active_index().value_or(0) == 3 && !pf.empty() && plat != pf) return;   // Platform layout: just the chosen platform
         int m = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
-        focus.push_back(FocusTrain{n, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late, m});
+        nexts.push_back(NextTrain{n, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late, m});
       };
-      auto fband = [&](int y0, int h) { lband(10, y0, 780, h); };     // band behind a focus line, following the Background setting
-      auto draw_next = [&](int vw, const FocusTrain &t, const FocusTrain *t2, const FocusTrain *t3) {
+      auto fband = [&](int y0, int h) { lband(10, y0, 780, h); };     // band behind a line of the next train, following the Background setting
+      auto draw_next = [&](int vw, const NextTrain &t, const NextTrain *t2, const NextTrain *t3) {
         std::string sched = t.sched, exp = t.exp, plat = t.plat, delaym = t.delaym;
         const bool cancelled = t.cancelled, late = t.late;
         const int mins = t.mins;
@@ -2781,7 +2781,7 @@ display:
           if (p2 != std::string::npos) ftline = t.oper.substr(0, p2);
         }
         // status on the right: Cancelled / Delayed / Exp 22:09 / On time, or a countdown (Tube, or Countdown on)
-        auto status = [&](const FocusTrain &f, Color &c) {
+        auto status = [&](const NextTrain &f, Color &c) {
           std::string s;
           c = f.cancelled ? red : (f.late ? orange : green);
           if (f.cancelled) s = "Cancelled";
@@ -2794,7 +2794,7 @@ display:
           return s;
         };
         // one train on one line: "1st 21:39 Hull ...... On time"
-        auto train_line = [&](const FocusTrain &f, const char *ord, int ytop, font::Font *fL) {
+        auto train_line = [&](const NextTrain &f, const char *ord, int ytop, font::Font *fL) {
           Color c;
           const std::string st = status(f, c);
           const int wst = width(st, fL);
@@ -3172,7 +3172,7 @@ display:
 
       if (HDR > 0 && view == 0) {
         font::Font *fh = id(f_hdr_0);
-        const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on Daylight)
+        const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);   // white (dark on a light background)
         const int hy = 5;                                                            // letters well clear of the line
         it.printf(TX, hy, fh, hc, "Time");
         // "Destination (all call at Leeds)" on a route or with the board's own "calling at" filter
@@ -3228,7 +3228,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(tn, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
+            next_add(tn, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = tn;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -3474,17 +3474,17 @@ display:
           top_prev = top_key_now; second_prev = second_key_now;
         }
       }
-      // focus mode / clock screen: skip trains too soon to walk to (if a walking time is set), then draw
-      if (view != 0 && !detail && !focus.empty()) {
+      // Platform layout / clock screen: skip trains too soon to walk to (if a walking time is set), then draw
+      if (view != 0 && !detail && !nexts.empty()) {
         size_t pick = 0;
-        for (size_t k = 0; k < focus.size(); k++) {
-          const FocusTrain &f = focus[k];
+        for (size_t k = 0; k < nexts.size(); k++) {
+          const NextTrain &f = nexts[k];
           if (!(walk > 0 && !f.cancelled && f.mins >= 0 && f.mins < walk)) { pick = k; break; }
         }
-        const FocusTrain *t2 = (pick + 1 < focus.size()) ? &focus[pick + 1] : nullptr;
-        const FocusTrain *t3 = (pick + 2 < focus.size()) ? &focus[pick + 2] : nullptr;
-        draw_next(view, focus[pick], t2, t3);
-        id(slot_train)[0] = focus[pick].n;
+        const NextTrain *t2 = (pick + 1 < nexts.size()) ? &nexts[pick + 1] : nullptr;
+        const NextTrain *t3 = (pick + 2 < nexts.size()) ? &nexts[pick + 2] : nullptr;
+        draw_next(view, nexts[pick], t2, t3);
+        id(slot_train)[0] = nexts[pick].n;
         slot = 1;
       }
 
@@ -3651,7 +3651,7 @@ display:
         info = pb;
         infoc = amber;
       }
-      const Color footc = (id(footer_colour).active_index().value_or(0) == 1) ? (id(bg_col).r > 200 ? Color(26, 26, 26) : Color(255, 255, 255)) : amber;   // logo and station name (dark on Daylight)
+      const Color footc = (id(footer_colour).active_index().value_or(0) == 1) ? (id(bg_col).r > 200 ? Color(26, 26, 26) : Color(255, 255, 255)) : amber;   // logo and station name (dark on a light background)
       std::string foot = STATION_NAMES[si];
       if (id(layout_select).active_index().value_or(0) == 3 && !id(plat_filter).state.empty() && !detail) foot += "  Platform " + id(plat_filter).state;
       if (info.empty() && (HDR == 0 || view != 0)) {
