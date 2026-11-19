@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.1.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.1.2.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "a7b70ada1439f4f65540b2726c449f40",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.1.1.ota.bin",
-        "summary": "Settings redesign, favourites with a heart and phone alerts (re-import the blueprint for alerts)"
+        "md5": "608b17c78939a58977f02be1461a0df1",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.1.2.ota.bin",
+        "summary": "New Platform layout, long destinations, footer messages, route stop times (re-import the blueprint)"
       }
     }
   ]
