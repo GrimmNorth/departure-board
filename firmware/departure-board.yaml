@@ -16,7 +16,11 @@ esphome:
       # follow the update channel chosen in Home Assistant (Stable unless changed)
       - lambda: |-
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
-      - delay: 20s
+      - delay: 5s
+      - speaker.play:
+          id: board_speaker
+          data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - delay: 15s
       - lambda: |-
           if (id(dim_state) != 0 || !id(backlight).current_values.is_on()) return;
           const float b = id(brightness_num).has_state() ? id(brightness_num).state / 100.0f : id(day_brightness);
@@ -37,12 +41,18 @@ esp32:
   cpu_frequency: 240MHz
   framework:
     type: esp-idf
+    advanced:
+      execute_from_psram: true   # keeps the screen fed while settings are saved to flash
     sdkconfig_options:
       CONFIG_ESPTOOLPY_FLASHSIZE_4MB: y
+      CONFIG_LCD_RGB_RESTART_IN_VSYNC: y   # if the picture slips, snap back on the next frame
 
 psram:
   mode: octal
   speed: 80MHz
+
+preferences:
+  flash_write_interval: 5min   # save changed settings less often
 
 logger:
   hardware_uart: UART0   # the USB-C port is wired to UART0 via a CH340 chip
@@ -1189,9 +1199,12 @@ media_player:
   - platform: speaker
     name: "Speaker"
     id: board_media
+    buffer_size: 32768          # about a second of speech: downloads gently instead of in one burst that upsets the screen
+    volume_min: 0.4             # the slider's bottom end is quiet, not silent, so the middle of the scale is useful
+    volume_initial: 0.8
     announcement_pipeline:
       speaker: board_speaker
-      format: FLAC
+      format: WAV               # Home Assistant converts it; the board has nothing to decode
       num_channels: 1
       sample_rate: 16000
 

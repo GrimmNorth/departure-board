@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.5 - 2026-11-19 (beta)
+- Speaker: the picture no longer jumps when a sound starts (the board downloaded the whole sound in one burst into a large buffer; it now uses a small one and plays uncompressed audio). Gentler volume scale, louder by default
+- Screen: fixes the brief flicker where part of the picture doubled or jumped down a few lines for a moment (seen on the column headings). The screen could miss a refresh while the board saved settings; the board now runs from its larger memory so the screen keeps going, snaps straight back if it ever slips, and saves settings less often
+- Speaker: no more hum after a restart. The amplifier hummed until the first sound played, so the board now plays a moment of silence as it starts
+
 ## 2.1.4 - 2026-11-19 (beta)
 - Speaker test: the board's speaker socket now works as a media player (*Speaker*) in Home Assistant, for trying announcements. Nothing about sound shows on the board yet
 - *Brightness* is always the daytime brightness, in Home Assistant and on the board's Screen page. It's kept through restarts, night and idle dimming no longer change it, and after a restart in the day the screen goes back to it. Before, it could show the night level (or 10% after a restart at night), and a restart at night could leave the screen dim all the next day
