@@ -93,6 +93,8 @@ api:
         - lambda: |-
             if (id(demo_kind) != 0) return;   // a demo board is showing
             if (id(route_to) != to || !id(route_ts).has_state()) { id(route_to) = to; id(route_ts).publish_state(to); }
+            if (id(station_ts).has_state()) { const std::string l = id(station_ts).state + (id(route_to).empty() ? std::string("") : " to " + id(route_to));
+              if (!l.empty() && (!id(stn_label_ts).has_state() || id(stn_label_ts).state != l)) id(stn_label_ts).publish_state(l); }
     # Called by the blueprint: the weather, temperature already rounded ("" when no weather entity is chosen)
     - action: update_weather
       variables:
@@ -128,7 +130,9 @@ api:
             if (id(demo_kind) != 0) return;   // a demo board is showing
             id(station_ts).publish_state(station);
             id(stn_status).publish_state(status);
-            { const char *bs = id(bp_ver) >= 2 ? "Up to date" : "Update available: re-import it";   // BP_NEED = 2
+            { const std::string l = id(station_ts).state + (id(route_to).empty() ? std::string("") : " to " + id(route_to));
+              if (!l.empty() && (!id(stn_label_ts).has_state() || id(stn_label_ts).state != l)) id(stn_label_ts).publish_state(l); }
+            { const char *bs = id(bp_ver) >= 3 ? "Up to date" : "Update available: re-import it";   // BP_NEED = 3
               if (!id(bp_ts).has_state() || id(bp_ts).state != bs) id(bp_ts).publish_state(bs); }
             id(data_ms_stn) = millis();
     - action: update_train
@@ -241,6 +245,24 @@ debug:
   update_interval: 60s
 
 button:
+  - platform: template
+    name: "Next station"
+    icon: mdi:chevron-right
+    on_press:
+      - lambda: |-
+          if (id(stn_count) < 2) return;
+          int nx = (int) id(stn_num).state + 1;
+          if (nx > id(stn_count)) nx = 1;
+          auto c = id(stn_num).make_call(); c.set_value(nx); c.perform();
+  - platform: template
+    name: "Previous station"
+    icon: mdi:chevron-left
+    on_press:
+      - lambda: |-
+          if (id(stn_count) < 2) return;
+          int nx = (int) id(stn_num).state - 1;
+          if (nx < 1) nx = id(stn_count);
+          auto c = id(stn_num).make_call(); c.set_value(nx); c.perform();
   - platform: restart
     name: "Restart"
     entity_category: config
@@ -276,7 +298,9 @@ globals:
     initial_value: "0"
   - id: pick_opts          # the station picker (Calling at / Highlight stop): its choices, "" = Off
     type: std::vector<std::string>
-  - id: pick_kind          # 0 = Calling at, 1 = Highlight stop
+  - id: plats_now          # platforms in the trains on the board just now (for the platform picker)
+    type: std::vector<std::string>
+  - id: pick_kind          # 0 = Calling at, 1 = Highlight stop, 2 = Platform
     type: int
     initial_value: "0"
   - id: pick_page
@@ -511,7 +535,7 @@ script:
       - lambda: |-
           if (id(ui_screen) != 0 || hy >= 406) return;
           int sl = -1;
-          if (id(focus_mode).state) sl = 0;
+          if (id(layout_select).active_index().value_or(0) == 3) sl = 0;
           else for (int i = 0; i < 10; i++) { if (id(slot_train)[i] == 0) break; if (hy < id(slot_ybot)[i]) { sl = i; break; } }
           const int tn = sl >= 0 ? id(slot_train)[sl] : 0;
           if (tn <= 0) return;
@@ -530,7 +554,7 @@ script:
           c.perform();
           id(fav_toast) = added ? t + " is now a favourite" : t + " removed from favourites";
           id(fav_toast_until) = millis() + 2500;
-          if (!id(focus_mode).state) { id(flash_slot) = sl; id(flash_until) = millis() + 400; id(pending_detail) = 0; }
+          if (!(id(layout_select).active_index().value_or(0) == 3)) { id(flash_slot) = sl; id(flash_until) = millis() + 400; id(pending_detail) = 0; }
           id(main_display).update();
   # Sent to Home Assistant; the blueprint turns it into a phone notification
   - id: fav_alert
@@ -899,7 +923,7 @@ touchscreen:
                 int r = (y - 32) / 44; if (r > 7) r = 7;
                 const int k = id(pick_page) * 16 + (x >= 400 ? 8 : 0) + r;            // left column first
                 if (k < n) {
-                  auto c = id(pick_kind) == 0 ? id(dest_filter).make_call() : id(fav_stop).make_call();
+                  auto c = id(pick_kind) == 0 ? id(dest_filter).make_call() : (id(pick_kind) == 1 ? id(fav_stop).make_call() : id(plat_filter).make_call());
                   c.set_value(id(pick_opts)[k]);
                   c.perform();
                   id(ui_screen) = 1; id(set_tap_t) = now;
@@ -921,7 +945,8 @@ touchscreen:
               const int sp0 = id(settings_page);
               const bool inactive = (sp0 == 1 && row == 5 && !id(paging_on).state) ||               // greyed out: nothing to change
                                     (sp0 == 2 && row >= 3 && row <= 5 && !id(night_dimming).state) ||
-                                    (sp0 == 2 && row == 7 && id(idle_minutes).state <= 0);
+                                    (sp0 == 2 && row == 7 && id(idle_minutes).state <= 0) ||
+                                    (sp0 == 3 && row == 3 && !(id(layout_select).active_index().value_or(0) == 3));
               if (!inactive) switch (id(settings_page)) {
                 case 0:   // Display
                   switch (row) {
@@ -937,7 +962,7 @@ touchscreen:
                       else if (sp < 2) id(scroll_speed).make_call().set_index(sp + 1).perform();
                       else id(scroll_enabled).turn_off();
                     } break;
-                    case 7: id(tfl_colours).toggle(); break;
+                    case 7: if (id(src_tfl)) id(tfl_colours).toggle(); else id(ord_labels).toggle(); break;
                   }
                   break;
                 case 1:   // Trains
@@ -1003,7 +1028,15 @@ touchscreen:
                   } break;
                     case 1: id(disruption_banner).toggle(); break;
                     case 2: id(show_logo).toggle(); break;
-                    case 3: id(focus_mode).toggle(); break;
+                    case 3: {
+                      std::vector<std::string> opts = id(plats_now);
+                      std::sort(opts.begin(), opts.end(), [](const std::string &p, const std::string &q) {
+                        const int a = atoi(p.c_str()), b = atoi(q.c_str());
+                        return a != b ? a < b : p < q;
+                      });
+                      opts.insert(opts.begin(), std::string(""));
+                      id(pick_opts) = opts; id(pick_kind) = 2; id(pick_page) = 0; id(ui_screen) = 5;
+                    } break;
                     case 4: if (plus || minus) { float v = id(clock_after).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(clock_after).make_call(); c.set_value(v); c.perform(); } break;
                     case 5: {                                   // 24 hour -> + seconds -> 12 hour -> + seconds
                       int k = ((id(clock_12h).state ? 2 : 0) + (id(show_seconds).state ? 1 : 0) + 1) % 4;
@@ -1092,11 +1125,11 @@ touchscreen:
             else if (y < 406) {
               // tap a train for its details
               int sl = -1;
-              if (id(focus_mode).state) sl = 0;
+              if (id(layout_select).active_index().value_or(0) == 3) sl = 0;
               else for (int i = 0; i < 10; i++) { if (id(slot_train)[i] == 0) break; if (y < id(slot_ybot)[i]) { sl = i; break; } }
               int tn = sl >= 0 ? id(slot_train)[sl] : 0;
               if (tn > 0) {
-                if (id(focus_mode).state) { id(detail_train) = tn; id(ui_screen) = 2; }
+                if (id(layout_select).active_index().value_or(0) == 3) { id(detail_train) = tn; id(ui_screen) = 2; }
                 else { id(flash_slot) = sl; id(flash_until) = millis() + 250; id(pending_detail) = tn; id(main_display).update(); }
               }
             }
@@ -1395,11 +1428,6 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
   - platform: template
-    name: "Focus mode"
-    id: focus_mode
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF   # on = one big view of just the next train
-  - platform: template
     name: "Fade cancelled trains"
     id: fade_cancelled
     optimistic: true
@@ -1414,6 +1442,12 @@ switch:
     id: page_anim
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Train numbers"
+    id: ord_labels
+    icon: mdi:format-list-numbered
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF     # 1st, 2nd, 3rd dimmed under each time (a favourite shows its heart instead)
   - platform: template
     name: "TfL line colours"
     id: tfl_colours
@@ -1478,6 +1512,16 @@ text:
             lambda: 'return !x.empty();'
           then:
             - lambda: 'id(custom_logo_tfl)->set_url(x); id(custom_logo_tfl)->update();'
+  - platform: template
+    name: "Platform"
+    id: plat_filter
+    icon: mdi:sign-direction
+    mode: text
+    min_length: 0
+    max_length: 8
+    optimistic: true
+    restore_value: true
+    initial_value: ""     # Platform layout: only trains from this platform ("" = all platforms)
   - platform: template
     name: "Destination filter"
     id: dest_filter
@@ -1582,7 +1626,15 @@ select:
     optimistic: true
     restore_value: true
     initial_option: "Calm"
-    options: ["Classic", "Calm", "Compact"]
+    options: ["Classic", "Calm", "Compact", "Platform"]
+  - platform: template
+    name: "Scroll station messages"
+    id: msg_scroll
+    icon: mdi:message-arrow-left-outline
+    optimistic: true
+    restore_value: true
+    initial_option: "Every 5 min"
+    options: ["Off", "Every 2 min", "Every 5 min", "Every 10 min"]
   - platform: template
     name: "Footer colour"
     id: footer_colour
@@ -1631,6 +1683,11 @@ text_sensor:
   - platform: template
     id: station_ts
     internal: true
+  - platform: template
+    id: stn_label_ts       # what the board is showing, e.g. "Brough" or "Brough to Hull"
+    name: "Station"
+    icon: mdi:map-marker
+    update_interval: never
   - platform: debug
     reset_reason:
       name: "Restart reason"
@@ -2336,10 +2393,10 @@ display:
         const int n = o.size(), pages = std::max(1, (n + 15) / 16);
         if (id(pick_page) >= pages) id(pick_page) = 0;
         const int page = id(pick_page);
-        const bool dest = id(pick_kind) == 0;
-        const std::string cur = dest ? id(dest_filter).state : id(fav_stop).state;
+        const bool dest = id(pick_kind) == 0, platk = id(pick_kind) == 2;
+        const std::string cur = dest ? id(dest_filter).state : (platk ? id(plat_filter).state : id(fav_stop).state);
         const Color hc = bg_col.r > 200 ? Color(26, 26, 26) : Color(255, 255, 255);
-        it.printf(20, 6, id(f_hdr_0), hc, "%s", dest ? "Settings: Trains > Calling at" : "Settings: Extras > Highlight stop");
+        it.printf(20, 6, id(f_hdr_0), hc, "%s", dest ? "Settings: Trains > Calling at" : (platk ? "Settings: Extras > Platform" : "Settings: Extras > Highlight stop"));
         if (pages > 1) it.printf(780, 6, id(f_hdr_0), hc, TextAlign::TOP_RIGHT, "%d/%d", page + 1, pages);
         for (int i = 0; i < 16; i++) {
           const int k = page * 16 + i;
@@ -2347,7 +2404,7 @@ display:
           const int x0 = 10 + (i / 8) * 395, y0 = 32 + (i % 8) * 44;
           lband(x0, y0, 385, 42);
           const bool sel = o[k] == cur;
-          std::string s = o[k].empty() ? std::string("Off") : o[k];
+          std::string s = o[k].empty() ? std::string(platk ? "All platforms" : "Off") : (platk ? "Platform " + o[k] : o[k]);
           int bx, by, bw, bh;
           it.get_text_bounds(0, 0, s.c_str(), id(f_row_0), TextAlign::TOP_LEFT, &bx, &by, &bw, &bh);
           if (bw > 330) {                              // too long: shorten with ".."
@@ -2362,8 +2419,9 @@ display:
           if (sel) it.filled_circle(x0 + 365, y0 + 21, 7, green);
           it.printf(x0 + 10, y0 + 21, id(f_row_0), sel ? green : amber, TextAlign::CENTER_LEFT, "%s", s.c_str());
         }
-        const char *h = n <= 1 ? "No stops yet: try again when trains are showing"
-                               : (dest ? "Only show trains that call at the stop you tap" : "The stop you tap is shown in white in the calling points");
+        const char *h = n <= 1 ? (platk ? "No platforms yet: try again when trains are showing" : "No stops yet: try again when trains are showing")
+                               : (dest ? "Only show trains that call at the stop you tap"
+                                       : (platk ? "Show only trains from the platform you tap" : "The stop you tap is shown in white in the calling points"));
         it.printf(400, 404, id(f_hdr_0), amber, TextAlign::CENTER, "%s", h);
         const char *PB[3] = {"< Settings", "More >", "Close"};
         for (int b = 0; b < 3; b++) {
@@ -2393,6 +2451,7 @@ display:
             if (p == 2 && r >= 3 && r <= 5 && !id(night_dimming).state) return "Turn on Night dimming to use this";
             if (p == 2 && (r == 4 || r == 5) && id(night_sun).state) return "Follows sunset and sunrise";
             if (p == 2 && r == 7 && id(idle_minutes).state <= 0) return "Set Idle dim after to use this";
+            if (p == 3 && r == 3 && !(id(layout_select).active_index().value_or(0) == 3)) return "Set Layout to Platform to use this";
             return nullptr;
           };
           auto ry = [&](int row) { return RY0 + row * RP; };
@@ -2442,7 +2501,7 @@ display:
           }
 
           static const char *HINTS[4][8] = {
-            {"Colours for the whole board", "Classic, Calm (first train scrolls) or Compact (more trains)",
+            {"Colours for the whole board", "Classic, Calm, Compact, or Platform (the next train in full)",
              "What sits behind the text: Dot matrix, Rows or Plain", "Large text shows fewer trains",
              "Small headings above the trains", "Slide between pages of trains",
              "How fast the calling points scroll, or Off", "Tube boards: each line in its own colour"},
@@ -2455,7 +2514,7 @@ display:
              "When night dimming starts", "When night dimming ends",
              "Dim when nobody has touched the board", "Brightness while idle"},
             {"A stop shown in white in the calling points: tap to pick one", "A banner when the line is disrupted",
-             "The logo in the footer", "Just the next train, big",
+             "The logo in the footer", "Platform layout: only trains from one platform",
              "Switch to the big clock after this long", "12 or 24 hour, with or without seconds",
              "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"}};
           static const char *ABOUT_HINTS[8] = {"The Wi-Fi network and its signal", "The board's address on your network",
@@ -2465,13 +2524,13 @@ display:
 
           if (pg == 0) {
             R = 0; band(R); lab(R, "Theme"); cyc(R, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
-            R = 1; band(R); lab(R, "Layout"); { static const char *LN[3] = {"Classic", "Calm", "Compact"}; cyc(R, LN[id(layout_select).active_index().value_or(0)]); }
+            R = 1; band(R); lab(R, "Layout"); { static const char *LN[4] = {"Classic", "Calm", "Compact", "Platform"}; cyc(R, LN[id(layout_select).active_index().value_or(0)]); }
             R = 2; band(R); lab(R, "Background"); { static const char *BN[3] = {"Plain", "Rows", "Dot matrix"}; cyc(R, BN[id(bg_style).active_index().value_or(1)]); }
             R = 3; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
             R = 4; band(R); lab(R, "Column headings"); onoff(R, id(col_headings).state);
             R = 5; band(R); lab(R, "Page animation"); onoff(R, id(page_anim).state);
             R = 6; band(R); lab(R, "Scrolling text"); cyc(R, id(scroll_enabled).state ? SPEEDN[id(scroll_speed).active_index().value_or(1)] : "Off");
-            R = 7; band(R); lab(R, "TfL line colours"); onoff(R, id(tfl_colours).state);
+            R = 7; band(R); if (id(src_tfl)) { lab(R, "TfL line colours"); onoff(R, id(tfl_colours).state); } else { lab(R, "Train numbers"); onoff(R, id(ord_labels).state); }
           }
           else if (pg == 1) {
             R = 0; band(R); lab(R, "Countdown"); onoff(R, id(countdown_mode).state);
@@ -2497,7 +2556,7 @@ display:
             R = 0; band(R); lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; cyc(R, f.empty() ? "Off" : f.c_str()); }
             R = 1; band(R); lab(R, "Disruption banner"); onoff(R, id(disruption_banner).state);
             R = 2; band(R); lab(R, "Show logo"); onoff(R, id(show_logo).state);
-            R = 3; band(R); lab(R, "Focus mode"); onoff(R, id(focus_mode).state);
+            R = 3; band(R); lab(R, "Platform"); { std::string pf = id(plat_filter).state; cyc(R, pf.empty() ? "All" : pf.c_str()); }
             R = 4; band(R); lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
             R = 5; band(R); lab(R, "Clock"); { static const char *CN[4] = {"24 hour", "24h + secs", "12 hour", "12h + secs"}; cyc(R, CN[(id(clock_12h).state ? 2 : 0) + (id(show_seconds).state ? 1 : 0)]); }
             R = 6; band(R); lab(R, "Footer colour"); cyc(R, id(footer_colour).active_index().value_or(0) == 1 ? "White" : "Theme");
@@ -2512,7 +2571,7 @@ display:
             if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) { snprintf(buf, sizeof(buf), "%s, %s ready", ESPHOME_PROJECT_VERSION, id(fw_update).update_info.latest_version.c_str()); val(R, orange, buf); }
             else { snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf); }
             R = 5; band(R); lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
-            R = 6; band(R); lab(R, "Blueprint"); if (dms == 0) val(R, grey, "Not sending yet"); else if (id(bp_ver) >= 2) val(R, green, "Up to date"); else val(R, orange, "Update available");
+            R = 6; band(R); lab(R, "Blueprint"); if (dms == 0) val(R, grey, "Not sending yet"); else if (id(bp_ver) >= 3) val(R, green, "Up to date"); else val(R, orange, "Update available");
             R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
           }
 
@@ -2521,10 +2580,11 @@ display:
             const int hy = RY0 + 8 * RP + 20;
             const char *h = nullptr; Color c = grey;
             const int sr = id(set_row);
-            const bool bp_old = dms != 0 && id(bp_ver) < 2;
+            const bool bp_old = dms != 0 && id(bp_ver) < 3;
             if (pg == 4 && id(grace_warn)) { h = "Tip: set Departed grace to 1 min (Trains page)"; c = orange; }
             else if (pg == 4 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
             else if (sr >= 0 && sr < 8 && why_off(pg, sr) != nullptr) { h = why_off(pg, sr); c = amber; }
+            else if (pg == 0 && sr == 7 && !id(src_tfl)) { h = "1st, 2nd, 3rd dimmed under each time"; c = amber; }
             else if (sr >= 0 && sr < 8) { h = pg < 4 ? HINTS[pg][sr] : ABOUT_HINTS[sr]; c = amber; }
             else if (pg == 4) h = nullptr;
             else h = "Tap a setting to change it";
@@ -2684,11 +2744,6 @@ display:
       const int speeds[3] = {20, 30, 50};       // scroll px per second
       const int sp = speeds[id(scroll_speed).active_index().value_or(1)];
       const std::string filt = id(dest_filter).state;
-      int lt_n = 0, lt_last = 0;        // trains sent, and the number of the last one (for "Last train")
-      {
-        const std::string *S[10] = {&id(stn_t1_scheduled_departure).state, &id(stn_t2_scheduled_departure).state, &id(stn_t3_scheduled_departure).state, &id(stn_t4_scheduled_departure).state, &id(stn_t5_scheduled_departure).state, &id(stn_t6_scheduled_departure).state, &id(stn_t7_scheduled_departure).state, &id(stn_t8_scheduled_departure).state, &id(stn_t9_scheduled_departure).state, &id(stn_t10_scheduled_departure).state};
-        for (int i = 0; i < 10; i++) if (departure::valid(*S[i])) { lt_n++; lt_last = i + 1; }
-      }
       const std::string favs = id(fav_times).state;
       const std::string fstop = id(fav_stop).state;       // favourite stop to highlight
       const int walk = (int) id(walk_minutes).state;
@@ -2702,7 +2757,7 @@ display:
       const bool detail = (id(ui_screen) == 2);
       // view: 0 = list, 1 = focus on the next train, 2 = clock screen (after idle time)
       const bool clock_idle = id(clock_after).state > 0 && (millis() - id(last_touch_any)) > (uint32_t) (id(clock_after).state * 60000.0f);
-      const int view = detail ? 0 : (clock_idle ? 2 : (id(focus_mode).state ? 1 : 0));
+      const int view = detail ? 0 : (clock_idle ? 2 : (id(layout_select).active_index().value_or(0) == 3 ? 1 : 0));   // 1 = Platform layout
       bool dfound = false;
       // just switched station: hide the old station's trains until the new ones arrive
       const bool switching = id(stn_switch_ms) != 0 && id(data_ms_stn) < id(stn_switch_ms) && millis() - id(stn_switch_ms) < 15000;
@@ -2721,6 +2776,7 @@ display:
       const Color cxl_col = Color((amber.r * 45 + band_col.r * 55) / 100, (amber.g * 45 + band_col.g * 55) / 100, (amber.b * 45 + band_col.b * 55) / 100);
       const Color sub_col = hi_con ? amber : Color((amber.r * 6 + band_col.r * 4) / 10, (amber.g * 6 + band_col.g * 4) / 10, (amber.b * 6 + band_col.b * 4) / 10);
       const Color sub_ora = hi_con ? orange : Color((orange.r * 6 + band_col.r * 4) / 10, (orange.g * 6 + band_col.g * 4) / 10, (orange.b * 6 + band_col.b * 4) / 10);
+      const Color sub_red = hi_con ? red : Color((red.r * 6 + band_col.r * 4) / 10, (red.g * 6 + band_col.g * 4) / 10, (red.b * 6 + band_col.b * 4) / 10);
       static std::vector<uint8_t> cmp_tall(10, 0);           // last frame: train needs a reason line
       std::vector<uint8_t> cmp_tall_now(10, 0);
       int cmp_page[10], cmp_y[10], cmp_ry[10], cmp_bot[10];
@@ -2767,8 +2823,9 @@ display:
       }
       static int anim_page = -1;
       static uint32_t anim_t0 = 0;
+      static bool anim_all = false;      // true: a train has left, so every row slides (the top one too)
       if (view == 0 && !detail && pages > 1 && page != anim_page) {
-        if (anim_page >= 0 && id(page_anim).state) { anim_t0 = millis(); id(anim_until) = anim_t0 + 250 + 150 * 9; }
+        if (anim_page >= 0 && id(page_anim).state) { anim_t0 = millis(); id(anim_until) = anim_t0 + 250 + 150 * 9; anim_all = false; }
         anim_page = page;
       }
       if (pages <= 1) anim_page = -1;
@@ -2885,7 +2942,7 @@ display:
       // focus mode / clock screen: the trains are collected first, then the first one you can still catch is shown
       struct FocusTrain {
         int n;
-        std::string sched, exp, plat, pchg, pprev, calls, oper, delaym, reason;
+        std::string sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops;
         bool cancelled, late;
         int mins;
       };
@@ -2894,10 +2951,12 @@ display:
       auto focus_add = [&](int n, const std::string &sched, const std::string &exp, const std::string &plat,
                            const std::string &pchg, const std::string &pprev, const std::string &calls,
                            const std::string &oper, const std::string &delaym, const std::string &reason,
-                           bool cancelled, bool late) {
+                           const std::string &stops, bool cancelled, bool late) {
         if (focus.size() >= 10) return;
+        const std::string pf = id(plat_filter).state;
+        if (id(layout_select).active_index().value_or(0) == 3 && !pf.empty() && plat != pf) return;   // Platform layout: just the chosen platform
         int m = departure::minutes_until(exp.empty() ? sched : exp, nowmin);
-        focus.push_back(FocusTrain{n, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late, m});
+        focus.push_back(FocusTrain{n, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late, m});
       };
       auto fband = [&](int y0, int h) { lband(10, y0, 780, h); };     // band behind a focus line, following the Background setting
       auto draw_next = [&](int vw, const FocusTrain &t, const FocusTrain *t2, const FocusTrain *t3) {
@@ -2924,173 +2983,125 @@ display:
           it.get_text_bounds(0, 0, s.c_str(), f, TextAlign::TOP_LEFT, &x0, &y0, &w0, &h0);
           return w0;
         };
-        // everything below is placed by the letters' own height (ink), so bands hug the text like the list
-        auto band_at = [&](font::Font *f, int ytop) { int t, b; ink_of(f, t, b); fband(ytop + t - 5, b - t + 10); };
-        // Tube: the line colour for the band, and the train's position split from the line and direction
-        bool fbar = false;
-        Color fcol;
-        std::string ftline = t.oper, ftloc;
+        font::Font *fL = F_ROWL[fi], *fS = F_SUB[fi];
+        int lT, lB, sT2, sB2;
+        ink_of(fL, lT, lB);
+        ink_of(fS, sT2, sB2);
+        const int hl = lB - lT, hs = sB2 - sT2;
+        // Tube: line and direction kept apart from where the train is
+        std::string ftline = t.oper;
         if (id(src_tfl)) {
-          const size_t a = t.oper.find(" - ");
-          const size_t b = a == std::string::npos ? std::string::npos : t.oper.find(" - ", a + 3);
-          if (b != std::string::npos) { ftline = t.oper.substr(0, b); ftloc = t.oper.substr(b + 3); }
-          if (id(tfl_colours).state && t.pprev.size() == 7 && t.pprev[0] == '#') {
-            int cr = strtol(t.pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(t.pprev.substr(3, 2).c_str(), nullptr, 16), cb2 = strtol(t.pprev.substr(5, 2).c_str(), nullptr, 16);
-            warm_rgb(cr, cg, cb2);
-            const int mx = std::max(cr, std::max(cg, cb2));
-            if (mx == 0) { cr = cg = cb2 = 200; } else if (mx < 150) { cr = cr * 150 / mx; cg = cg * 150 / mx; cb2 = cb2 * 150 / mx; }
-            fcol = Color(cr, cg, cb2);
-            fbar = true;
-          }
+          const size_t p1 = t.oper.find(" - ");
+          const size_t p2 = p1 == std::string::npos ? std::string::npos : t.oper.find(" - ", p1 + 3);
+          if (p2 != std::string::npos) ftline = t.oper.substr(0, p2);
         }
-        // line 1: "1st  13:52  Leeds" on a band, the ordinal in grey
+        // status on the right: Cancelled / Delayed / Exp 22:09 / On time, or a countdown (Tube, or Countdown on)
+        auto status = [&](const FocusTrain &f, Color &c) {
+          std::string s;
+          c = f.cancelled ? red : (f.late ? orange : green);
+          if (f.cancelled) s = "Cancelled";
+          else if (id(src_tfl) || id(countdown_mode).state) {
+            if (f.mins < 0) s = "--"; else if (f.mins <= 1) s = "Due"; else s = to_string(f.mins) + " min";
+          }
+          else if (f.late && departure::valid(f.exp) && f.exp.find(':') != std::string::npos) s = "Exp " + f.exp.substr(0, 5);
+          else if (f.late) s = "Delayed";
+          else s = "On time";
+          return s;
+        };
+        // one train on one line: "1st 21:39 Hull ...... On time"
+        auto train_line = [&](const FocusTrain &f, const char *ord, int ytop) {
+          Color c;
+          const std::string st = status(f, c);
+          const int wst = width(st, fL);
+          int x = 22;
+          it.printf(x, ytop, fL, sub_col, TextAlign::TOP_LEFT, "%s", ord);
+          x += width(std::string(ord) + " ", fL);
+          const Color tc = f.cancelled && id(fade_cancelled).state ? cxl_col : amber;
+          it.printf(x, ytop, fL, tc, TextAlign::TOP_LEFT, "%s", f.sched.c_str());
+          x += width(f.sched + "  ", fL);
+          std::string d = departure::destination(f.calls, 80);
+          for (size_t ai = 0; width(d, fL) > 784 - wst - 24 - x && ai < departure::ABBR_N; ai++) departure::abbrev_word(d, ai);
+          fit(d, fL, 784 - wst - 24 - x);
+          it.printf(x, ytop, fL, tc, TextAlign::TOP_LEFT, "%s", d.c_str());
+          it.printf(784, ytop, fL, c, TextAlign::TOP_RIGHT, "%s", st.c_str());
+        };
+
+        // ---- the next train, in full ----
+        const int TOP_BOT = 304;                                  // bottom of the top band
+        lband(10, 6, 780, TOP_BOT - 6);
+        int ink = 20;                                             // ink top of the next line
+        train_line(t, "1st", ink - lT);
+        ink += hl + 22;
+        // platform (orange when it has changed) and the train company
         {
-          font::Font *f = F_ROWL[fi];
-          int t, b;
-          ink_of(f, t, b);
-          const int ytop = 44 - (t + b) / 2;
-          const std::string ord = "1st  ";
-          std::string rest = sched + "  ";
-          const int wo = width(ord, f), wr = width(rest, f);
-          fit(dest, f, 760 - wo - wr);
-          rest += dest;
-          const int w = wo + width(rest, f);
-          band_at(f, ytop);
-          if (fbar) it.filled_rectangle(10, ytop + t - 5, 5, b - t + 10, fcol);
-          const int x0 = 400 - w / 2;
-          it.printf(x0, ytop, f, grey, TextAlign::TOP_LEFT, "%s", ord.c_str());
-          it.printf(x0 + wo, ytop, f, amber, TextAlign::TOP_LEFT, "%s", rest.c_str());
+          std::string pl;
+          if (!t.cancelled && bus) pl = "Replacement bus";
+          else if (!t.cancelled && departure::valid(plat)) {
+            pl = "Platform " + plat;
+            if (departure::truthy(t.pchg) && departure::valid(t.pprev) && t.pprev != plat && !id(src_tfl)) pl += " (was " + t.pprev + ")";
+          }
+          const bool changed = pl.find("(was") != std::string::npos;
+          std::string op = departure::valid(t.oper) ? (id(src_tfl) ? ftline : t.oper) : std::string("");
+          fit(op, fS, 760 - width(pl, fS) - 30);
+          if (!pl.empty()) it.printf(22, ink - sT2, fS, changed ? sub_ora : sub_col, TextAlign::TOP_LEFT, "%s", pl.c_str());
+          if (!op.empty()) it.printf(784, ink - sT2, fS, sub_col, TextAlign::TOP_RIGHT, "%s", op.c_str());
+          ink += hs + 18;
         }
-        // the countdown
-        if (cancelled) {
-          it.printf(400, 165, F_ROWL[fi], red, TextAlign::CENTER, "Cancelled");
-        } else {
-          char cb[24];
-          if (mins < 0) snprintf(cb, sizeof(cb), "--");
-          else if (mins <= 1) snprintf(cb, sizeof(cb), "Due");
-          else if (mins < 60) snprintf(cb, sizeof(cb), "%d min", mins);
-          else snprintf(cb, sizeof(cb), "%dh %02dm", mins / 60, mins % 60);
-          it.printf(400, 165, F_BIG[fi], sc, TextAlign::CENTER, "%s", cb);
-        }
-
-        // the lines under the countdown: status, reason (if any), platform/operator
-        font::Font *fs2 = F_SUB[fi];
-        font::Font *fr2 = F_ROW[fi];
-        int sT, sB, rT, rB;
-        ink_of(fs2, sT, sB);
-        ink_of(fr2, rT, rB);
-        std::string st = cancelled ? "Cancelled" : (late ? "Delayed" : "On time");
-        if (late && departure::valid(delaym) && delaym != "0") st += " " + delaym + " min";
-        if (late && departure::valid(exp) && exp.find(':') != std::string::npos) st += " - expt " + exp;
-        Color stc = sc;
-        if (id(src_tfl) && !cancelled) {
-          const std::string sn = id(station_ts).state;
-          const bool arr = ftloc == "At Platform" || (!sn.empty() && (ftloc.rfind("At " + sn, 0) == 0 || ftloc.rfind("Approaching " + sn, 0) == 0));
-          if (arr) { st = "Arriving"; stc = green; }
-          else { st = ftloc; stc = amber; }
-        }
-        fit(st, fr2, 760);
-        const bool has_reason = departure::valid(t.reason) && (late || cancelled);
-        std::string pl;
-        if (!cancelled && bus) pl = "Replacement bus";
-        else if (!cancelled && departure::valid(plat)) {
-          pl = "Platform " + plat;
-          if (departure::truthy(t.pchg) && departure::valid(t.pprev) && t.pprev != plat) pl += " (was " + t.pprev + ")";
-        }
-        const bool changed = !pl.empty() && !bus && departure::truthy(t.pchg) && departure::valid(t.pprev) && !id(src_tfl);
-        std::string op = departure::valid(t.oper) ? (id(src_tfl) ? ftline : t.oper) : std::string("");
-        const bool has_pl = !pl.empty() || !op.empty();
-
-        // the strip of following trains sits at the bottom, just above the footer
-        const int strip_top = 410 - sB;                       // ink bottom at 410; the footer band starts at 419
-        const int area_bot = (t2 != nullptr) ? strip_top + sT - 5 - 6 : 410;
-        const int area_top = 244;
-        const int gap = 12;
-        const int hr = rB - rT, hs = sB - sT;
-        const int n_sub = (has_reason ? 1 : 0) + (has_pl ? 1 : 0);
-        const int block = hr + n_sub * (gap + hs);
-        int ink_y = area_top + std::max(0, (area_bot - area_top - block) / 2);   // ink top of the first line
-
-        if (!st.empty()) it.printf(400, ink_y - rT, fr2, stc, TextAlign::TOP_CENTER, "%s", st.c_str());
-        ink_y += hr + gap;
-        if (has_reason) {
+        // why it's late or cancelled
+        if (departure::valid(t.reason) && (late || cancelled)) {
           std::string rs = t.reason;
-          const int ytop = ink_y - sT;
-          const int rw = width(rs, fs2);
-          if (rw <= 760) {
-            it.printf(400, ytop, fs2, sc, TextAlign::TOP_CENTER, "%s", rs.c_str());
-          } else if (!id(scroll_enabled).state) {
-            fit(rs, fs2, 760);
-            it.printf(400, ytop, fs2, sc, TextAlign::TOP_CENTER, "%s", rs.c_str());
-          } else {
-            const int cyc = rw + 120;
-            const int off = (int) (((uint64_t) millis() * sp / 1000) % cyc);
-            it.start_clipping(20, ytop + sT - 3, 780, ytop + sB + 3);
-            it.printf(20 - off, ytop, fs2, sc, TextAlign::TOP_LEFT, "%s", rs.c_str());
-            it.printf(20 - off + cyc, ytop, fs2, sc, TextAlign::TOP_LEFT, "%s", rs.c_str());
-            it.end_clipping();
-          }
-          ink_y += hs + gap;
+          fit(rs, fS, 760);
+          it.printf(22, ink - sT2, fS, cancelled ? sub_red : sub_ora, TextAlign::TOP_LEFT, "%s", rs.c_str());
+          ink += hs + 14;
         }
-        if (has_pl) {
-          const int ytop = ink_y - sT;
-          std::string sep = (!pl.empty() && !op.empty()) ? "   " : "";
-          fit(op, fs2, 760 - width(pl + sep, fs2));
-          const int wp = width(pl + sep, fs2);
-          const int x0 = 400 - (wp + width(op, fs2)) / 2;
-          if (!pl.empty()) it.printf(x0, ytop, fs2, changed ? orange : amber, TextAlign::TOP_LEFT, "%s", pl.c_str());
-          if (!op.empty()) it.printf(x0 + wp, ytop, fs2, amber, TextAlign::TOP_LEFT, "%s", op.c_str());
+        // calling points: "Ferriby (21:45), Hessle (21:51) and Hull (21:58)", wrapped; pages when long
+        if (!cancelled) {
+          std::vector<std::string> items;
+          if (departure::valid(t.stops)) {
+            for (auto &p : departure::points(t.stops)) {
+              const size_t ls = p.rfind(' ');
+              if (ls != std::string::npos && departure::is_hhmm(p.substr(ls + 1))) items.push_back(p.substr(0, ls) + " (" + p.substr(ls + 1) + ")");
+              else items.push_back(p);
+            }
+          } else for (auto &p : departure::points(t.calls)) items.push_back(p);
+          if (!items.empty()) {
+            it.printf(22, ink - sT2, fS, sub_col, TextAlign::TOP_LEFT, "Calling at:");
+            ink += hs + 10;
+            std::vector<std::string> words;
+            for (size_t i = 0; i < items.size(); i++) {
+              std::string w = items[i];
+              if (i + 2 < items.size()) w += ",";
+              else if (i + 2 == items.size()) w += " and";
+              else if (items.size() == 1) w += " only";
+              std::string cur;
+              for (char ch : w) { if (ch == ' ') { if (!cur.empty()) words.push_back(cur); cur.clear(); } else cur += ch; }
+              if (!cur.empty()) words.push_back(cur);
+            }
+            std::vector<std::string> lines;
+            std::string line;
+            for (auto &w : words) {
+              const std::string tryl = line.empty() ? w : line + " " + w;
+              if (width(tryl, fS) > 760 && !line.empty()) { lines.push_back(line); line = w; } else line = tryl;
+            }
+            if (!line.empty()) lines.push_back(line);
+            const int per = std::max(1, (TOP_BOT - 10 - ink) / (hs + 10));    // lines that fit in the band
+            const int pages_c = ((int) lines.size() + per - 1) / per;
+            const int pg0 = pages_c > 1 ? (int) ((millis() / 5000) % pages_c) * per : 0;
+            for (int i = pg0; i < (int) lines.size() && i < pg0 + per; i++) {
+              it.printf(22, ink - sT2, fS, amber, TextAlign::TOP_LEFT, "%s", lines[i].c_str());
+              ink += hs + 10;
+            }
+          }
         }
 
-        // the 2nd and 3rd trains, on a band above the footer
+        // ---- the 2nd and 3rd trains, taking turns ----
         if (t2 != nullptr) {
-          const FocusTrain *nx[2] = {t2, t3};
-          const char *ords[2] = {"2nd ", "3rd "};
-          const std::string sep = "   ";
-          const int ws = (t3 != nullptr) ? width(sep, fs2) : 0;
-          std::string head[2], dst[2];
-          int wo[2] = {0, 0}, wh[2] = {0, 0}, wd[2] = {0, 0};
-          int fixed = ws;
-          for (int k = 0; k < 2; k++) {
-            if (nx[k] == nullptr) continue;
-            head[k] = nx[k]->sched + " ";
-            dst[k] = departure::destination(nx[k]->calls, 40);
-            wo[k] = width(ords[k], fs2);
-            wh[k] = width(head[k], fs2);
-            wd[k] = width(dst[k], fs2);
-            fixed += wo[k] + wh[k];
-          }
-          // too long with the "2nd" / "3rd" labels: leave them out
-          if (fixed + wd[0] + wd[1] > 760) for (int k = 0; k < 2; k++) { fixed -= wo[k]; wo[k] = 0; }
-          // share the room: a short destination leaves the rest for a long one
-          const int avail = 760 - fixed;
-          int cap[2] = {avail, 0};
-          if (t3 != nullptr) {
-            if (wd[0] + wd[1] <= avail) { cap[0] = wd[0]; cap[1] = wd[1]; }
-            else if (wd[0] <= avail / 2) { cap[0] = wd[0]; cap[1] = avail - wd[0]; }
-            else if (wd[1] <= avail / 2) { cap[1] = wd[1]; cap[0] = avail - wd[1]; }
-            else { cap[0] = avail / 2; cap[1] = avail - avail / 2; }
-          }
-          int w = ws;
-          for (int k = 0; k < 2; k++) {
-            if (nx[k] == nullptr) continue;
-            fit(dst[k], fs2, cap[k]);
-            wd[k] = width(dst[k], fs2);
-            w += wo[k] + wh[k] + wd[k];
-          }
-          band_at(fs2, strip_top);
-          int x = 400 - w / 2;
-          for (int k = 0; k < 2; k++) {
-            if (nx[k] == nullptr) continue;
-            if (k == 1) x += ws;
-            if (wo[k] > 0) it.printf(x, strip_top, fs2, grey, TextAlign::TOP_LEFT, "%s", ords[k]);
-            x += wo[k];
-            const Color c = nx[k]->cancelled ? red : amber;
-            it.printf(x, strip_top, fs2, c, TextAlign::TOP_LEFT, "%s", head[k].c_str());
-            x += wh[k];
-            it.printf(x, strip_top, fs2, c, TextAlign::TOP_LEFT, "%s", dst[k].c_str());
-            x += wd[k];
-          }
+          const int MB_TOP = TOP_BOT + 10, MB_BOT = 410;
+          lband(10, MB_TOP, 780, MB_BOT - MB_TOP);
+          const bool two = t3 != nullptr;
+          const bool show3 = two && (millis() / 4000) % 2;
+          const int ytop = (MB_TOP + MB_BOT) / 2 - (lT + lB) / 2;
+          train_line(show3 ? *t3 : *t2, show3 ? "3rd" : "2nd", ytop);
         }
       };
       auto draw_detail = [&](std::string sched, std::string exp, std::string plat, std::string pchg, std::string calls,
@@ -3377,6 +3388,8 @@ display:
         if (id(show_platform).state) it.printf(PX, hy, fh, hc, TextAlign::TOP_RIGHT, "Plat");
         it.printf(784, hy, fh, hc, TextAlign::TOP_RIGHT, "Expected");
       }
+      std::string top_key_now, second_key_now;     // to spot the top train leaving
+      id(plats_now).clear();
       // ---- train 1 ----
       {
         std::string sched, exp, stat, plat, pchg, calls, dreason, creason, oper, delaym, stops, sarr, earr, pprev;
@@ -3393,6 +3406,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -3400,9 +3415,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 1;
           const int tnum = 1;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -3415,7 +3431,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(1, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(1, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 1;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -3423,8 +3439,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -3449,15 +3465,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -3501,12 +3544,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -3514,7 +3551,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -3575,7 +3612,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -3645,6 +3682,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -3652,9 +3691,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 2;
           const int tnum = 2;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -3667,7 +3707,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(2, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(2, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 2;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -3675,8 +3715,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -3701,15 +3741,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -3753,12 +3820,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -3766,7 +3827,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -3827,7 +3888,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -3897,6 +3958,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -3904,9 +3967,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 3;
           const int tnum = 3;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -3919,7 +3983,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(3, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(3, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 3;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -3927,8 +3991,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -3953,15 +4017,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -4005,12 +4096,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -4018,7 +4103,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -4079,7 +4164,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -4149,6 +4234,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4156,9 +4243,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 4;
           const int tnum = 4;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -4171,7 +4259,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(4, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(4, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 4;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -4179,8 +4267,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -4205,15 +4293,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -4257,12 +4372,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -4270,7 +4379,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -4331,7 +4440,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -4401,6 +4510,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4408,9 +4519,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 5;
           const int tnum = 5;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -4423,7 +4535,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(5, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(5, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 5;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -4431,8 +4543,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -4457,15 +4569,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -4509,12 +4648,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -4522,7 +4655,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -4583,7 +4716,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -4653,6 +4786,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4660,9 +4795,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 6;
           const int tnum = 6;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -4675,7 +4811,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(6, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(6, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 6;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -4683,8 +4819,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -4709,15 +4845,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -4761,12 +4924,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -4774,7 +4931,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -4835,7 +4992,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -4905,6 +5062,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -4912,9 +5071,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 7;
           const int tnum = 7;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -4927,7 +5087,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(7, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(7, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 7;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -4935,8 +5095,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -4961,15 +5121,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -5013,12 +5200,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -5026,7 +5207,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -5087,7 +5268,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -5157,6 +5338,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -5164,9 +5347,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 8;
           const int tnum = 8;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -5179,7 +5363,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(8, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(8, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 8;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -5187,8 +5371,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -5213,15 +5397,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -5265,12 +5476,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -5278,7 +5483,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -5339,7 +5544,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -5409,6 +5614,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -5416,9 +5623,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 9;
           const int tnum = 9;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -5431,7 +5639,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(9, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(9, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 9;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -5439,8 +5647,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -5465,15 +5673,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -5517,12 +5752,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -5530,7 +5759,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -5591,7 +5820,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -5661,6 +5890,8 @@ display:
           for (auto &d : DIRS) { size_t dp = oper_s.find(d[0]); if (dp != std::string::npos) { oper_s.replace(dp, strlen(d[0]), d[1]); break; } }
         }
         bool cancelled = (stat == "cancelled");
+        if (departure::valid(plat) && plat.find("us") == std::string::npos && id(plats_now).size() < 20 &&
+            std::find(id(plats_now).begin(), id(plats_now).end(), plat) == id(plats_now).end()) id(plats_now).push_back(plat);
         if (departure::valid(sched) && nowmin >= 0) {
           const std::string &tt = exp.size() >= 5 ? exp : sched;
           int dm = ((atoi(tt.substr(0, 2).c_str()) * 60 + atoi(tt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
@@ -5668,9 +5899,10 @@ display:
         }
         if (departure::valid(sched) && !departure::departed(exp.empty() ? sched : exp, nowmin, grace)
             && departure::calls_at(calls, filt) && !(cancelled && id(hide_cancelled).state)) {
-          std::string dest = departure::destination(calls, DMAX);
+          std::string dest = departure::destination(calls, 80);
           bool late = (stat == "delayed");
           const int eidx = elig++;
+          if (eidx == 0) top_key_now = sched + "|" + dest; else if (eidx == 1) second_key_now = sched + "|" + dest;
           if (eidx < 10) id(elig_list)[eidx] = 10;
           const int tnum = 10;
           if (eidx < 10) cmp_tall_now[eidx] = (late || cancelled) && departure::valid(reason);
@@ -5683,7 +5915,7 @@ display:
               draw_detail(sched, exp, plat, pchg, calls, reason, oper, delaym, stops, sarr, earr, pprev, cancelled, late); dfound = true;
             }
           } else if (view != 0) {
-            focus_add(10, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, cancelled, late);
+            focus_add(10, sched, exp, plat, pchg, pprev, calls, oper, delaym, reason, stops, cancelled, late);
           } else if ((lay == 2 ? (slot < 10 && eidx < 10 && cmp_y[eidx < 10 ? eidx : 0] != C_NONE) : slot < count) && on_page(eidx) && !switching) {
           id(slot_train)[slot] = 10;
           id(slot_ybot)[slot] = (lay == 2) ? cmp_bot[eidx] : 6 + HDR + (slot + 1) * H;
@@ -5691,8 +5923,8 @@ display:
           // page animation: the text slides up into its row, one row after another (the pinned top train stays)
           int aoff = 0;
           const int arow_top = slot > 0 ? id(slot_ybot)[slot - 1] : 6 + HDR;
-          if (anim_active && !(eidx == 0 && (lay == 2 || pin))) {
-            const int k = slot - ((lay == 2 || pin) ? 1 : 0);   // order among the rows that move
+          if (anim_active && (anim_all || !(eidx == 0 && (lay == 2 || pin)))) {
+            const int k = slot - ((lay == 2 || pin) && !anim_all ? 1 : 0);   // order among the rows that move
             int el = (int) (millis() - anim_t0) - 150 * k;      // rows appear one after another
             float p = el <= 0 ? 0.f : (el >= 250 ? 1.f : el / 250.f);
             p = 1.f - (1.f - p) * (1.f - p);
@@ -5717,15 +5949,42 @@ display:
             const int bh = id(slot_ybot)[slot] - bt - 6;
             if (bh > 0) it.filled_rectangle(10, bt + 3 + aoff, 5, bh, Color(cr, cg, cb));
           }
-          if (departure::fav_match(favs, sched, fav_stn)) {
-            int ux, uy, uw, uh;
-            it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
-            if (lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE)) {
-              const int hy0 = (lay == 2 && eidx != 0) ? cmp_ry[eidx] + aoff : y + SUBOFF;
-              heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
-            } else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+          {
+            const bool has_sub = lay != 2 || eidx == 0 || (eidx < 10 && cmp_ry[eidx] != C_NONE);
+            const int hy0 = (lay == 2 && eidx != 0 && eidx < 10) ? cmp_ry[eidx] + aoff : y + SUBOFF;
+            if (departure::fav_match(favs, sched, fav_stn)) {
+              int ux, uy, uw, uh;
+              it.get_text_bounds(TX, y, sched.c_str(), fr, TextAlign::TOP_LEFT, &ux, &uy, &uw, &uh);
+              if (has_sub) heart(ux + uw / 2, hy0 + (sT + sB) / 2, L ? 5 : 4, c0);
+              else it.filled_rectangle(ux, uy + uh + 2, uw, 3, c0);
+            } else if (id(ord_labels).state && has_sub) {            // train number, dimmed under the time
+              const int n = eidx + 1;
+              const char *sfx = (n % 100 >= 11 && n % 100 <= 13) ? "th" : (n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th");
+              it.printf(TX, hy0, fs, c0s, "%d%s", n, sfx);
+            }
           }
-          it.printf(DX, y, fr, c0, "%s", dest.c_str());
+          {
+            // too long for the column: try the short forms real boards use, then slide (or "..." with scrolling off)
+            const int davail = (id(show_platform).state ? PX - (L ? 90 : 70) : 784 - (L ? 230 : 160)) - DX;
+            std::string dshow = dest;
+            int dbx, dby, dw, dbh;
+            it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            for (size_t ai = 0; dw > davail && ai < departure::ABBR_N; ai++)
+              if (departure::abbrev_word(dshow, ai)) it.get_text_bounds(0, 0, dshow.c_str(), fr, TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dbh);
+            if (dw > davail && id(scroll_enabled).state && davail > 40) {
+              const int over = dw - davail;                         // pixels hidden at the end
+              const int run = over * 1000 / sp;                     // time to slide across
+              const int cyc = 3000 + run + 1500;                    // still, slide, pause at the end
+              const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
+              const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
+              it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
+              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.end_clipping();
+            } else {
+              if (dw > davail) fit(dshow, fr, davail);
+              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+            }
+          }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
             const bool pbus = plat.find("Bus") != std::string::npos || plat.find("bus") != std::string::npos;
             const std::string pshow = pbus ? std::string("Bus") : plat;
@@ -5769,12 +6028,6 @@ display:
               if (ev && sv && earr != sarr && !soon) arr_c = sub_ora;
             }
           }
-          if (!id(src_tfl) && !cancelled && lt_n < 10 && tnum == lt_last && departure::valid(sched) && sched.size() >= 5 && nowmin >= 0) {
-            const int sh = atoi(sched.substr(0, 2).c_str());
-            const std::string &lt = exp.size() >= 5 && isdigit(exp[0]) ? exp : sched;
-            const int ld = ((atoi(lt.substr(0, 2).c_str()) * 60 + atoi(lt.substr(3, 2).c_str()) - nowmin) % 1440 + 1440) % 1440;
-            if ((sh >= 21 || sh < 3) && ld <= 60) arr_s = arr_s.empty() ? std::string("Last train") : "Last train  -  " + arr_s;
-          }
           if (lay != 0 && eidx != 0) {                       // only the next train scrolls, on every page
             // Calm and Compact: only the first train scrolls. Later rows stay still: the reason in
             // orange/red for a late or cancelled train; otherwise the operator (Calm) or nothing (Compact)
@@ -5782,7 +6035,7 @@ display:
             Color mc = grey;
             if ((late || cancelled) && departure::valid(reason)) {
               msg = reason;                                   // the time column already shows the delay
-              mc = cancelled ? red : orange;
+              mc = cancelled ? sub_red : sub_ora;
             } else if (lay == 1) {
               mc = soon ? grey : sub_col;
               msg = departure::valid(oper) ? oper_s : "Calling at " + (departure::valid(stops) ? stops : departure::calling_list(calls, 200));
@@ -5843,7 +6096,7 @@ display:
           }
           it.get_text_bounds(0, 0, tail.c_str(), fs, TextAlign::TOP_LEFT, &bx, &by, &tw, &bh);
           int hw = bw - tw;
-          Color rc = cancelled ? red : orange;
+          Color rc = cancelled ? sub_red : sub_ora;   // dimmed like the rest of the second line
           int sy = y + SUBOFF;
           // favourite stop: drawn in white
           int hend = 0;
@@ -5898,6 +6151,16 @@ display:
         }
       }
 
+      {
+        static std::string top_prev, second_prev;
+        if (view == 0 && !detail && !switching) {
+          if (!top_prev.empty() && top_key_now != top_prev && top_key_now == second_prev && id(page_anim).state
+              && (page == 0 || pin || lay == 2)) {
+            anim_t0 = millis(); id(anim_until) = anim_t0 + 250 + 150 * 9; anim_all = true;
+          }
+          top_prev = top_key_now; second_prev = second_key_now;
+        }
+      }
       // focus mode / clock screen: skip trains too soon to walk to (if a walking time is set), then draw
       if (view != 0 && !detail && !focus.empty()) {
         size_t pick = 0;
@@ -5967,6 +6230,7 @@ display:
       }
       // nothing to show: say why
       if (slot == 0 && !detail && elig == 0) {
+        it.filled_rectangle(0, 0, 800, 416, bg_col);         // clear the column headings and empty row bands (the footer starts at 418)
         std::string l1, l2;
         bool big = false;
         std::string h1, h2;          // help lines in the smaller, softer text
@@ -6076,6 +6340,7 @@ display:
       }
       const Color footc = (id(footer_colour).active_index().value_or(0) == 1) ? (id(bg_col).r > 200 ? Color(26, 26, 26) : Color(255, 255, 255)) : amber;   // logo and station name (dark on Daylight)
       std::string foot = STATION_NAMES[si];
+      if (id(layout_select).active_index().value_or(0) == 3 && !id(plat_filter).state.empty() && !detail) foot += "  Platform " + id(plat_filter).state;
       if (info.empty() && (HDR == 0 || view != 0)) {
         if (!filt.empty()) foot += " > " + filt;
         else if (!id(route_to).empty()) foot += " > " + id(route_to);
@@ -6199,8 +6464,42 @@ display:
           info_left -= 34;
         }
       }
-      fit(foot, F_SUB[fi], info_left - 20 - fx);
-      it.printf(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
+      // station messages: every few minutes they scroll once across the footer, in place of the station name
+      bool mscroll = false;
+      {
+        static uint32_t ms_t0 = 0, ms_last = 0;
+        const int msi = id(msg_scroll).active_index().value_or(2);
+        const uint32_t every = msi == 1 ? 120000UL : (msi == 2 ? 300000UL : 600000UL);
+        const int mx0 = fx, mx1 = info_left - 20;
+        if (msi > 0 && id(msg_n) > 0 && id(scroll_enabled).state && !detail && !switching && mx1 - mx0 > 80) {
+          if (ms_t0 == 0 && (ms_last == 0 || millis() - ms_last > every)) ms_t0 = millis();
+          if (ms_t0 != 0) {
+            std::string mt;
+            bool sep = false;
+            for (char ch : id(msg_text)) {
+              if (ch == '\n') { if (!mt.empty()) sep = true; }
+              else { if (sep) { mt += "   -   "; sep = false; } mt += ch; }
+            }
+            int mbx, mby, mw, mbh;
+            it.get_text_bounds(0, 0, mt.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &mbx, &mby, &mw, &mbh);
+            const int off = (int) ((uint64_t) (millis() - ms_t0) * sp / 1000);
+            if (mt.empty() || off > (mx1 - mx0) + 40 + mw) { ms_t0 = 0; ms_last = millis(); }
+            else {
+              mscroll = true;
+              const int x = mx1 - off;
+              it.start_clipping(mx0, fb - 40, mx1, fb + 12);
+              it.filled_circle(x + 14, fb - 11, 14, orange);                   // an orange "i" leads the message
+              it.printf(x + 14, fb - 11, F_SUB[fi], bg_col, TextAlign::CENTER, "i");
+              it.printf(x + 40, fb, F_SUB[fi], amber, TextAlign::BASELINE_LEFT, "%s", mt.c_str());
+              it.end_clipping();
+            }
+          }
+        } else ms_t0 = 0;
+      }
+      if (!mscroll) {
+        fit(foot, F_SUB[fi], info_left - 20 - fx);
+        it.printf(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
+      }
 
 qr_code:
   - id: qr_help              # setup screens: a link to the step in the setup guide (changed as the board goes through setup)
