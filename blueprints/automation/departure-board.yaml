@@ -178,6 +178,12 @@ triggers:
     event_type: esphome.departure_board_favourite
     event_data:
       device_id: !input board
+  # the board says a train has just become late or been cancelled (for announcements)
+  - trigger: event
+    id: chg
+    event_type: esphome.departure_board_change
+    event_data:
+      device_id: !input board
 
 variables:
   board_id: !input board
@@ -250,7 +256,7 @@ variables:
     {% set n = state_attr(station_id, 'station_name') if is_tfl else none %}{{ (n | string) | regex_replace('\\s+(Underground|DLR|Rail|Elizabeth line)?\\s*Station$', '', ignorecase=True) if n else '' }}
   tfl_status: >-
     {% set ns = namespace(m=[]) %}{% for e in tfl_members %}{% set tok = (e | replace('sensor.london_tfl_', '')).split('_')[0] %}{% set info = tfl_lines.get(tok) %}{% if info %}{% set st = 'sensor.london_underground_' ~ info[2] %}{% set v = states(st) %}{% if v not in ['Good Service', 'unknown', 'unavailable'] %}{% set dsc = (state_attr(st, 'Description') or '') | regex_replace('\\s+', ' ') | trim %}{% set m = dsc if dsc and dsc != 'Nothing to report' else info[0] ~ ': ' ~ v %}{% if m not in ns.m %}{% set ns.m = ns.m + [m] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.m | join('\n') }}
-  # the station's name as the board shows it (favourites are saved with it, e.g. "07:42 Brough")
+  # the station's name as the board shows it (favourites are saved with it, e.g. "07:42 York")
   stn_name: >-
     {{ tfl_name if is_tfl and tfl_name else (origin_name if origin_name | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True))) }}
   # National Rail station messages (engineering works, strikes...), one per line, without the web links
@@ -293,166 +299,170 @@ actions:
                     data:
                       tag: "departure_board_{{ fd.sched | replace(':', '') }}"
       - stop: Favourite train alert handled
-  # this blueprint's version, so the board can say when it needs re-importing. Raise it whenever a
-  # change needs the new blueprint (and BP_NEED in the firmware). Only newer boards have the action.
+  # everything except an announcement-only run: send the trains and the rest to the board
   - if:
-      - "{{ board_ents | select('search', '_blueprint$') | list | count > 0 }}"
+      - "{{ trigger.id != 'chg' }}"
     then:
-      - action: "esphome.{{ svc }}_set_blueprint_version"
+      # this blueprint's version, so the board can say when it needs re-importing. Raise it whenever a
+      # change needs the new blueprint (and BP_NEED in the firmware). Only newer boards have the action.
+      - if:
+          - "{{ board_ents | select('search', '_blueprint$') | list | count > 0 }}"
+        then:
+          - action: "esphome.{{ svc }}_set_blueprint_version"
+            continue_on_error: true
+            data:
+              ver: 3
+      - action: "esphome.{{ svc }}_update_status"
         continue_on_error: true
         data:
-          ver: 3
-  - action: "esphome.{{ svc }}_update_status"
-    continue_on_error: true
-    data:
-      station: "{{ stn_name }}"
-      status: >-
-        {{ states(status_ent) if status_ent != '' else '' }}
-  # National Rail or London TfL: TfL boards count down and show the tunnel logo.
-  # Only boards with a "Data source" sensor have this action.
-  - if:
-      - "{{ board_ents | select('search', '_data_source$') | list | count > 0 }}"
-    then:
-      - action: "esphome.{{ svc }}_update_source"
+          station: "{{ stn_name }}"
+          status: >-
+            {{ states(status_ent) if status_ent != '' else '' }}
+      # National Rail or London TfL: TfL boards count down and show the tunnel logo.
+      # Only boards with a "Data source" sensor have this action.
+      - if:
+          - "{{ board_ents | select('search', '_data_source$') | list | count > 0 }}"
+        then:
+          - action: "esphome.{{ svc }}_update_source"
+            continue_on_error: true
+            data:
+              kind: "{{ 'tfl' if is_tfl else 'rail' }}"
+      # the route's destination for the board's "Destination (to ... only)" heading. Only boards with the
+      # route feature have the action (they also have a "Route" sensor); calling a missing action stops the automation.
+      - if:
+          - "{{ board_ents | select('search', '_route$') | list | count > 0 }}"
+        then:
+          - action: "esphome.{{ svc }}_update_route"
+            continue_on_error: true
+            data:
+              to: "{{ route_to }}"
+      # weather and the station's reliability. Only boards with a "Show weather" switch have these actions.
+      - if:
+          - "{{ board_ents | select('search', '_show_weather$') | list | count > 0 }}"
+        then:
+          - action: "esphome.{{ svc }}_update_weather"
+            continue_on_error: true
+            data:
+              temp: "{{ wx_temp | string if wx_cond != '' else '' }}"
+              cond: "{{ wx_cond }}"
+          - action: "esphome.{{ svc }}_update_history"
+            continue_on_error: true
+            data:
+              pct: "{{ hist_pct }}"
+              avg: "{{ hist_avg }}"
+      # station messages for the "i" in the footer. Only boards with a "Station messages" sensor have this action.
+      - if:
+          - "{{ board_ents | select('search', '_station_messages$') | list | count > 0 }}"
+        then:
+          - action: "esphome.{{ svc }}_update_messages"
+            continue_on_error: true
+            data:
+              msgs: "{{ messages }}"
+      # the next 10 trains, one entry each: London TfL live trains, or My Rail Commute's trains
+      - variables:
+          rows: >-
+            {% set ns = namespace(r=[]) %}{% for i in range(1, 11) %}{% if is_tfl %}{% set d = tfl_deps[i - 1] if i <= (tfl_deps | count) else {} %}{% set tm = (as_datetime(d.expected) | as_local).strftime('%H:%M') if d.expected is defined else '' %}{% set des = d.line.designation if d.line is defined and d.line.designation is defined else '' %}{% set loc = d.current_location if d.current_location is defined and d.current_location else '' %}{% set parts = [d.ln if d.ln is defined else '', des.split(' - ')[0] if ' - ' in des else des, loc] %}{% set ns.r = ns.r + [{
+              'sched': tm, 'expct': tm, 'plat': des.split(' - ')[-1] if ' - ' in des else '', 'pchg': '',
+              'stat': '' if not tm else ('arriving' if loc == 'At Platform' or loc.startswith('At ' ~ tfl_name) or loc.startswith('Approaching ' ~ tfl_name) else 'on_time'),
+              'dreason': '', 'creason': '', 'oper': parts | select | join(' - ') if tm else '', 'delaym': '', 'sarr': '', 'earr': '',
+              'pprev': d.col if tm and d.col is defined else '', 'stops': '',
+              'calls': [d.destination | regex_replace('^\\W+', '') | trim] if tm and d.destination is defined else []}] %}{% else %}{% set t = ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% set sid = state_attr(t, 'service_id') if t != '' else '' %}{% set c = state_attr(t, 'calling_points') if t != '' else none %}{% set c = c if c is list else [] %}{% set c0 = c %}{% set fd = (all_trains | selectattr('service_id', 'eq', sid) | map(attribute='destination') | first | default('')) if route_to and sid else '' %}{% if fd and (c | count == 0 or c[-1] != fd) %}{% set c = c + [fd] %}{% endif %}{% set st = namespace(out=[]) %}{% if by_dest and sid %}{% for dest in by_dest.values() %}{% for sv in dest.services if sv.service_id == sid %}{% for q in sv.calling_point_details %}{% set qt = q.expected if (q.expected | regex_match('^[0-9]{2}:[0-9]{2}$')) else q.scheduled %}{% set st.out = st.out + [q.name ~ ' ' ~ qt] %}{% endfor %}{% endfor %}{% endfor %}{% elif sid and sid in route_stops %}{% set st.out = [route_stops[sid]] %}{% elif route_to %}{% set ea = state_attr(t, 'estimated_arrival') %}{% set at = ea if (ea | string | regex_match('^[0-9]{2}:[0-9]{2}$')) else state_attr(t, 'scheduled_arrival') %}{% for q in c0 %}{% set st.out = st.out + [q ~ (' ' ~ at if q == route_to and at else '')] %}{% endfor %}{% if fd and fd not in c0 %}{% set st.out = st.out + [fd] %}{% endif %}{% endif %}{% set ns.r = ns.r + [{
+              'sched': state_attr(t, 'scheduled_departure') or '', 'expct': state_attr(t, 'expected_departure') or '',
+              'plat': state_attr(t, 'platform') or '', 'pchg': (state_attr(t, 'platform_changed') if state_attr(t, 'platform_changed') is not none else '') | string,
+              'stat': state_attr(t, 'status') or '', 'dreason': state_attr(t, 'delay_reason') or '', 'creason': state_attr(t, 'cancellation_reason') or '',
+              'oper': state_attr(t, 'operator') or '', 'delaym': (state_attr(t, 'delay_minutes') if state_attr(t, 'delay_minutes') is not none else '') | string,
+              'sarr': state_attr(t, 'scheduled_arrival') or '', 'earr': state_attr(t, 'estimated_arrival') or '', 'pprev': state_attr(t, 'previous_platform') or '',
+              'stops': st.out | join(', ') | truncate(250, true, ''), 'calls': c}] %}{% endif %}{% endfor %}{{ ns.r }}
+          # boards from 2.3.0 take all ten trains in one message, so they never show half old, half new trains
+          fw_ver: >-
+            {% set u = board_ents | select('match', 'update\\.') | first | default('') %}{% set v = (state_attr(u, 'installed_version') or '0') | string %}{% set p = (v.split('.') + ['0', '0'])[:3] | map('int', 0) | list %}{{ p[0] * 10000 + p[1] * 100 + p[2] }}
+      - if:
+          - "{{ fw_ver | int >= 20300 }}"
+        then:
+          - action: "esphome.{{ svc }}_update_trains"
+            continue_on_error: true
+            data:
+              sched: "{{ rows | map(attribute='sched') | map('string') | list }}"
+              expct: "{{ rows | map(attribute='expct') | map('string') | list }}"
+              plat: "{{ rows | map(attribute='plat') | map('string') | list }}"
+              pchg: "{{ rows | map(attribute='pchg') | map('string') | list }}"
+              stat: "{{ rows | map(attribute='stat') | map('string') | list }}"
+              dreason: "{{ rows | map(attribute='dreason') | map('string') | list }}"
+              creason: "{{ rows | map(attribute='creason') | map('string') | list }}"
+              oper: "{{ rows | map(attribute='oper') | map('string') | list }}"
+              delaym: "{{ rows | map(attribute='delaym') | map('string') | list }}"
+              sarr: "{{ rows | map(attribute='sarr') | map('string') | list }}"
+              earr: "{{ rows | map(attribute='earr') | map('string') | list }}"
+              pprev: "{{ rows | map(attribute='pprev') | map('string') | list }}"
+              stops: "{{ rows | map(attribute='stops') | map('string') | list }}"
+              calls: "{% set ns = namespace(l=[]) %}{% for r in rows %}{% set ns.l = ns.l + [r.calls | to_json(ensure_ascii=False)] %}{% endfor %}{{ ns.l }}"
+        else:
+          - repeat:
+              for_each: "{{ rows }}"
+              sequence:
+                - action: "esphome.{{ svc }}_update_train"
+                  continue_on_error: true
+                  data:
+                    n: "{{ repeat.index }}"
+                    sched: "{{ repeat.item.sched }}"
+                    expct: "{{ repeat.item.expct }}"
+                    plat: "{{ repeat.item.plat }}"
+                    pchg: "{{ repeat.item.pchg }}"
+                    stat: "{{ repeat.item.stat }}"
+                    dreason: "{{ repeat.item.dreason }}"
+                    creason: "{{ repeat.item.creason }}"
+                    oper: "{{ repeat.item.oper }}"
+                    delaym: "{{ repeat.item.delaym }}"
+                    sarr: "{{ repeat.item.sarr }}"
+                    earr: "{{ repeat.item.earr }}"
+                    pprev: "{{ repeat.item.pprev }}"
+                    stops: "{{ repeat.item.stops }}"
+                    calls: "{{ repeat.item.calls }}"
+      # tell the board how many stations there are
+      - action: "esphome.{{ svc }}_set_station_count"
         continue_on_error: true
         data:
-          kind: "{{ 'tfl' if is_tfl else 'rail' }}"
-  # the route's destination for the board's "Destination (to ... only)" heading. Only boards with the
-  # route feature have the action (they also have a "Route" sensor); calling a missing action stops the automation.
-  - if:
-      - "{{ board_ents | select('search', '_route$') | list | count > 0 }}"
-    then:
-      - action: "esphome.{{ svc }}_update_route"
-        continue_on_error: true
-        data:
-          to: "{{ route_to }}"
-  # weather and the station's reliability. Only boards with a "Show weather" switch have these actions.
-  - if:
-      - "{{ board_ents | select('search', '_show_weather$') | list | count > 0 }}"
-    then:
-      - action: "esphome.{{ svc }}_update_weather"
-        continue_on_error: true
-        data:
-          temp: "{{ wx_temp | string if wx_cond != '' else '' }}"
-          cond: "{{ wx_cond }}"
-      - action: "esphome.{{ svc }}_update_history"
-        continue_on_error: true
-        data:
-          pct: "{{ hist_pct }}"
-          avg: "{{ hist_avg }}"
-  # station messages for the "i" in the footer. Only boards with a "Station messages" sensor have this action.
-  - if:
-      - "{{ board_ents | select('search', '_station_messages$') | list | count > 0 }}"
-    then:
-      - action: "esphome.{{ svc }}_update_messages"
-        continue_on_error: true
-        data:
-          msgs: "{{ messages }}"
-  # the next 10 trains, one entry each: London TfL live trains, or My Rail Commute's trains
-  - variables:
-      rows: >-
-        {% set ns = namespace(r=[]) %}{% for i in range(1, 11) %}{% if is_tfl %}{% set d = tfl_deps[i - 1] if i <= (tfl_deps | count) else {} %}{% set tm = (as_datetime(d.expected) | as_local).strftime('%H:%M') if d.expected is defined else '' %}{% set des = d.line.designation if d.line is defined and d.line.designation is defined else '' %}{% set loc = d.current_location if d.current_location is defined and d.current_location else '' %}{% set parts = [d.ln if d.ln is defined else '', des.split(' - ')[0] if ' - ' in des else des, loc] %}{% set ns.r = ns.r + [{
-          'sched': tm, 'expct': tm, 'plat': des.split(' - ')[-1] if ' - ' in des else '', 'pchg': '',
-          'stat': '' if not tm else ('arriving' if loc == 'At Platform' or loc.startswith('At ' ~ tfl_name) or loc.startswith('Approaching ' ~ tfl_name) else 'on_time'),
-          'dreason': '', 'creason': '', 'oper': parts | select | join(' - ') if tm else '', 'delaym': '', 'sarr': '', 'earr': '',
-          'pprev': d.col if tm and d.col is defined else '', 'stops': '',
-          'calls': [d.destination | regex_replace('^\\W+', '') | trim] if tm and d.destination is defined else []}] %}{% else %}{% set t = ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% set sid = state_attr(t, 'service_id') if t != '' else '' %}{% set c = state_attr(t, 'calling_points') if t != '' else none %}{% set c = c if c is list else [] %}{% set c0 = c %}{% set fd = (all_trains | selectattr('service_id', 'eq', sid) | map(attribute='destination') | first | default('')) if route_to and sid else '' %}{% if fd and (c | count == 0 or c[-1] != fd) %}{% set c = c + [fd] %}{% endif %}{% set st = namespace(out=[]) %}{% if by_dest and sid %}{% for dest in by_dest.values() %}{% for sv in dest.services if sv.service_id == sid %}{% for q in sv.calling_point_details %}{% set qt = q.expected if (q.expected | regex_match('^[0-9]{2}:[0-9]{2}$')) else q.scheduled %}{% set st.out = st.out + [q.name ~ ' ' ~ qt] %}{% endfor %}{% endfor %}{% endfor %}{% elif sid and sid in route_stops %}{% set st.out = [route_stops[sid]] %}{% elif route_to %}{% set ea = state_attr(t, 'estimated_arrival') %}{% set at = ea if (ea | string | regex_match('^[0-9]{2}:[0-9]{2}$')) else state_attr(t, 'scheduled_arrival') %}{% for q in c0 %}{% set st.out = st.out + [q ~ (' ' ~ at if q == route_to and at else '')] %}{% endfor %}{% if fd and fd not in c0 %}{% set st.out = st.out + [fd] %}{% endif %}{% endif %}{% set ns.r = ns.r + [{
-          'sched': state_attr(t, 'scheduled_departure') or '', 'expct': state_attr(t, 'expected_departure') or '',
-          'plat': state_attr(t, 'platform') or '', 'pchg': (state_attr(t, 'platform_changed') if state_attr(t, 'platform_changed') is not none else '') | string,
-          'stat': state_attr(t, 'status') or '', 'dreason': state_attr(t, 'delay_reason') or '', 'creason': state_attr(t, 'cancellation_reason') or '',
-          'oper': state_attr(t, 'operator') or '', 'delaym': (state_attr(t, 'delay_minutes') if state_attr(t, 'delay_minutes') is not none else '') | string,
-          'sarr': state_attr(t, 'scheduled_arrival') or '', 'earr': state_attr(t, 'estimated_arrival') or '', 'pprev': state_attr(t, 'previous_platform') or '',
-          'stops': st.out | join(', ') | truncate(250, true, ''), 'calls': c}] %}{% endif %}{% endfor %}{{ ns.r }}
-      # boards from 2.3.0 take all ten trains in one message, so they never show half old, half new trains
-      fw_ver: >-
-        {% set u = board_ents | select('match', 'update\\.') | first | default('') %}{% set v = (state_attr(u, 'installed_version') or '0') | string %}{% set p = (v.split('.') + ['0', '0'])[:3] | map('int', 0) | list %}{{ p[0] * 10000 + p[1] * 100 + p[2] }}
-  - if:
-      - "{{ fw_ver | int >= 20300 }}"
-    then:
-      - action: "esphome.{{ svc }}_update_trains"
-        continue_on_error: true
-        data:
-          sched: "{{ rows | map(attribute='sched') | map('string') | list }}"
-          expct: "{{ rows | map(attribute='expct') | map('string') | list }}"
-          plat: "{{ rows | map(attribute='plat') | map('string') | list }}"
-          pchg: "{{ rows | map(attribute='pchg') | map('string') | list }}"
-          stat: "{{ rows | map(attribute='stat') | map('string') | list }}"
-          dreason: "{{ rows | map(attribute='dreason') | map('string') | list }}"
-          creason: "{{ rows | map(attribute='creason') | map('string') | list }}"
-          oper: "{{ rows | map(attribute='oper') | map('string') | list }}"
-          delaym: "{{ rows | map(attribute='delaym') | map('string') | list }}"
-          sarr: "{{ rows | map(attribute='sarr') | map('string') | list }}"
-          earr: "{{ rows | map(attribute='earr') | map('string') | list }}"
-          pprev: "{{ rows | map(attribute='pprev') | map('string') | list }}"
-          stops: "{{ rows | map(attribute='stops') | map('string') | list }}"
-          calls: "{% set ns = namespace(l=[]) %}{% for r in rows %}{% set ns.l = ns.l + [r.calls | to_json(ensure_ascii=False)] %}{% endfor %}{{ ns.l }}"
-    else:
-      - repeat:
-          for_each: "{{ rows }}"
-          sequence:
-            - action: "esphome.{{ svc }}_update_train"
-              continue_on_error: true
-              data:
-                n: "{{ repeat.index }}"
-                sched: "{{ repeat.item.sched }}"
-                expct: "{{ repeat.item.expct }}"
-                plat: "{{ repeat.item.plat }}"
-                pchg: "{{ repeat.item.pchg }}"
-                stat: "{{ repeat.item.stat }}"
-                dreason: "{{ repeat.item.dreason }}"
-                creason: "{{ repeat.item.creason }}"
-                oper: "{{ repeat.item.oper }}"
-                delaym: "{{ repeat.item.delaym }}"
-                sarr: "{{ repeat.item.sarr }}"
-                earr: "{{ repeat.item.earr }}"
-                pprev: "{{ repeat.item.pprev }}"
-                stops: "{{ repeat.item.stops }}"
-                calls: "{{ repeat.item.calls }}"
-  # tell the board how many stations there are
-  - action: "esphome.{{ svc }}_set_station_count"
-    continue_on_error: true
-    data:
-      count: "{{ stations | count }}"
-  # a notification in Home Assistant when the board can't get trains, or My Rail Commute needs a setting changed.
-  # Each one clears itself once it's fixed.
-  - if:
-      - "{{ data_bad_for | int >= 15 }}"
-    then:
-      - action: persistent_notification.create
-        continue_on_error: true
-        data:
-          notification_id: "{{ note_id }}_data"
-          title: "UK Departure Board: no trains"
-          message: >-
-            {{ stn_name if stn_name else 'The board\'s station' }} hasn't sent any trains for {{ data_bad_for }} minutes.
-            {% if is_tfl %}Check the London TfL integration in Settings > Devices & services.{% else %}Check My Rail Commute in
-            Settings > Devices & services: if it shows an error, your National Rail Darwin token may have expired or been
-            mistyped, so reconfigure it with a new token.{% endif %}
-    else:
-      - action: persistent_notification.dismiss
-        continue_on_error: true
-        data:
-          notification_id: "{{ note_id }}_data"
-  - if:
-      - "{{ not is_tfl and stale_trains | int > 0 }}"
-    then:
-      - action: persistent_notification.create
-        continue_on_error: true
-        data:
-          notification_id: "{{ note_id }}_grace"
-          title: "UK Departure Board: change one My Rail Commute setting"
-          message: >-
-            My Rail Commute is still listing trains that left a few minutes ago, so they take up rows on the board.
-            Open {{ stn_name if stn_name else 'your station' }} in Settings > Devices & services > My Rail Commute, choose
-            Configure > Disruption, and set "Departed train grace period" to 1 minute. This message goes away by itself once it's fixed.
-    else:
-      - action: persistent_notification.dismiss
-        continue_on_error: true
-        data:
-          notification_id: "{{ note_id }}_grace"
+          count: "{{ stations | count }}"
+      # a notification in Home Assistant when the board can't get trains, or My Rail Commute needs a setting changed.
+      # Each one clears itself once it's fixed.
+      - if:
+          - "{{ data_bad_for | int >= 15 }}"
+        then:
+          - action: persistent_notification.create
+            continue_on_error: true
+            data:
+              notification_id: "{{ note_id }}_data"
+              title: "UK Departure Board: no trains"
+              message: >-
+                {{ stn_name if stn_name else 'The board\'s station' }} hasn't sent any trains for {{ data_bad_for }} minutes.
+                {% if is_tfl %}Check the London TfL integration in Settings > Devices & services.{% else %}Check My Rail Commute in
+                Settings > Devices & services: if it shows an error, your National Rail Darwin token may have expired or been
+                mistyped, so reconfigure it with a new token.{% endif %}
+        else:
+          - action: persistent_notification.dismiss
+            continue_on_error: true
+            data:
+              notification_id: "{{ note_id }}_data"
+      - if:
+          - "{{ not is_tfl and stale_trains | int > 0 }}"
+        then:
+          - action: persistent_notification.create
+            continue_on_error: true
+            data:
+              notification_id: "{{ note_id }}_grace"
+              title: "UK Departure Board: change one My Rail Commute setting"
+              message: >-
+                My Rail Commute is still listing trains that left a few minutes ago, so they take up rows on the board.
+                Open {{ stn_name if stn_name else 'your station' }} in Settings > Devices & services > My Rail Commute, choose
+                Configure > Disruption, and set "Departed train grace period" to 1 minute. This message goes away by itself once it's fixed.
+        else:
+          - action: persistent_notification.dismiss
+            continue_on_error: true
+            data:
+              notification_id: "{{ note_id }}_grace"
   # announcements: a few minutes before each train from the station on the board (not Tube / DLR), once a minute
   - if:
-      - "{{ ann_mode in ['All trains', 'Delays only', 'Favourites only'] and trigger is defined and trigger.platform == 'time_pattern' }}"
+      - "{{ ann_mode in ['All trains', 'Delays only', 'Favourites only'] and trigger is defined and (trigger.platform == 'time_pattern' or trigger.id == 'chg') }}"
     then:
       - variables:
           which: "{{ ['delayed', 'cancelled'] if ann_mode == 'Delays only' else ['on_time', 'delayed', 'cancelled'] }}"
@@ -482,7 +492,7 @@ actions:
           # the trains to announce this minute, of the kinds chosen: each train that many minutes before its booked
           # time; a delayed train with a new time again that many minutes before the new time ("next_delayed")
           due: >-
-            {% set ns = namespace(l=[]) %}{% set nm = now().hour * 60 + now().minute %}{% for i in range(1, 11) %}{% set t = a_ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% if t %}{% set sd = state_attr(t, 'scheduled_departure') | string %}{% if sd | regex_match('^[0-9]{2}:[0-9]{2}$') and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ex = state_attr(t, 'expected_departure') | string %}{% set ex_ok = ex | regex_match('^[0-9]{2}:[0-9]{2}$') %}{% set k = 'cancelled' if state_attr(t, 'is_cancelled') or state_attr(t, 'status') == 'cancelled' else ('delayed' if (state_attr(t, 'delay_minutes') | int(0)) > 0 or (ex_ok and ex != sd) or ex | lower == 'delayed' else 'on_time') %}{% if k in which and ((sd[:2] | int) * 60 + (sd[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, k]] %}{% endif %}{% if k == 'delayed' and 'delayed' in which and ex_ok and ex != sd and ((ex[:2] | int) * 60 + (ex[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, 'next_delayed']] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.l }}
+            {% set ns = namespace(l=[]) %}{% if trigger.id == 'chg' %}{% set ce = trigger.event.data %}{% set t = a_ents | select('search', '_train_' ~ (ce.train | int(0)) ~ '$') | first | default('') %}{% set sd = state_attr(t, 'scheduled_departure') | string if t else '' %}{% if t and sd[:5] == ce.sched and ce.kind in which and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ns.l = [[t, ce.kind]] %}{% endif %}{{ ns.l }}{% else %}{% set nm = now().hour * 60 + now().minute %}{% for i in range(1, 11) %}{% set t = a_ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% if t %}{% set sd = state_attr(t, 'scheduled_departure') | string %}{% if sd | regex_match('^[0-9]{2}:[0-9]{2}$') and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ex = state_attr(t, 'expected_departure') | string %}{% set ex_ok = ex | regex_match('^[0-9]{2}:[0-9]{2}$') %}{% set k = 'cancelled' if state_attr(t, 'is_cancelled') or state_attr(t, 'status') == 'cancelled' else ('delayed' if (state_attr(t, 'delay_minutes') | int(0)) > 0 or (ex_ok and ex != sd) or ex | lower == 'delayed' else 'on_time') %}{% if k in which and ((sd[:2] | int) * 60 + (sd[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, k]] %}{% endif %}{% if k == 'delayed' and 'delayed' in which and ex_ok and ex != sd and ((ex[:2] | int) * 60 + (ex[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, 'next_delayed']] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.l }}{% endif %}
       - condition: "{{ not is_tfl and not quiet and tts_ent != '' and speakers | count > 0 and due | count > 0 }}"
       - repeat:
           for_each: "{{ due }}"

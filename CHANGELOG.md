@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.2 - 2026-11-19 (beta)
+- Announcements: a train that becomes 5 or more minutes late, or is cancelled, while it's on the board is announced straight away ("We are sorry to announce that the 17:42 ... is delayed, and is now expected at 17:50"), instead of waiting for its usual slot. Works with *All trains*, *Delays only* and *Favourites only*. Re-import the blueprint
+- Examples in the docs and code use York and Leeds
+
 ## 2.3.1 - 2026-11-19 (beta)
 - README and install page: shorter and simpler, with a fresh screenshot instead of the animation
 - Screen: if the picture slips and jitters at the left edge after a sound, the board now puts it back in step as soon as the sound ends. The screen is also fed slightly slower (14 MHz instead of 15), which leaves more room for sound and the picture at the same time
@@ -19,7 +23,7 @@
 
 ## 2.2.2 - 2026-11-19 (beta)
 - Blueprint (already out, fixed on 19 Nov): the 2.2.1 blueprint stopped sending trains to the board; re-import it if your board shows no trains. *Favourites only* announcements now switch on too
-- Announcements: a delayed train with a new time is announced again a few minutes before its new time ("The next train to depart from platform 1 will be the delayed 10:37 Northern service to Hull, now expected at 11:25"), as well as the apology at its booked time. Before, a late train was never announced near when it actually left. Re-import the blueprint
+- Announcements: a delayed train with a new time is announced again a few minutes before its new time ("The next train to depart from platform 1 will be the delayed 10:37 Northern service to Leeds, now expected at 11:25"), as well as the apology at its booked time. Before, a late train was never announced near when it actually left. Re-import the blueprint
 - Screen: no more doubled or ghosted text while things move (scrolling lines, page changes, the departure slide). The board copied each new frame to the screen while the screen was mid-refresh, so for a moment part showed the old frame and part the new one. It now waits for the screen to finish a refresh first
 
 ## 2.2.1 - 2026-11-19 (beta)
@@ -62,14 +66,14 @@
 - "No more trains tonight" and the setup messages no longer show empty column headings and row bands behind them
 - Removed the "Last train" label: it often appeared on trains that weren't the last of the evening
 - Second lines: "Delayed 3 min", "Cancelled" and their reasons are dimmed like the rest of the line, instead of full brightness
-- Routes (e.g. Brough to Hull): the scrolling calling points now show each stop's time. My Rail Commute doesn't give times on routes, so the blueprint borrows them from a "Departures from" station for the same station if you have one, or else shows the arrival time at the route's end (blueprint)
+- Routes (e.g. York to Leeds): the scrolling calling points now show each stop's time. My Rail Commute doesn't give times on routes, so the blueprint borrows them from a "Departures from" station for the same station if you have one, or else shows the arrival time at the route's end (blueprint)
 - Long destinations: the board first uses the short forms real boards use (Manchester Picc, St Pancras Intl, Bristol Pkwy). If a name still doesn't fit, it slides along to show the rest, then back. With *Scrolling text* off it's shortened with "..." instead of being cut mid-word
 - *Train numbers* (Display page): 1st, 2nd, 3rd dimmed under each time. A favourite shows its heart there instead. On Tube boards that row is *TfL line colours*, as before
 - Station messages scroll once along the footer every few minutes (in place of the station name), led by an orange i. *Scroll station messages* in Home Assistant sets how often (2, 5 or 10 minutes, or Off; 5 by default). It follows *Scrolling text*; tapping the i still opens them
-- **New layout: Platform**, replacing Focus mode. The next train in full, like a platform screen: time, destination and status, platform, train company, the reason if it's late, and every stop with its time ("Ferriby (21:45), Hessle (21:51) and Hull (21:58)"). The 2nd and 3rd trains take turns underneath. *Platform* (Extras page, and in Home Assistant) shows one platform's trains; the footer then reads "Brough  Platform 1". Boards that had Focus mode on go back to their layout: pick Platform under Layout
+- **New layout: Platform**, replacing Focus mode. The next train in full, like a platform screen: time, destination and status, platform, train company, the reason if it's late, and every stop with its time ("Church Fenton (21:45), Garforth (21:51) and Leeds (21:58)"). The 2nd and 3rd trains take turns underneath. *Platform* (Extras page, and in Home Assistant) shows one platform's trains; the footer then reads "York  Platform 1". Boards that had Focus mode on go back to their layout: pick Platform under Layout
 - When the top train leaves, the trains below slide up into place instead of jumping (with *Page animation* on)
 - Dashboard reorganised to match the board's settings pages (Display, Trains, Screen and night, Extras). The Board view has the station switcher, Leave in, station messages and quick controls; firmware and demo mode moved to System. Settings that don't apply are hidden (e.g. Scroll speed with scrolling off, the night settings with night dimming off). Paste the new dashboard file to get it
-- Home Assistant: a *Station* sensor shows what the board is showing by name ("Brough", "Brough to Hull"), and *Next station* / *Previous station* buttons switch it. The dashboard's Station controls use them instead of the number. *Station number* is still there for your own automations
+- Home Assistant: a *Station* sensor shows what the board is showing by name ("York", "York to Leeds"), and *Next station* / *Previous station* buttons switch it. The dashboard's Station controls use them instead of the number. *Station number* is still there for your own automations
 
 ## 2.1.1 - 2026-11-18
 **Re-import the blueprint** to get favourite train alerts (Settings > Automations & scenes > Blueprints > UK Departure Board > ⋮ > Re-import blueprint). Your automation keeps its settings. Without it, everything else still works.
@@ -84,7 +88,7 @@
 - Settings: Calling at and Highlight stop open a list of today's stops to tap, instead of stepping through them one at a time
 - After switching station or route, its name shows large for 2 seconds once the trains arrive
 - Favourite trains show a small heart under the time instead of an underline (Compact's one-line rows keep the underline)
-- Favourites are saved with their station ("07:42 Brough"), so they only count there. Times saved before, without a station, still count everywhere. Room for about 10 favourites with station names
+- Favourites are saved with their station ("07:42 York"), so they only count there. Times saved before, without a station, still count everywhere. Room for about 10 favourites with station names
 - Favourite train alerts: pick phones in the blueprint to be notified when a favourite is late (5 min or more by default), cancelled or changes platform. The board sends an esphome.departure_board_favourite event you can use in your own automations too
 
 ## 2.1.0 - 2026-11-17
@@ -161,7 +165,7 @@ London Underground and DLR support: the board now works with Tube stations as we
 - New "TfL board logo image" setting: your own logo for Tube / DLR stations
 - TfL: several lines at the same station are merged into one board; "Arriving" when a train is approaching or at the platform; a bar in the line's colour on each train (new "TfL line colours" switch, also on the Style page); line status from the London Underground integration via the footer "i" (titled "Line status")
 - New "Data source" diagnostic sensor (National Rail or London TfL)
-- Route boards (and the "calling at" filter): the heading reads "Destination (all call at Hull)", since trains going beyond your destination are listed too
+- Route boards (and the "calling at" filter): the heading reads "Destination (all call at Leeds)", since trains going beyond your destination are listed too
 - Column heading "Expt" now reads "Expected"
 
 ## 1.20.0 - 2026-11-16 (beta)

@@ -55,7 +55,7 @@ With more trains than rows, the board pages every 15 seconds (the footer shows *
 
 **Themes:** Classic amber, White LED, Modern LCD, Retro green, High contrast, Split-flap, Airport and Night red.
 
-**❤️ Favourite trains:** press and hold a train to save it as its time and station (e.g. *07:42 Brough*). You can also type them in **Favourite trains** on the board's device page, comma separated. To get a phone notification when a favourite is late, cancelled or changes platform, pick your phones under **Favourite train alerts** in the automation.
+**❤️ Favourite trains:** press and hold a train to save it as its time and station (e.g. *07:42 York*). You can also type them in **Favourite trains** on the board's device page, comma separated. To get a phone notification when a favourite is late, cancelled or changes platform, pick your phones under **Favourite train alerts** in the automation.
 
 **🌤️ Weather:** pick a weather entity under **Weather** in the automation to show the temperature in the footer and on the clock screen.
 
@@ -68,7 +68,7 @@ You need a speaker: either a small 4-8 ohm, 2-3 W speaker plugged into the board
 2. Set **Announcements** to *All trains*, *Delays only* or *Favourites only*. You can also set *Announce before* (5 minutes), *Chime first* and *Quiet at night* (follows the board's night times).
 3. **Optional, in your automation:** expand **Announcement voice and speakers** to pick a voice (Google Translate British by default, or a Piper or Home Assistant Cloud voice) and any Home Assistant speakers to announce on instead of the board's.
 
-Announcements are for the station on screen (not Tube / DLR), e.g. *"The next train to depart from platform 1 will be the 10:53 Northern service to Hull"*, or *"We are sorry to announce..."* for delays and cancellations. A delayed train is announced again shortly before its new time. The chime and *Test sound* play on the board's own speaker only. Use **Mute** to silence it for a while: a grey crossed speaker shows in the footer.
+Announcements are for the station on screen (not Tube / DLR), e.g. *"The next train to depart from platform 1 will be the 10:53 Northern service to Leeds"*, or *"We are sorry to announce..."* for delays and cancellations. A train that becomes 5 or more minutes late, or is cancelled, while it's on the board is announced straight away, and a delayed train is announced again shortly before its new time. The chime and *Test sound* play on the board's own speaker only. Use **Mute** to silence it for a while: a grey crossed speaker shows in the footer.
 
 ### ⚙️ Settings
 Every setting is on the board (tap the clock) and on its device page in Home Assistant:
