@@ -46,18 +46,14 @@ Tube boards count down and show *Arriving*, with each train's line, direction, c
 
 <img src="docs/screenshots/nr-detail.png" width="390" alt="Train detail page"> <img src="docs/screenshots/nr-message.png" width="390" alt="Station message">
 
-With more trains than rows, the board pages every 15 seconds (the footer shows *1/2*). A changed platform flashes for a minute, and the evening's final train is labelled *Last train*.
+With more trains than rows, the board pages every 15 seconds (the footer shows *1/2*). A changed platform flashes for a minute.
 
 ## Make it yours
 
-### Layouts and focus mode
-**Calm** (default): only the first train scrolls its calling points. **Classic**: every train scrolls. **Compact**: one line per train, so 7 or 8 fit.
+### Layouts
+**Calm** (default): only the first train scrolls its calling points. **Classic**: every train scrolls. **Compact**: one line per train, so 7 or 8 fit. **Platform**: like the screens on a platform: the next train in full (platform, train company, a reason if it's late, and every stop with its time), with the 2nd and 3rd trains taking turns underneath. Set *Platform* (Extras page) to show only one platform's trains; set a *walking time* and it skips trains you can no longer catch.
 
 <img src="docs/screenshots/nr-classic.png" width="390" alt="Classic layout"> <img src="docs/screenshots/nr-compact.png" width="390" alt="Compact layout">
-
-**Focus mode** shows just the next train with a big countdown. Set a *walking time* and it skips trains you can no longer catch.
-
-<img src="docs/screenshots/nr-focus.png" width="390" alt="Focus mode, National Rail"> <img src="docs/screenshots/tfl-focus.png" width="390" alt="Focus mode, Tube">
 
 ### Themes
 Classic amber (default), White LED, Modern LCD, Retro green, High contrast and Daylight (which turns amber at night).
@@ -75,12 +71,12 @@ Pick a weather entity under **Weather** in the blueprint to show the temperature
 
 ### Settings
 Every setting is on the board (tap the clock) and on the board's device page in Home Assistant:
-- **Display:** theme, layout, background (*Dot matrix*, *Rows* or *Plain*), text size, column headings, page animation, scrolling text speed, TfL line colours
+- **Display:** theme, layout, background (*Dot matrix*, *Rows* or *Plain*), text size, column headings, page animation, scrolling text speed, train numbers (TfL line colours on Tube boards)
 - **Trains:** countdown, calling-at filter, cancelled trains (shown, faded or hidden), show platform, paging, pin next train, departed grace, walking time
 - **Screen:** brightness, panel colour warmth, night dimming (set times or sunset/sunrise), night brightness (down to screen off), idle dimming
-- **Extras:** highlight a stop, disruption banner, logo, focus mode, clock screen, 12/24-hour clock and seconds, footer colour, weather
+- **Extras:** highlight a stop, disruption banner, logo, platform (Platform layout), clock screen, 12/24-hour clock and seconds, footer colour, weather
 - **About:** Wi-Fi, IP address, Home Assistant link, data age, firmware, uptime, ESPHome version, free memory
-- **Home Assistant only:** page interval, demo mode, and *Station number* for switching station from your own automations
+- **Home Assistant only:** how often station messages scroll along the footer, page interval, demo mode, and *Station number* for switching station from your own automations
 
 If the text looks more yellow than amber, turn up **Panel colour warmth** (new boards start at 18). It only changes the screen, not screenshots.
 

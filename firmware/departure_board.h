@@ -31,6 +31,7 @@ __attribute__((constructor)) static void crowpanel_usb_disable() {
 #include <string>
 #include <cctype>
 #include <vector>
+#include <cstring>
 
 namespace departure {
 
@@ -70,6 +71,26 @@ inline std::string destination(const std::string &s, size_t max_len) {
   std::string d = p.back();
   if (d.size() > max_len) d.resize(max_len);
   return d;
+}
+
+// Short forms used on real boards, tried one at a time (whole words only) until a long destination fits.
+static const char *const ABBR[][2] = {
+    {"International", "Intl"}, {"Parkway", "Pkwy"}, {"Piccadilly", "Picc"}, {"Junction", "Jn"},
+    {"Interchange", "Int"}, {"Central", "Ctl"}, {"Street", "St"}, {"Road", "Rd"}, {"Square", "Sq"},
+    {"Airport", "Apt"}};
+static const size_t ABBR_N = sizeof(ABBR) / sizeof(ABBR[0]);
+inline bool abbrev_word(std::string &s, size_t i) {
+  if (i >= ABBR_N) return false;
+  const std::string w = ABBR[i][0];
+  size_t p = 0;
+  bool done = false;
+  while ((p = s.find(w, p)) != std::string::npos) {
+    const bool l = p == 0 || !isalpha((unsigned char) s[p - 1]);
+    const bool r = p + w.size() >= s.size() || !isalpha((unsigned char) s[p + w.size()]);
+    if (l && r) { s.replace(p, w.size(), ABBR[i][1]); done = true; p += strlen(ABBR[i][1]); }
+    else p += w.size();
+  }
+  return done;
 }
 
 // "Selby, Leeds, York" truncated to max_len

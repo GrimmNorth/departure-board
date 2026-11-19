@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.2 - 2026-11-19 (beta)
+**Re-import the blueprint** to get stop times on route boards (the board's About page will say "Update available").
+
+- "No more trains tonight" and the setup messages no longer show empty column headings and row bands behind them
+- Removed the "Last train" label: it often appeared on trains that weren't the last of the evening
+- Second lines: "Delayed 3 min", "Cancelled" and their reasons are dimmed like the rest of the line, instead of full brightness
+- Routes (e.g. Brough to Hull): the scrolling calling points now show each stop's time. My Rail Commute doesn't give times on routes, so the blueprint borrows them from a "Departures from" station for the same station if you have one, or else shows the arrival time at the route's end (blueprint)
+- Long destinations: the board first uses the short forms real boards use (Manchester Picc, St Pancras Intl, Bristol Pkwy). If a name still doesn't fit, it slides along to show the rest, then back. With *Scrolling text* off it's shortened with "..." instead of being cut mid-word
+- *Train numbers* (Display page): 1st, 2nd, 3rd dimmed under each time. A favourite shows its heart there instead. On Tube boards that row is *TfL line colours*, as before
+- Station messages scroll once along the footer every few minutes (in place of the station name), led by an orange i. *Scroll station messages* in Home Assistant sets how often (2, 5 or 10 minutes, or Off; 5 by default). It follows *Scrolling text*; tapping the i still opens them
+- **New layout: Platform**, replacing Focus mode. The next train in full, like a platform screen: time, destination and status, platform, train company, the reason if it's late, and every stop with its time ("Ferriby (21:45), Hessle (21:51) and Hull (21:58)"). The 2nd and 3rd trains take turns underneath. *Platform* (Extras page, and in Home Assistant) shows one platform's trains; the footer then reads "Brough  Platform 1". Boards that had Focus mode on go back to their layout: pick Platform under Layout
+- When the top train leaves, the trains below slide up into place instead of jumping (with *Page animation* on)
+- Dashboard reorganised to match the board's settings pages (Display, Trains, Screen and night, Extras). The Board view has the station switcher, Leave in, station messages and quick controls; firmware and demo mode moved to System. Settings that don't apply are hidden (e.g. Scroll speed with scrolling off, the night settings with night dimming off). Paste the new dashboard file to get it
+- Home Assistant: a *Station* sensor shows what the board is showing by name ("Brough", "Brough to Hull"), and *Next station* / *Previous station* buttons switch it. The dashboard's Station controls use them instead of the number. *Station number* is still there for your own automations
+
 ## 2.1.1 - 2026-11-18
 **Re-import the blueprint** to get favourite train alerts (Settings > Automations & scenes > Blueprints > UK Departure Board > ⋮ > Re-import blueprint). Your automation keeps its settings. Without it, everything else still works.
 

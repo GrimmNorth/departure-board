@@ -163,6 +163,10 @@ variables:
   origin_name: "{% set v = state_attr(status_ent, 'origin_name') if status_ent != '' else none %}{{ v if v else '' }}"
   route_to: "{% set v = state_attr(status_ent, 'destination_name') if status_ent != '' else none %}{{ v if v else '' }}"
   all_trains: "{% set v = state_attr(summary_ent, 'all_trains') if summary_ent != '' else none %}{{ v if v is list else [] }}"
+  # a route has no times for each stop, so borrow them from a My Rail Commute "Departures from" station
+  # with the same trains (service IDs are per station), if you have one set up
+  route_stops: >-
+    {% set ns = namespace(m={}) %}{% if route_to and not by_dest %}{% for e in integration_entities('my_rail_commute') | select('search', '_summary$') %}{% set bd = state_attr(e, 'services_by_destination') %}{% if bd is mapping %}{% for dest in bd.values() %}{% for s in (dest.services if dest.services is defined else []) if s.service_id is defined and s.service_id not in ns.m %}{% set p = namespace(out=[]) %}{% for c in (s.calling_point_details if s.calling_point_details is defined else []) %}{% set tm = c.expected if (c.expected | string | regex_match('^[0-9]{2}:[0-9]{2}$')) else c.scheduled %}{% set p.out = p.out + [c.name ~ ' ' ~ tm] %}{% endfor %}{% if p.out %}{% set ns.m = dict(ns.m, **{s.service_id: p.out | join(', ')}) %}{% endif %}{% endfor %}{% endfor %}{% endif %}{% endfor %}{% endif %}{{ ns.m }}
   # setup checks, for Home Assistant notifications
   note_id: "uk_departure_board_{{ svc }}"
   # minutes since the station's data stopped coming (-1 when it's fine)
@@ -231,7 +235,7 @@ actions:
       - action: "esphome.{{ svc }}_set_blueprint_version"
         continue_on_error: true
         data:
-          ver: 2
+          ver: 3
   - action: "esphome.{{ svc }}_update_status"
     continue_on_error: true
     data:
@@ -340,7 +344,7 @@ actions:
                 calls: >-
                   {% set c = state_attr(t, 'calling_points') %}{% set c = c if c is list else [] %}{% if route_to and sid %}{% set d = all_trains | selectattr('service_id', 'eq', sid) | map(attribute='destination') | first | default('') %}{% if d and (c | count == 0 or c[-1] != d) %}{% set c = c + [d] %}{% endif %}{% endif %}{{ c }}
                 stops: >-
-                  {% set ns = namespace(out=[]) %}{% if by_dest and sid %}{% for dest in by_dest.values() %}{% for s in dest.services %}{% if s.service_id == sid %}{% for p in s.calling_point_details %}{% set tm = p.expected if (p.expected | regex_match('^[0-9]{2}:[0-9]{2}$')) else p.scheduled %}{% set ns.out = ns.out + [p.name ~ ' ' ~ tm] %}{% endfor %}{% endif %}{% endfor %}{% endfor %}{% endif %}{{ ns.out | join(', ') | truncate(250, true, '') }}
+                  {% set ns = namespace(out=[]) %}{% if by_dest and sid %}{% for dest in by_dest.values() %}{% for s in dest.services %}{% if s.service_id == sid %}{% for p in s.calling_point_details %}{% set tm = p.expected if (p.expected | regex_match('^[0-9]{2}:[0-9]{2}$')) else p.scheduled %}{% set ns.out = ns.out + [p.name ~ ' ' ~ tm] %}{% endfor %}{% endif %}{% endfor %}{% endfor %}{% elif sid and sid in route_stops %}{% set ns.out = [route_stops[sid]] %}{% elif route_to %}{% set c = state_attr(t, 'calling_points') %}{% set c = c if c is list else [] %}{% set ea = state_attr(t, 'estimated_arrival') %}{% set at = ea if (ea | string | regex_match('^[0-9]{2}:[0-9]{2}$')) else state_attr(t, 'scheduled_arrival') %}{% for p in c %}{% set ns.out = ns.out + [p ~ (' ' ~ at if p == route_to and at else '')] %}{% endfor %}{% set d = (all_trains | selectattr('service_id', 'eq', sid) | map(attribute='destination') | first | default('')) if sid else '' %}{% if d and d not in c %}{% set ns.out = ns.out + [d] %}{% endif %}{% endif %}{{ ns.out | join(', ') | truncate(250, true, '') }}
   # tell the board how many stations there are
   - action: "esphome.{{ svc }}_set_station_count"
     continue_on_error: true
