@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.2.3",
+  "version": "2.3.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.2.3.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "47d81c314ea14a6de9cebf2fbd61fd4b",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.2.3.ota.bin",
-        "summary": "Sounds master switch (off by default) and a separate Mute; sound marked experimental"
+        "md5": "aedfef611905b49e193602771aa2e770",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.0.ota.bin",
+        "summary": "Smaller, faster drawing code (about 95 KB smaller); all ten trains arrive in one message"
       }
     }
   ]
