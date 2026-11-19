@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.5 - 2026-11-19 (beta)
+- Sound: the chime is clean again. In 2.3.4 it was handed to the speaker a little at a time, and the screen's drawing sometimes held that up long enough to leave tiny gaps, which sounded distorted. The whole chime is now handed over at once
+
 ## 2.3.4 - 2026-11-19 (beta)
 - Announcements: the chime no longer plays a second time after the speech (which also sounded like two chimes in a row before the next announcement, or a chime with no voice after the last one). In 2.3.3 the chime went through the media player, which played it again once the speech finished. It's now fed straight to the speaker
 - Blueprint: a train shown as just "Delayed" (no new time yet) no longer sets off the "change one My Rail Commute setting" notification, and is still announced when it becomes delayed. Both treated it as having left at its booked time. Re-import the blueprint

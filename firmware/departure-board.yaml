@@ -28,7 +28,7 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.4"
+    version: "2.3.5"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -1367,6 +1367,9 @@ speaker:
     source_speakers:
       - id: ann_spk_in
       - id: chime_spk_in
+        # room for the whole chime at once: it's handed over in one go, so the screen's drawing (which holds up the
+        # rest of the board for a fifth of a second at a time) can't leave gaps in it that sound crackly
+        buffer_duration: 2500ms
 
 media_player:
   - platform: speaker
