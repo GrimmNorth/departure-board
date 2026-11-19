@@ -51,7 +51,7 @@ With more trains than rows, the board pages every 15 seconds (the footer shows *
 ## Make it yours
 
 ### Layouts
-**Calm** (default): only the first train scrolls its calling points. **Classic**: every train scrolls. **Compact**: one line per train, so 7 or 8 fit. **Platform**: like the screens on a platform: the next train in full (platform, train company, a reason if it's late, and every stop with its time), with the 2nd and 3rd trains taking turns underneath. Set *Platform* (Extras page) to show only one platform's trains; set a *walking time* and it skips trains you can no longer catch.
+**Calm** (default): only the first train scrolls its calling points. **Classic**: every train scrolls. **Compact**: one line per train, so 7 or 8 fit. **Platform**: like the screens on a platform: the next train in full (platform, train company, a reason if it's late, and every stop with its time), with the 2nd and 3rd trains taking turns underneath. Set *Platform* (right under Layout on the board's Display page) to show only one platform's trains; set a *walking time* and it skips trains you can no longer catch.
 
 <img src="docs/screenshots/nr-classic.png" width="390" alt="Classic layout"> <img src="docs/screenshots/nr-compact.png" width="390" alt="Compact layout">
 
@@ -71,12 +71,12 @@ Pick a weather entity under **Weather** in the blueprint to show the temperature
 
 ### Settings
 Every setting is on the board (tap the clock) and on the board's device page in Home Assistant:
-- **Display:** theme, layout, background (*Dot matrix*, *Rows* or *Plain*), text size, column headings, page animation, scrolling text speed, train numbers (TfL line colours on Tube boards)
+- **Display:** theme, layout, page animation (or *Platform*, when Layout is Platform), background (*Dot matrix*, *Rows* or *Plain*), text size, column headings, scrolling text speed, train numbers (TfL line colours on Tube boards)
 - **Trains:** countdown, calling-at filter, cancelled trains (shown, faded or hidden), show platform, paging, pin next train, departed grace, walking time
 - **Screen:** brightness, panel colour warmth, night dimming (set times or sunset/sunrise), night brightness (down to screen off), idle dimming
-- **Extras:** highlight a stop, disruption banner, logo, platform (Platform layout), clock screen, 12/24-hour clock and seconds, footer colour, weather
+- **Extras:** highlight a stop, disruption alert, logo, station messages, clock screen, 12/24-hour clock and seconds, footer colour, weather
 - **About:** Wi-Fi, IP address, Home Assistant link, data age, firmware, uptime, ESPHome version, free memory
-- **Home Assistant only:** how often station messages scroll along the footer, page interval, demo mode, and *Station number* for switching station from your own automations
+- **Home Assistant only:** page interval, demo mode, and *Station number* for switching station from your own automations
 
 If the text looks more yellow than amber, turn up **Panel colour warmth** (new boards start at 18). It only changes the screen, not screenshots.
 
