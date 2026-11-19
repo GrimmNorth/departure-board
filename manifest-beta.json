@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.2.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "577482fff4c77aa04c336ae7280b4189",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.1.ota.bin",
-        "summary": "Screen put back in step after sounds; announcements on any Home Assistant speaker; simpler README"
+        "md5": "ed22636d0f6eaf504b9c05b9f8f5b93c",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.2.ota.bin",
+        "summary": "Trains announced the moment they become late or cancelled"
       }
     }
   ]
