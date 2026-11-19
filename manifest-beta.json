@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.2.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.3.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "ed22636d0f6eaf504b9c05b9f8f5b93c",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.2.ota.bin",
-        "summary": "Trains announced the moment they become late or cancelled"
+        "md5": "742ad8b44bfd4e48cf76a7e72d072bfd",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.3.ota.bin",
+        "summary": "No gap between the chime and the voice: the voice comes in over the end of the chime. Blueprint announcement fixes: no alerts for trains that have left, natural pauses in names. Re-import the blueprint."
       }
     }
   ]
