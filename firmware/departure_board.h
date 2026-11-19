@@ -11,6 +11,8 @@
 #include "soc/soc.h"
 #include "esp_heap_caps.h"
 #include <map>
+#include <array>
+#include <string>
 
 __attribute__((constructor)) static void crowpanel_usb_disable() {
   // Turn off the USB PHY pad and its D+ pull-up.
@@ -229,5 +231,12 @@ inline int find_stop(const std::string &s, const std::string &fav, int &end) {
   }
   return -1;
 }
+
+// ---- the trains the board shows: filled by Home Assistant (or the demo), read when drawing ----
+struct Train {
+  std::string sched, exp, plat, pchg, stat, dreason, creason, oper, delaym, sarr, earr, pprev, stops, calls;
+};
+inline std::array<Train, 10> &trains() { static std::array<Train, 10> t; return t; }
+inline Train &train(int n) { return trains()[(n >= 1 && n <= 10) ? n - 1 : 0]; }   // n counts from 1
 
 }  // namespace departure

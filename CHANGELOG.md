@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0 - 2026-11-19 (beta)
+- Faster and smaller: the board's drawing code was rewritten so the ten train rows share one piece of code instead of ten copies, and trains are read in place instead of being copied four times a second. The firmware is about 95 KB smaller (from 79% to 74% of the space an update can use), leaving room for future features
+- With the new blueprint, all ten trains arrive in one message each minute, so the board never shows a mix of new and old trains while they come in. Older blueprints still work
+- The chime is stored compressed
+- Blueprint: looks up the board's settings once per run instead of a dozen times. Re-import it to get this and the one-message update
+
 ## 2.2.3 - 2026-11-19 (beta)
 - Sound: *Sounds* now turns the whole sound feature on or off (off to start with, for boards without a speaker): while it's off nothing is announced, no speaker icon shows and the other Sound settings are greyed out. A new *Mute* setting silences the speaker for now; only then does the grey crossed speaker show in the footer. Your board starts with Sounds off after this update: turn it on under Settings > Sound
 - Sound is marked experimental: in the README, on the board's settings page (*Sound (experimental)*) and in the automation's announcement section. It's new and only tested on one board and speaker
