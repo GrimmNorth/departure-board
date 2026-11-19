@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.2.0.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.2.1.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "8df4de0dfbcbb2c2bdb5051d1288842e",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.2.0.ota.bin",
-        "summary": "Sound: chime, Sound settings page, footer speaker icon, and optional announcements in the blueprint"
+        "md5": "58861d17adadeb826cb1270606da123a",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.2.1.ota.bin",
+        "summary": "Sound settings on the board, Favourites only announcements, announcements follow the station on screen"
       }
     }
   ]
