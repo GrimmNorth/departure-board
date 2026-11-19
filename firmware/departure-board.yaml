@@ -16,9 +16,15 @@ esphome:
       # follow the update channel chosen in Home Assistant (Stable unless changed)
       - lambda: |-
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
+      - delay: 20s
+      - lambda: |-
+          if (id(dim_state) != 0 || !id(backlight).current_values.is_on()) return;
+          const float b = id(brightness_num).has_state() ? id(brightness_num).state / 100.0f : id(day_brightness);
+          if (std::fabs(id(backlight).current_values.get_brightness() - b) < 0.005f) return;
+          auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.1.3"
+    version: "1.13.1"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -456,6 +462,7 @@ globals:
     initial_value: "-1"
   - id: day_brightness
     type: float
+    restore_value: true
     initial_value: "1.0"
   - id: data_ms_stn
     type: uint32_t
@@ -585,17 +592,21 @@ script:
     mode: single
     then:
       - lambda: |-
-          static const uint8_t P[6][8][3] = {
+          static const uint8_t P[8][8][3] = {
               {{0, 0, 0}, {255, 176, 0}, {255, 77, 0}, {255, 0, 0}, {51, 255, 51}, {115, 115, 115}, {255, 255, 255}, {30, 26, 16}},
               {{0, 0, 0}, {242, 242, 242}, {255, 176, 0}, {255, 59, 59}, {125, 255, 125}, {110, 110, 110}, {255, 200, 0}, {30, 30, 30}},
               {{11, 31, 74}, {255, 255, 255}, {255, 212, 0}, {255, 90, 90}, {123, 228, 149}, {120, 135, 170}, {255, 212, 0}, {24, 50, 104}},
               {{2, 10, 2}, {60, 255, 90}, {200, 255, 60}, {255, 80, 80}, {60, 255, 90}, {30, 110, 40}, {220, 255, 220}, {8, 28, 10}},
               {{0, 0, 0}, {255, 230, 0}, {255, 140, 0}, {255, 64, 64}, {80, 255, 80}, {150, 150, 150}, {0, 255, 255}, {24, 24, 24}},
-              {{244, 241, 232}, {26, 26, 26}, {179, 92, 0}, {196, 30, 30}, {30, 122, 46}, {150, 150, 150}, {0, 70, 180}, {226, 221, 206}}
+              // Split-flap: white on dark grey flaps, like the old Solari boards
+              {{18, 18, 18}, {240, 240, 235}, {255, 190, 60}, {255, 90, 80}, {140, 230, 140}, {120, 120, 120}, {255, 220, 120}, {42, 42, 42}},
+              // Airport: yellow on charcoal, like flight information screens
+              {{24, 26, 30}, {255, 214, 10}, {255, 150, 40}, {255, 90, 80}, {120, 230, 140}, {120, 125, 135}, {255, 255, 255}, {38, 41, 48}},
+              // Night red: dim red, gentle on night vision (on time stays a dim green, delays a dim orange)
+              {{0, 0, 0}, {170, 20, 10}, {190, 90, 0}, {220, 40, 30}, {60, 140, 40}, {70, 20, 15}, {210, 70, 50}, {18, 4, 3}}
           };
           static int applied = -1, applied_w = -1;
           int t = id(theme_select).active_index().value_or(0);
-          if (t == 5 && (id(dim_state) == 1 || id(dim_state) == 2)) t = 0;   // no bright screen at night
           const int w = id(pc_warm).has_state() ? (int) id(pc_warm).state : 0;
           if (t == applied && w == applied_w) return;
           applied = t; applied_w = w;
@@ -644,7 +655,6 @@ script:
           id(dim_state) = target;
           if (prev == 0) {
             id(was_on) = id(backlight).current_values.is_on();
-            if (id(was_on)) id(day_brightness) = id(backlight).current_values.get_brightness();
           }
           if (!id(was_on)) return;          // the screen was switched off by hand: leave it alone
           if (target == 2) {
@@ -1002,7 +1012,7 @@ touchscreen:
                   break;
                 case 2:   // Screen
                   switch (row) {
-                    case 0: if (plus || minus) { float b = id(backlight).current_values.get_brightness() + (plus ? 0.1f : -0.1f); if (b < 0.1f) b = 0.1f; if (b > 1.0f) b = 1.0f; auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform(); } break;
+                    case 0: if (plus || minus) { float v = (id(brightness_num).has_state() ? id(brightness_num).state : 100) + (plus ? 10 : -10); if (v < 10) v = 10; if (v > 100) v = 100; auto c = id(brightness_num).make_call(); c.set_value(v); c.perform(); } break;
                     case 1: if (plus || minus) { float v = (id(pc_warm).has_state() ? id(pc_warm).state : 0) + (plus ? 1 : -1); if (v < 0) v = 0; if (v > 25) v = 25; auto c = id(pc_warm).make_call(); c.set_value(v); c.perform(); } break;
                     case 2: if (!id(night_dimming).state) { id(night_sun).turn_off(); id(night_dimming).turn_on(); }   // Off -> Set times -> Sunset -> Off
                             else if (!id(night_sun).state) id(night_sun).turn_on();
@@ -1160,6 +1170,31 @@ light:
           const float pct = std::round(id(backlight).current_values.get_brightness() * 100.0f);
           if (!id(brightness_num).has_state() || std::fabs(id(brightness_num).state - pct) >= 1.0f) id(brightness_num).publish_state(pct);
 
+# The speaker socket on the back (PH2.0-2P) drives a small 8 ohm speaker through the NS4168 amplifier.
+# Home Assistant sees it as a media player, "Speaker", for announcements and chimes.
+i2s_audio:
+  - id: i2s_out
+    i2s_lrclk_pin: GPIO18
+    i2s_bclk_pin: GPIO42
+
+speaker:
+  - platform: i2s_audio
+    id: board_speaker
+    i2s_audio_id: i2s_out
+    i2s_dout_pin: GPIO17
+    dac_type: external
+    channel: mono
+
+media_player:
+  - platform: speaker
+    name: "Speaker"
+    id: board_media
+    announcement_pipeline:
+      speaker: board_speaker
+      format: FLAC
+      num_channels: 1
+      sample_rate: 16000
+
 font:
   - file: "gfonts://DotGothic16"
     id: f_row_0
@@ -1276,6 +1311,8 @@ number:
     mode: slider
     unit_of_measurement: "%"
     optimistic: true
+    restore_value: true          # the daytime level, kept through restarts (night dimming never changes it)
+    initial_value: 100
     on_value:
       - lambda: |-
           // the daytime brightness; applied now unless the board is dimmed for the night or idle
@@ -1601,7 +1638,7 @@ select:
     optimistic: true
     restore_value: true
     initial_option: "Classic amber"
-    options: ["Classic amber", "White LED", "Modern LCD", "Retro green", "High contrast", "Daylight"]
+    options: ["Classic amber", "White LED", "Modern LCD", "Retro green", "High contrast", "Split-flap", "Airport", "Night red"]
     on_value:
       - script.execute: apply_theme
   - platform: template
@@ -2374,7 +2411,7 @@ display:
       auto now = id(ha_time).now();
       bool tv = now.is_valid();
       int nowmin = tv ? now.hour * 60 + now.minute : -1;
-      const char *THEME_NAMES[] = {"Classic", "White LED", "Modern LCD", "Retro green", "High contrast", "Daylight"};
+      const char *THEME_NAMES[] = {"Classic", "White LED", "Modern LCD", "Retro green", "High contrast", "Split-flap", "Airport", "Night red"};
       const char *FONT_NAMES[] = {"DotGothic"};
       std::string stn_name = id(station_ts).state.empty() ? std::string("Departures") : id(station_ts).state;
       const char *STATION_NAMES[] = {stn_name.c_str()};
@@ -2542,7 +2579,7 @@ display:
             R = 7; band(R); lab(R, "Walking time"); if (id(walk_minutes).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(walk_minutes).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
           }
           else if (pg == 2) {
-            R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(backlight).current_values.get_brightness() * 100 + 0.5f)); pm(R, buf);
+            R = 0; band(R); lab(R, "Brightness"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(brightness_num).has_state() ? id(brightness_num).state : 100)); pm(R, buf);
             R = 1; band(R); lab(R, "Panel warmth"); snprintf(buf, sizeof(buf), "%d", id(pc_warm).has_state() ? (int) id(pc_warm).state : 0); pm(R, buf);
             R = 2; band(R); lab(R, "Night dimming"); if (!id(night_dimming).state) onoff(R, false); else cyc(R, id(night_sun).state ? "Sunset" : "Set times");
             R = 3; band(R); lab(R, "Night brightness"); if (id(night_screen_off).state) snprintf(buf, sizeof(buf), "Off"); else snprintf(buf, sizeof(buf), "%d%%", (int) id(night_level).state); pm(R, buf);
@@ -2584,6 +2621,7 @@ display:
             else if (pg == 4 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
             else if (sr >= 0 && sr < 8 && why_off(pg, sr) != nullptr) { h = why_off(pg, sr); c = amber; }
             else if (pg == 0 && sr == 7 && !id(src_tfl)) { h = "1st, 2nd, 3rd dimmed under each time"; c = amber; }
+            else if (pg == 2 && sr == 0 && id(dim_state) != 0) { h = "Daytime brightness (the screen is dimmed just now)"; c = amber; }
             else if (pg == 0 && sr == 1 && id(layout_select).active_index().value_or(0) == 3) { h = "Platform: choose a platform in the row below, or leave All"; c = amber; }
             else if (pg == 0 && sr == 2 && id(layout_select).active_index().value_or(0) == 3) { h = "Show only one platform's trains: tap to pick, or All"; c = amber; }
             else if (sr >= 0 && sr < 8) { h = pg < 4 ? HINTS[pg][sr] : ABOUT_HINTS[sr]; c = amber; }
