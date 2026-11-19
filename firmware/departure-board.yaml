@@ -2342,6 +2342,7 @@ display:
       green: [GPIO9, GPIO46, GPIO3, GPIO8, GPIO16, GPIO1]
       blue: [GPIO15, GPIO7, GPIO6, GPIO5, GPIO4]
     lambda: |-
+      [&]() {
       if (id(shot_req)) {
         // a screenshot: the buffer still holds the last finished frame, so copy it before drawing the next
         struct ShotSrc : public mipi_rgb::MipiRgb {
@@ -6712,6 +6713,27 @@ display:
       if (!mscroll) {
         fit(foot, F_SUB[fi], info_left - 20 - fx);
         it.print(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, foot.c_str());
+      }
+      }();
+      // the frame is copied to the screen as soon as this returns: start it on a vsync, so the copy runs just
+      // behind the panel's scan instead of across it
+      static SemaphoreHandle_t vs = nullptr;
+      if (vs == nullptr) {
+        vs = xSemaphoreCreateBinary();
+        struct VsH : public mipi_rgb::MipiRgb {
+          static esp_lcd_panel_handle_t get(mipi_rgb::MipiRgb *d) { return d->*(&VsH::handle_); }
+        };
+        esp_lcd_rgb_panel_event_callbacks_t cbs = {};
+        cbs.on_vsync = [](esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t *, void *ctx) -> bool {
+          BaseType_t woken = pdFALSE;
+          xSemaphoreGiveFromISR((SemaphoreHandle_t) ctx, &woken);
+          return woken == pdTRUE;
+        };
+        if (esp_lcd_rgb_panel_register_event_callbacks(VsH::get(id(main_display)), &cbs, vs) != ESP_OK) vs = (SemaphoreHandle_t) 1;
+      }
+      if (vs != (SemaphoreHandle_t) 1) {
+        xSemaphoreTake(vs, 0);                        // forget an old one
+        xSemaphoreTake(vs, pdMS_TO_TICKS(45));        // a frame is about 32 ms
       }
 
 qr_code:
