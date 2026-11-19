@@ -587,7 +587,7 @@ script:
             pub(1, hm(2), hm(2), "3", "", "on_time", "", "", "Northern", "0", "", st({{"Church Fenton", 14}, {"Leeds", 26}}), calls({"Church Fenton", "Leeds"}));
             pub(2, hm(6), hm(14), "5", "", "delayed", "This train has been delayed by a signalling fault", "", "LNER", "8", "", st({{"Doncaster", 34}, {"Peterborough", 63}, {"London Kings Cross", 120}}), calls({"Doncaster", "Peterborough", "London Kings Cross"}));
             pub(3, hm(11), hm(11), "8", "true", "on_time", "", "", "TransPennine Express", "0", "7", st({{"Malton", 36}, {"Seamer", 55}, {"Scarborough", 61}}), calls({"Malton", "Seamer", "Scarborough"}));
-            pub(4, hm(15), hm(15), "9", "", "cancelled", "", "This train has been cancelled because of a shortage of train crew", "Northern", "0", "", st({{"Selby", 37}, {"Howden", 50}, {"Hull", 75}}), calls({"Selby", "Howden", "Hull"}));
+            pub(4, hm(15), hm(15), "9", "", "cancelled", "", "This train has been cancelled because of a shortage of train crew", "Northern", "0", "", st({{"Malton", 25}, {"Seamer", 45}, {"Scarborough", 52}}), calls({"Malton", "Seamer", "Scarborough"}));
             pub(5, hm(19), hm(19), "4", "", "on_time", "", "", "TransPennine Express", "0", "", st({{"Leeds", 43}, {"Huddersfield", 63}, {"Manchester Piccadilly", 99}, {"Manchester Airport", 117}}), calls({"Leeds", "Huddersfield", "Manchester Piccadilly", "Manchester Airport"}));
             pub(6, hm(24), hm(24), "9", "", "on_time", "", "", "LNER", "0", "", st({{"Darlington", 54}, {"Durham", 71}, {"Newcastle", 84}}), calls({"Darlington", "Durham", "Newcastle"}));
             pub(7, hm(31), hm(31), "10", "", "on_time", "", "", "Northern", "0", "", st({{"Leeds", 58}, {"Bradford Interchange", 80}, {"Blackpool North", 170}}), calls({"Leeds", "Bradford Interchange", "Blackpool North"}));
@@ -1735,7 +1735,7 @@ text:
     max_length: 255
     optimistic: true
     restore_value: true
-    initial_value: ""     # favourite trains, e.g. "07:42 Brough, 08:15" (a time on its own counts at every station)
+    initial_value: ""     # favourite trains, e.g. "07:42 York, 08:15" (a time on its own counts at every station)
 
 select:
   - platform: template
@@ -1879,7 +1879,7 @@ text_sensor:
     id: station_ts
     internal: true
   - platform: template
-    id: stn_label_ts       # what the board is showing, e.g. "Brough" or "Brough to Hull"
+    id: stn_label_ts       # what the board is showing, e.g. "York" or "York to Leeds"
     name: "Station"
     icon: mdi:map-marker
     update_interval: never
@@ -2804,7 +2804,7 @@ display:
           else s = "On time";
           return s;
         };
-        // one train on one line: "1st 21:39 Hull ...... On time"
+        // one train on one line: "1st 21:39 Leeds ...... On time"
         auto train_line = [&](const NextTrain &f, const char *ord, int ytop, font::Font *fL) {
           Color c;
           const std::string st = status(f, c);
@@ -2850,11 +2850,11 @@ display:
           it.print(22, ink - sT2, fS, cancelled ? sub_red : sub_ora, TextAlign::TOP_LEFT, rs.c_str());
           ink += hs + 14;
         }
-        // calling points: "Ferriby (21:45), Hessle (21:51) and Hull (21:58)", wrapped; pages when long
+        // calling points: "Church Fenton (21:45), Garforth (21:51) and Leeds (21:58)", wrapped; pages when long
         if (!cancelled) {
           std::vector<std::string> items;
           if (departure::valid(t.stops)) {
-            std::vector<std::string> sl;                     // stops come as "Ferriby 21:45, Hessle 21:51"
+            std::vector<std::string> sl;                     // stops come as "Church Fenton 21:45, Garforth 21:51"
             size_t s0 = 0;
             while (s0 < t.stops.size()) {
               size_t s1 = t.stops.find(", ", s0);

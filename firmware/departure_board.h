@@ -153,7 +153,7 @@ inline bool ieq(const std::string &a, const std::string &b) {
   return true;
 }
 
-// Favourite trains, e.g. "07:42 Brough, 08:15": a time followed by a station only counts at that
+// Favourite trains, e.g. "07:42 York, 08:15": a time followed by a station only counts at that
 // station; a time on its own counts everywhere. Times can also be separated by spaces ("07:42 08:15").
 struct Fav { std::string hhmm, station; };
 inline bool is_hhmm(const std::string &s) {

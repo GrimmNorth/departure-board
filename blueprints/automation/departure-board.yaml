@@ -250,7 +250,7 @@ variables:
     {% set n = state_attr(station_id, 'station_name') if is_tfl else none %}{{ (n | string) | regex_replace('\\s+(Underground|DLR|Rail|Elizabeth line)?\\s*Station$', '', ignorecase=True) if n else '' }}
   tfl_status: >-
     {% set ns = namespace(m=[]) %}{% for e in tfl_members %}{% set tok = (e | replace('sensor.london_tfl_', '')).split('_')[0] %}{% set info = tfl_lines.get(tok) %}{% if info %}{% set st = 'sensor.london_underground_' ~ info[2] %}{% set v = states(st) %}{% if v not in ['Good Service', 'unknown', 'unavailable'] %}{% set dsc = (state_attr(st, 'Description') or '') | regex_replace('\\s+', ' ') | trim %}{% set m = dsc if dsc and dsc != 'Nothing to report' else info[0] ~ ': ' ~ v %}{% if m not in ns.m %}{% set ns.m = ns.m + [m] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.m | join('\n') }}
-  # the station's name as the board shows it (favourites are saved with it, e.g. "07:42 Brough")
+  # the station's name as the board shows it (favourites are saved with it, e.g. "07:42 York")
   stn_name: >-
     {{ tfl_name if is_tfl and tfl_name else (origin_name if origin_name | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True))) }}
   # National Rail station messages (engineering works, strikes...), one per line, without the web links
