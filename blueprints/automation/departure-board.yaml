@@ -159,16 +159,18 @@ triggers:
 
 variables:
   board_id: !input board
+  # the board's own entities, looked up once (its settings and which features its firmware has)
+  board_ents: "{{ device_entities(board_id) }}"
   first_station: !input station
   extra: !input more_stations
   tfl_in: !input tfl_stations
   label_in: !input station_name
   weather_in: !input weather
   # announcements are switched on and set up on the board (Settings > Sound)
-  ann_sel: "{{ device_entities(board_id) | select('match', 'select\\..*_announcements$') | first | default('') }}"
+  ann_sel: "{{ board_ents | select('match', 'select\\..*_announcements$') | first | default('') }}"
   # Sounds off (no speaker) or muted: no announcements at all
   ann_sound: >-
-    {% set e = device_entities(board_id) %}{{ is_state(e | select('match', 'switch\\..*_sounds$') | first | default(''), 'on') and not is_state(e | select('match', 'switch\\..*_mute$') | first | default(''), 'on') }}
+    {% set e = board_ents %}{{ is_state(e | select('match', 'switch\\..*_sounds$') | first | default(''), 'on') and not is_state(e | select('match', 'switch\\..*_mute$') | first | default(''), 'on') }}
   ann_mode: "{{ states(ann_sel) if ann_sel and ann_sound else 'Off' }}"
   # the temperature, rounded ("" when there's no weather entity or it isn't available)
   wx_temp: >-
@@ -181,7 +183,7 @@ variables:
     {% set ns = namespace(names=[], groups=[]) %}{% for e in tfl_list %}{% set n = state_attr(e, 'station_name') or e %}{% set ns2 = namespace(i=-1) %}{% for x in ns.names %}{% if x == n %}{% set ns2.i = loop.index0 %}{% endif %}{% endfor %}{% if ns2.i >= 0 %}{% set ns.groups = ns.groups[:ns2.i] + [ns.groups[ns2.i] + [e]] + ns.groups[ns2.i + 1:] %}{% else %}{% set ns.names = ns.names + [n] %}{% set ns.groups = ns.groups + [[e]] %}{% endif %}{% endfor %}{{ ns.groups }}
   tfl_keys: "{% set ns = namespace(k=[]) %}{% for g in tfl_groups %}{% set ns.k = ns.k + [g[0]] %}{% endfor %}{{ ns.k }}"
   stations: "{{ [first_station] + (extra if extra is list else ([extra] if extra else [])) + tfl_keys }}"
-  num_ent: "{{ device_entities(board_id) | select('match', 'number\\.') | select('search', 'station_number') | first | default('') }}"
+  num_ent: "{{ board_ents | select('match', 'number\\.') | select('search', 'station_number') | first | default('') }}"
   # a switch on the board sends its new number with the signal; otherwise read the board's setting
   pick: >-
     {% if trigger is defined and trigger.platform == 'event' and trigger.event.data.number is defined %}{{ trigger.event.data.number | int(1) }}{% elif num_ent != '' %}{{ states(num_ent) | int(1) }}{% else %}1{% endif %}
@@ -276,7 +278,7 @@ actions:
   # this blueprint's version, so the board can say when it needs re-importing. Raise it whenever a
   # change needs the new blueprint (and BP_NEED in the firmware). Only newer boards have the action.
   - if:
-      - "{{ device_entities(board_id) | select('search', '_blueprint$') | list | count > 0 }}"
+      - "{{ board_ents | select('search', '_blueprint$') | list | count > 0 }}"
     then:
       - action: "esphome.{{ svc }}_set_blueprint_version"
         continue_on_error: true
@@ -291,7 +293,7 @@ actions:
   # National Rail or London TfL: TfL boards count down and show the tunnel logo.
   # Only boards with a "Data source" sensor have this action.
   - if:
-      - "{{ device_entities(board_id) | select('search', '_data_source$') | list | count > 0 }}"
+      - "{{ board_ents | select('search', '_data_source$') | list | count > 0 }}"
     then:
       - action: "esphome.{{ svc }}_update_source"
         continue_on_error: true
@@ -300,7 +302,7 @@ actions:
   # the route's destination for the board's "Destination (to ... only)" heading. Only boards with the
   # route feature have the action (they also have a "Route" sensor); calling a missing action stops the automation.
   - if:
-      - "{{ device_entities(board_id) | select('search', '_route$') | list | count > 0 }}"
+      - "{{ board_ents | select('search', '_route$') | list | count > 0 }}"
     then:
       - action: "esphome.{{ svc }}_update_route"
         continue_on_error: true
@@ -308,7 +310,7 @@ actions:
           to: "{{ route_to }}"
   # weather and the station's reliability. Only boards with a "Show weather" switch have these actions.
   - if:
-      - "{{ device_entities(board_id) | select('search', '_show_weather$') | list | count > 0 }}"
+      - "{{ board_ents | select('search', '_show_weather$') | list | count > 0 }}"
     then:
       - action: "esphome.{{ svc }}_update_weather"
         continue_on_error: true
@@ -322,7 +324,7 @@ actions:
           avg: "{{ hist_avg }}"
   # station messages for the "i" in the footer. Only boards with a "Station messages" sensor have this action.
   - if:
-      - "{{ device_entities(board_id) | select('search', '_station_messages$') | list | count > 0 }}"
+      - "{{ board_ents | select('search', '_station_messages$') | list | count > 0 }}"
     then:
       - action: "esphome.{{ svc }}_update_messages"
         continue_on_error: true
@@ -345,7 +347,7 @@ actions:
           'stops': st.out | join(', ') | truncate(250, true, ''), 'calls': c}] %}{% endif %}{% endfor %}{{ ns.r }}
       # boards from 2.3.0 take all ten trains in one message, so they never show half old, half new trains
       fw_ver: >-
-        {% set u = device_entities(board_id) | select('match', 'update\\.') | first | default('') %}{% set v = (state_attr(u, 'installed_version') or '0') | string %}{% set p = (v.split('.') + ['0', '0'])[:3] | map('int', 0) | list %}{{ p[0] * 10000 + p[1] * 100 + p[2] }}
+        {% set u = board_ents | select('match', 'update\\.') | first | default('') %}{% set v = (state_attr(u, 'installed_version') or '0') | string %}{% set p = (v.split('.') + ['0', '0'])[:3] | map('int', 0) | list %}{{ p[0] * 10000 + p[1] * 100 + p[2] }}
   - if:
       - "{{ fw_ver | int >= 20300 }}"
     then:
@@ -435,21 +437,20 @@ actions:
       - "{{ ann_mode in ['All trains', 'Delays only', 'Favourites only'] and trigger is defined and trigger.platform == 'time_pattern' }}"
     then:
       - variables:
-          b_ents: "{{ device_entities(board_id) }}"
           which: "{{ ['delayed', 'cancelled'] if ann_mode == 'Delays only' else ['on_time', 'delayed', 'cancelled'] }}"
           # Favourites only: the board's favourite trains, "HH:MM" or "HH:MM Station", comma separated
           fav_times: >-
-            {% set ns = namespace(l=[]) %}{% if ann_mode == 'Favourites only' %}{% set fe = b_ents | select('match', 'text\\..*_favourite_trains$') | first | default('') %}{% for f in (states(fe) if fe else '').split(',') %}{% set f = f | trim %}{% set hm = f[:5] %}{% set st = f[5:] | trim %}{% if hm | regex_match('^[0-9]{2}:[0-9]{2}$') and (st == '' or st | lower == stn_name | lower) %}{% set ns.l = ns.l + [hm] %}{% endif %}{% endfor %}{% endif %}{{ ns.l }}
-          before: "{{ states(b_ents | select('match', 'number\\..*_announce_before$') | first | default('')) | int(5) }}"
-          chime: "{{ is_state(b_ents | select('match', 'switch\\..*_chime_first$') | first | default(''), 'on') }}"
+            {% set ns = namespace(l=[]) %}{% if ann_mode == 'Favourites only' %}{% set fe = board_ents | select('match', 'text\\..*_favourite_trains$') | first | default('') %}{% for f in (states(fe) if fe else '').split(',') %}{% set f = f | trim %}{% set hm = f[:5] %}{% set st = f[5:] | trim %}{% if hm | regex_match('^[0-9]{2}:[0-9]{2}$') and (st == '' or st | lower == stn_name | lower) %}{% set ns.l = ns.l + [hm] %}{% endif %}{% endfor %}{% endif %}{{ ns.l }}
+          before: "{{ states(board_ents | select('match', 'number\\..*_announce_before$') | first | default('')) | int(5) }}"
+          chime: "{{ is_state(board_ents | select('match', 'switch\\..*_chime_first$') | first | default(''), 'on') }}"
           spk_in: !input ann_speakers
           tts_in: !input ann_tts
           voice: !input ann_voice
           # quiet between the board's Night starts and Night ends (or sunset to sunrise when night follows the sun)
           quiet: >-
-            {% set qs = b_ents | select('match', 'switch\\..*_quiet_at_night$') | first | default('') %}{% if not is_state(qs, 'on') %}false{% elif is_state(b_ents | select('match', 'switch\\..*_night_follows_sun$') | first | default(''), 'on') %}{{ is_state('sun.sun', 'below_horizon') }}{% else %}{% set q_from = states(b_ents | select('match', 'time\\..*_night_starts$') | first | default('')) %}{% set q_to = states(b_ents | select('match', 'time\\..*_night_ends$') | first | default('')) %}{% set n = now().strftime('%H:%M:%S') %}{% if not (q_from | regex_match('^[0-9]{2}:[0-9]{2}')) or not (q_to | regex_match('^[0-9]{2}:[0-9]{2}')) or q_from == q_to %}false{% elif q_from < q_to %}{{ q_from <= n < q_to }}{% else %}{{ n >= q_from or n < q_to }}{% endif %}{% endif %}
+            {% set qs = board_ents | select('match', 'switch\\..*_quiet_at_night$') | first | default('') %}{% if not is_state(qs, 'on') %}false{% elif is_state(board_ents | select('match', 'switch\\..*_night_follows_sun$') | first | default(''), 'on') %}{{ is_state('sun.sun', 'below_horizon') }}{% else %}{% set q_from = states(board_ents | select('match', 'time\\..*_night_starts$') | first | default('')) %}{% set q_to = states(board_ents | select('match', 'time\\..*_night_ends$') | first | default('')) %}{% set n = now().strftime('%H:%M:%S') %}{% if not (q_from | regex_match('^[0-9]{2}:[0-9]{2}')) or not (q_to | regex_match('^[0-9]{2}:[0-9]{2}')) or q_from == q_to %}false{% elif q_from < q_to %}{{ q_from <= n < q_to }}{% else %}{{ n >= q_from or n < q_to }}{% endif %}{% endif %}
           speakers: >-
-            {% set l = spk_in if spk_in is list else ([spk_in] if spk_in else []) %}{{ l if l else device_entities(board_id) | select('match', 'media_player\\.') | list }}
+            {% set l = spk_in if spk_in is list else ([spk_in] if spk_in else []) %}{{ l if l else board_ents | select('match', 'media_player\\.') | list }}
           tts_ent: "{{ tts_in if tts_in else (states.tts | map(attribute='entity_id') | first | default('')) }}"
           a_ents: "{{ device_entities(station_id) }}"
           a_sum: "{{ a_ents | select('search', '_summary$') | first | default('') }}"
@@ -480,7 +481,7 @@ actions:
                 message: >-
                   {% if kind == 'cancelled' %}We are sorry to announce that {{ svc_name }} has been cancelled.{{ reason }}{% elif kind == 'delayed' %}We are sorry to announce that {{ svc_name }} is delayed{{ ', and is now expected at ' ~ ex if ex | regex_match('^[0-9]{2}:[0-9]{2}$') else '' }}.{{ reason }}{% elif kind == 'next_delayed' %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }} will be the delayed {{ svc_name[4:] }}, now expected at {{ ex }}. {{ stops }}{% else %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }} will be {{ svc_name }}. {{ stops }}{% endif %}{% if kind != 'cancelled' and state_attr(t, 'platform_changed') and plat %} Please note, this train will now depart from platform {{ plat }}.{% endif %}
             - if:
-                - "{{ chime and device_entities(board_id) | select('search', '_test_sound$') | list | count > 0 }}"
+                - "{{ chime and board_ents | select('search', '_test_sound$') | list | count > 0 }}"
               then:
                 - action: "esphome.{{ svc }}_play_chime"
                   continue_on_error: true
