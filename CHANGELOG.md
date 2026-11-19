@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.4 - 2026-11-19 (beta)
+- Announcements: the chime no longer plays a second time after the speech (which also sounded like two chimes in a row before the next announcement, or a chime with no voice after the last one). In 2.3.3 the chime went through the media player, which played it again once the speech finished. It's now fed straight to the speaker
+- Blueprint: a train shown as just "Delayed" (no new time yet) no longer sets off the "change one My Rail Commute setting" notification, and is still announced when it becomes delayed. Both treated it as having left at its booked time. Re-import the blueprint
+
 ## 2.3.3 - 2026-11-19 (beta)
 - Announcements: no gap between the chime and the voice. The speech is now requested as the chime starts, and the board plays the voice over the end of the chime (fading the chime down), like a real station, instead of waiting for it or cutting it off. Needs this firmware and the new blueprint; older boards keep a short wait so the chime isn't cut off
 - Announcements: a train that's already left is no longer announced when the data catches up late (e.g. an on-time train that suddenly shows as expected two minutes ago). The delay or cancellation reason now has its space after the sentence before it, in announcements and favourite alerts. Re-import the blueprint
