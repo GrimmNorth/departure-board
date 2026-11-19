@@ -277,14 +277,14 @@ actions:
           dmin: "{{ fd.delay | int(0) }}"
           train: >-
             {{ fd.sched }}{{ ' from ' ~ fd.station if fd.station else '' }}{{ ' to ' ~ fd.destination if fd.destination else '' }}
-          reason: "{{ (' ' ~ fd.reason ~ '.') | replace('..', '.') if fd.reason else '' }}"
+          reason: "{{ (fd.reason ~ '.') | replace('..', '.') if fd.reason else '' }}"
           send: >-
             {{ phones | count > 0 and (fd.kind == 'cancelled' or (fd.kind == 'delayed' and dmin >= min_delay | int)
                or (fd.kind == 'platform' and want_plat and fd.platform)) }}
           title: >-
             {% if fd.kind == 'cancelled' %}{{ fd.sched }} cancelled{% elif fd.kind == 'delayed' %}{{ fd.sched }} running {{ dmin }} min late{% else %}{{ fd.sched }}: now platform {{ fd.platform }}{% endif %}
           message: >-
-            {% if fd.kind == 'cancelled' %}Your {{ train }} has been cancelled.{{ reason }}{% elif fd.kind == 'delayed' %}Your {{ train }} is running {{ dmin }} minutes late{{ ', now expected at ' ~ fd.expected if fd.expected else '' }}.{{ reason }}{% else %}Your {{ train }} now leaves from platform {{ fd.platform }}.{% endif %}
+            {% if fd.kind == 'cancelled' %}Your {{ train }} has been cancelled.{{ ' ' ~ reason if reason else '' }}{% elif fd.kind == 'delayed' %}Your {{ train }} is running {{ dmin }} minutes late{{ ', now expected at ' ~ fd.expected if fd.expected else '' }}.{{ ' ' ~ reason if reason else '' }}{% else %}Your {{ train }} now leaves from platform {{ fd.platform }}.{% endif %}
       - if:
           - "{{ send }}"
         then:
@@ -492,7 +492,7 @@ actions:
           # the trains to announce this minute, of the kinds chosen: each train that many minutes before its booked
           # time; a delayed train with a new time again that many minutes before the new time ("next_delayed")
           due: >-
-            {% set ns = namespace(l=[]) %}{% if trigger.id == 'chg' %}{% set ce = trigger.event.data %}{% set t = a_ents | select('search', '_train_' ~ (ce.train | int(0)) ~ '$') | first | default('') %}{% set sd = state_attr(t, 'scheduled_departure') | string if t else '' %}{% if t and sd[:5] == ce.sched and ce.kind in which and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ns.l = [[t, ce.kind]] %}{% endif %}{{ ns.l }}{% else %}{% set nm = now().hour * 60 + now().minute %}{% for i in range(1, 11) %}{% set t = a_ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% if t %}{% set sd = state_attr(t, 'scheduled_departure') | string %}{% if sd | regex_match('^[0-9]{2}:[0-9]{2}$') and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ex = state_attr(t, 'expected_departure') | string %}{% set ex_ok = ex | regex_match('^[0-9]{2}:[0-9]{2}$') %}{% set k = 'cancelled' if state_attr(t, 'is_cancelled') or state_attr(t, 'status') == 'cancelled' else ('delayed' if (state_attr(t, 'delay_minutes') | int(0)) > 0 or (ex_ok and ex != sd) or ex | lower == 'delayed' else 'on_time') %}{% if k in which and ((sd[:2] | int) * 60 + (sd[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, k]] %}{% endif %}{% if k == 'delayed' and 'delayed' in which and ex_ok and ex != sd and ((ex[:2] | int) * 60 + (ex[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, 'next_delayed']] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.l }}{% endif %}
+            {% set ns = namespace(l=[]) %}{% if trigger.id == 'chg' %}{% set ce = trigger.event.data %}{% set t = a_ents | select('search', '_train_' ~ (ce.train | int(0)) ~ '$') | first | default('') %}{% set sd = state_attr(t, 'scheduled_departure') | string if t else '' %}{% set ex0 = state_attr(t, 'expected_departure') | string if t else '' %}{% set tm = ex0 if ex0 | regex_match('^[0-9]{2}:[0-9]{2}$') else sd[:5] %}{% set nm0 = now().hour * 60 + now().minute %}{% set ahead = ((tm[:2] | int(0)) * 60 + (tm[3:5] | int(0)) - nm0) % 1440 if tm | regex_match('^[0-9]{2}:[0-9]{2}$') else -1 %}{% if t and sd[:5] == ce.sched and 0 < ahead <= 720 and ce.kind in which and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ns.l = [[t, ce.kind]] %}{% endif %}{{ ns.l }}{% else %}{% set nm = now().hour * 60 + now().minute %}{% for i in range(1, 11) %}{% set t = a_ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% if t %}{% set sd = state_attr(t, 'scheduled_departure') | string %}{% if sd | regex_match('^[0-9]{2}:[0-9]{2}$') and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ex = state_attr(t, 'expected_departure') | string %}{% set ex_ok = ex | regex_match('^[0-9]{2}:[0-9]{2}$') %}{% set k = 'cancelled' if state_attr(t, 'is_cancelled') or state_attr(t, 'status') == 'cancelled' else ('delayed' if (state_attr(t, 'delay_minutes') | int(0)) > 0 or (ex_ok and ex != sd) or ex | lower == 'delayed' else 'on_time') %}{% if k in which and ((sd[:2] | int) * 60 + (sd[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, k]] %}{% endif %}{% if k == 'delayed' and 'delayed' in which and ex_ok and ex != sd and ((ex[:2] | int) * 60 + (ex[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, 'next_delayed']] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.l }}{% endif %}
       - condition: "{{ not is_tfl and not quiet and tts_ent != '' and speakers | count > 0 and due | count > 0 }}"
       - repeat:
           for_each: "{{ due }}"
@@ -511,15 +511,20 @@ actions:
                   {% set c = cps[:10] %}{% if c and c[-1] == dest %}{% if c | count > 1 %}Calling at {{ c[:-1] | join(', ') }} and {{ c[-1] }}.{% endif %}{% elif c %}Calling at {{ c[:-1] | join(', ') ~ ' and ' if c | count > 1 else '' }}{{ c[-1] }}, then on to {{ dest }}.{% endif %}
                 svc_name: "the {{ sd }} {{ oper ~ ' ' if oper else '' }}service to {{ dest }}"
                 reason: >-
-                  {% set r = state_attr(t, 'cancellation_reason') if kind == 'cancelled' else state_attr(t, 'delay_reason') %}{{ (' ' ~ r ~ '.') | replace('..', '.') if r else '' }}
+                  {% set r = state_attr(t, 'cancellation_reason') if kind == 'cancelled' else state_attr(t, 'delay_reason') %}{{ (r ~ '.') | replace('..', '.') | replace(' delayed by ', ' delayed, by ', 1) | replace(' cancelled because ', ' cancelled, because ', 1) if r else '' }}
+                # the commas split each sentence into short pieces: Google's voice reads at most 100 characters at a time and
+                # otherwise breaks mid-name ("Manchester ... Airport"); the pauses sound like a real station announcer
                 message: >-
-                  {% if kind == 'cancelled' %}We are sorry to announce that {{ svc_name }} has been cancelled.{{ reason }}{% elif kind == 'delayed' %}We are sorry to announce that {{ svc_name }} is delayed{{ ', and is now expected at ' ~ ex if ex | regex_match('^[0-9]{2}:[0-9]{2}$') else '' }}.{{ reason }}{% elif kind == 'next_delayed' %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }} will be the delayed {{ svc_name[4:] }}, now expected at {{ ex }}. {{ stops }}{% else %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }} will be {{ svc_name }}. {{ stops }}{% endif %}{% if kind != 'cancelled' and state_attr(t, 'platform_changed') and plat %} Please note, this train will now depart from platform {{ plat }}.{% endif %}
+                  {% if kind == 'cancelled' %}We are sorry to announce, that {{ svc_name }} has been cancelled.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'delayed' %}We are sorry to announce, that {{ svc_name }} is delayed{{ ', and is now expected at ' ~ ex if ex | regex_match('^[0-9]{2}:[0-9]{2}$') else '' }}.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'next_delayed' %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be the delayed {{ svc_name[4:] }}, now expected at {{ ex }}. {{ stops }}{% else %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be {{ svc_name }}. {{ stops }}{% endif %}{% if kind != 'cancelled' and state_attr(t, 'platform_changed') and plat %} Please note, this train will now depart from platform {{ plat }}.{% endif %}
             - if:
                 - "{{ chime and board_ents | select('search', '_test_sound$') | list | count > 0 }}"
               then:
                 - action: "esphome.{{ svc }}_play_chime"
                   continue_on_error: true
-                - delay: 2
+                # ask for the speech almost straight away: making and fetching it takes a second or two, so the
+                # voice arrives as the chime fades (waiting for the chime to finish first left a long gap)
+                - delay:
+                    milliseconds: 600
             - if:
                 - "{{ lang != '' }}"
               then:

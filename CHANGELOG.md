@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- Announcements: a train that's already left is no longer announced when the data catches up late (e.g. an on-time train that suddenly shows as expected two minutes ago). The delay or cancellation reason now has its space after the sentence before it, in announcements and favourite alerts. Re-import the blueprint
+- Announcements: a much shorter gap between the chime and the voice
+- Announcements: no more odd pauses in the middle of names ("Manchester ... Airport") with Google's voice, which reads at most 100 characters at a time. Sentences now have commas in natural places, like a real station announcer
+
 ## 2.3.2 - 2026-11-19 (beta)
 - Announcements: a train that becomes 5 or more minutes late, or is cancelled, while it's on the board is announced straight away ("We are sorry to announce that the 17:42 ... is delayed, and is now expected at 17:50"), instead of waiting for its usual slot. Works with *All trains*, *Delays only* and *Favourites only*. Re-import the blueprint
 - Examples in the docs and code use York and Leeds
