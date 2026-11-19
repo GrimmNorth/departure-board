@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.3 - 2026-11-19 (beta)
+- Platform layout: the stops now show (with their times); they were missing at stations
+- Platform layout: the 2nd/3rd train line uses the row-size text, so destinations like Blackpool North fit instead of being cut short
+- Dashboard: Leave in, Station messages and Platform taken off the Board view
+- Footer messages: one message per pass, taking turns, a little faster, and cut at about 200 characters (tap the i to read on). Before, two long messages took around 6 minutes to scroll, so the station name barely came back
+- *Station messages* (in Home Assistant, replacing *Scroll station messages*): Hidden (no orange i at all), Icon only, or scroll along the footer every 2, 5 or 10 minutes. Scrolling messages are now orange, like the i
+- Choosing a platform is easier: with Layout set to Platform, the row right under it on the Display page becomes *Platform* (it's *Page animation* otherwise, which the Platform layout doesn't use). Station messages moved onto the board, on the Extras page
+- Long text is no longer cut off at 256 characters (it affected long messages and long stop lists)
+- *Disruption banner* is now called *Disruption alert*: Minor/Major Delays shown in the footer, only when My Rail Commute reports the line as disrupted. In Home Assistant it becomes a new switch (switch.…_disruption_alert); the old one can be deleted
+
 ## 2.1.2 - 2026-11-19 (beta)
 **Re-import the blueprint** to get stop times on route boards (the board's About page will say "Update available").
 

@@ -945,17 +945,24 @@ touchscreen:
               const int sp0 = id(settings_page);
               const bool inactive = (sp0 == 1 && row == 5 && !id(paging_on).state) ||               // greyed out: nothing to change
                                     (sp0 == 2 && row >= 3 && row <= 5 && !id(night_dimming).state) ||
-                                    (sp0 == 2 && row == 7 && id(idle_minutes).state <= 0) ||
-                                    (sp0 == 3 && row == 3 && !(id(layout_select).active_index().value_or(0) == 3));
+                                    (sp0 == 2 && row == 7 && id(idle_minutes).state <= 0);
               if (!inactive) switch (id(settings_page)) {
                 case 0:   // Display
                   switch (row) {
                     case 0: id(theme_select).make_call().select_next(true).perform(); break;
                     case 1: id(layout_select).make_call().select_next(true).perform(); break;
-                    case 2: id(bg_style).make_call().select_next(true).perform(); break;
-                    case 3: id(text_large).toggle(); break;
-                    case 4: id(col_headings).toggle(); break;
-                    case 5: id(page_anim).toggle(); break;
+                    case 2: if (id(layout_select).active_index().value_or(0) == 3) {
+                      std::vector<std::string> opts = id(plats_now);
+                      std::sort(opts.begin(), opts.end(), [](const std::string &p, const std::string &q) {
+                        const int a = atoi(p.c_str()), b = atoi(q.c_str());
+                        return a != b ? a < b : p < q;
+                      });
+                      opts.insert(opts.begin(), std::string(""));
+                      id(pick_opts) = opts; id(pick_kind) = 2; id(pick_page) = 0; id(ui_screen) = 5;
+                    } else id(page_anim).toggle(); break;
+                    case 3: id(bg_style).make_call().select_next(true).perform(); break;
+                    case 4: id(text_large).toggle(); break;
+                    case 5: id(col_headings).toggle(); break;
                     case 6: {                                   // Off -> Slow -> Medium -> Fast -> Off
                       int sp = id(scroll_speed).active_index().value_or(1);
                       if (!id(scroll_enabled).state) { id(scroll_speed).make_call().set_index(0).perform(); id(scroll_enabled).turn_on(); }
@@ -1028,15 +1035,7 @@ touchscreen:
                   } break;
                     case 1: id(disruption_banner).toggle(); break;
                     case 2: id(show_logo).toggle(); break;
-                    case 3: {
-                      std::vector<std::string> opts = id(plats_now);
-                      std::sort(opts.begin(), opts.end(), [](const std::string &p, const std::string &q) {
-                        const int a = atoi(p.c_str()), b = atoi(q.c_str());
-                        return a != b ? a < b : p < q;
-                      });
-                      opts.insert(opts.begin(), std::string(""));
-                      id(pick_opts) = opts; id(pick_kind) = 2; id(pick_page) = 0; id(ui_screen) = 5;
-                    } break;
+                    case 3: id(msg_scroll).make_call().select_next(true).perform(); break;
                     case 4: if (plus || minus) { float v = id(clock_after).state + (plus ? 5 : -5); if (v < 0) v = 0; if (v > 60) v = 60; auto c = id(clock_after).make_call(); c.set_value(v); c.perform(); } break;
                     case 5: {                                   // 24 hour -> + seconds -> 12 hour -> + seconds
                       int k = ((id(clock_12h).state ? 2 : 0) + (id(show_seconds).state ? 1 : 0) + 1) % 4;
@@ -1423,7 +1422,7 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
   - platform: template
-    name: "Disruption banner"
+    name: "Disruption alert"
     id: disruption_banner
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
@@ -1628,13 +1627,13 @@ select:
     initial_option: "Calm"
     options: ["Classic", "Calm", "Compact", "Platform"]
   - platform: template
-    name: "Scroll station messages"
+    name: "Station messages"
     id: msg_scroll
-    icon: mdi:message-arrow-left-outline
+    icon: mdi:message-alert-outline
     optimistic: true
     restore_value: true
     initial_option: "Every 5 min"
-    options: ["Off", "Every 2 min", "Every 5 min", "Every 10 min"]
+    options: ["Hidden", "Icon only", "Every 2 min", "Every 5 min", "Every 10 min"]   # Hidden: no orange i at all
   - platform: template
     name: "Footer colour"
     id: footer_colour
@@ -2417,7 +2416,7 @@ display:
             }
           }
           if (sel) it.filled_circle(x0 + 365, y0 + 21, 7, green);
-          it.printf(x0 + 10, y0 + 21, id(f_row_0), sel ? green : amber, TextAlign::CENTER_LEFT, "%s", s.c_str());
+          it.print(x0 + 10, y0 + 21, id(f_row_0), sel ? green : amber, TextAlign::CENTER_LEFT, s.c_str());
         }
         const char *h = n <= 1 ? (platk ? "No platforms yet: try again when trains are showing" : "No stops yet: try again when trains are showing")
                                : (dest ? "Only show trains that call at the stop you tap"
@@ -2451,7 +2450,6 @@ display:
             if (p == 2 && r >= 3 && r <= 5 && !id(night_dimming).state) return "Turn on Night dimming to use this";
             if (p == 2 && (r == 4 || r == 5) && id(night_sun).state) return "Follows sunset and sunrise";
             if (p == 2 && r == 7 && id(idle_minutes).state <= 0) return "Set Idle dim after to use this";
-            if (p == 3 && r == 3 && !(id(layout_select).active_index().value_or(0) == 3)) return "Set Layout to Platform to use this";
             return nullptr;
           };
           auto ry = [&](int row) { return RY0 + row * RP; };
@@ -2502,8 +2500,8 @@ display:
 
           static const char *HINTS[4][8] = {
             {"Colours for the whole board", "Classic, Calm, Compact, or Platform (the next train in full)",
-             "What sits behind the text: Dot matrix, Rows or Plain", "Large text shows fewer trains",
-             "Small headings above the trains", "Slide between pages of trains",
+             "Slide between pages of trains", "What sits behind the text: Dot matrix, Rows or Plain",
+             "Large text shows fewer trains", "Small headings above the trains",
              "How fast the calling points scroll, or Off", "Tube boards: each line in its own colour"},
             {"Minutes to go instead of times", "Only trains that call at a stop: tap to pick one",
              "Cancelled trains: shown, faded or hidden", "The platform column",
@@ -2513,8 +2511,8 @@ display:
              "Dim at set times, or from sunset to sunrise", "Go below the lowest step to turn the screen off",
              "When night dimming starts", "When night dimming ends",
              "Dim when nobody has touched the board", "Brightness while idle"},
-            {"A stop shown in white in the calling points: tap to pick one", "A banner when the line is disrupted",
-             "The logo in the footer", "Platform layout: only trains from one platform",
+            {"A stop shown in white in the calling points: tap to pick one", "Minor or Major Delays in the footer, only when disrupted",
+             "The logo in the footer", "Hidden, Icon only, or scroll along the footer every 2, 5 or 10 min",
              "Switch to the big clock after this long", "12 or 24 hour, with or without seconds",
              "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"}};
           static const char *ABOUT_HINTS[8] = {"The Wi-Fi network and its signal", "The board's address on your network",
@@ -2525,10 +2523,11 @@ display:
           if (pg == 0) {
             R = 0; band(R); lab(R, "Theme"); cyc(R, THEME_NAMES[id(theme_select).active_index().value_or(0)]);
             R = 1; band(R); lab(R, "Layout"); { static const char *LN[4] = {"Classic", "Calm", "Compact", "Platform"}; cyc(R, LN[id(layout_select).active_index().value_or(0)]); }
-            R = 2; band(R); lab(R, "Background"); { static const char *BN[3] = {"Plain", "Rows", "Dot matrix"}; cyc(R, BN[id(bg_style).active_index().value_or(1)]); }
-            R = 3; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
-            R = 4; band(R); lab(R, "Column headings"); onoff(R, id(col_headings).state);
-            R = 5; band(R); lab(R, "Page animation"); onoff(R, id(page_anim).state);
+            R = 2; band(R); if (id(layout_select).active_index().value_or(0) == 3) { lab(R, "Platform"); std::string pf = id(plat_filter).state; cyc(R, pf.empty() ? "All" : pf.c_str()); }
+                            else { lab(R, "Page animation"); onoff(R, id(page_anim).state); }
+            R = 3; band(R); lab(R, "Background"); { static const char *BN[3] = {"Plain", "Rows", "Dot matrix"}; cyc(R, BN[id(bg_style).active_index().value_or(1)]); }
+            R = 4; band(R); lab(R, "Text size"); cyc(R, id(text_large).state ? "Large" : "Normal");
+            R = 5; band(R); lab(R, "Column headings"); onoff(R, id(col_headings).state);
             R = 6; band(R); lab(R, "Scrolling text"); cyc(R, id(scroll_enabled).state ? SPEEDN[id(scroll_speed).active_index().value_or(1)] : "Off");
             R = 7; band(R); if (id(src_tfl)) { lab(R, "TfL line colours"); onoff(R, id(tfl_colours).state); } else { lab(R, "Train numbers"); onoff(R, id(ord_labels).state); }
           }
@@ -2554,9 +2553,9 @@ display:
           }
           else if (pg == 3) {
             R = 0; band(R); lab(R, "Highlight stop"); { std::string f = id(fav_stop).state; cyc(R, f.empty() ? "Off" : f.c_str()); }
-            R = 1; band(R); lab(R, "Disruption banner"); onoff(R, id(disruption_banner).state);
+            R = 1; band(R); lab(R, "Disruption alert"); onoff(R, id(disruption_banner).state);
             R = 2; band(R); lab(R, "Show logo"); onoff(R, id(show_logo).state);
-            R = 3; band(R); lab(R, "Platform"); { std::string pf = id(plat_filter).state; cyc(R, pf.empty() ? "All" : pf.c_str()); }
+            R = 3; band(R); lab(R, "Station messages"); { static const char *MN[5] = {"Hidden", "Icon only", "Every 2 min", "Every 5 min", "Every 10 min"}; cyc(R, MN[std::min(4, (int) id(msg_scroll).active_index().value_or(3))]); }
             R = 4; band(R); lab(R, "Clock screen after"); if (id(clock_after).state > 0) snprintf(buf, sizeof(buf), "%d min", (int) id(clock_after).state); else snprintf(buf, sizeof(buf), "Off"); pm(R, buf);
             R = 5; band(R); lab(R, "Clock"); { static const char *CN[4] = {"24 hour", "24h + secs", "12 hour", "12h + secs"}; cyc(R, CN[(id(clock_12h).state ? 2 : 0) + (id(show_seconds).state ? 1 : 0)]); }
             R = 6; band(R); lab(R, "Footer colour"); cyc(R, id(footer_colour).active_index().value_or(0) == 1 ? "White" : "Theme");
@@ -2585,6 +2584,8 @@ display:
             else if (pg == 4 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
             else if (sr >= 0 && sr < 8 && why_off(pg, sr) != nullptr) { h = why_off(pg, sr); c = amber; }
             else if (pg == 0 && sr == 7 && !id(src_tfl)) { h = "1st, 2nd, 3rd dimmed under each time"; c = amber; }
+            else if (pg == 0 && sr == 1 && id(layout_select).active_index().value_or(0) == 3) { h = "Platform: choose a platform in the row below, or leave All"; c = amber; }
+            else if (pg == 0 && sr == 2 && id(layout_select).active_index().value_or(0) == 3) { h = "Show only one platform's trains: tap to pick, or All"; c = amber; }
             else if (sr >= 0 && sr < 8) { h = pg < 4 ? HINTS[pg][sr] : ABOUT_HINTS[sr]; c = amber; }
             else if (pg == 4) h = nullptr;
             else h = "Tap a setting to change it";
@@ -2679,7 +2680,7 @@ display:
             while (!l.empty() && wid(l + "...") > 752) l.pop_back();
             l += "...";
           }
-          for (size_t i = 0; i < lines.size(); i++) it.printf(24, 62 + (int) i * 44, mf, amber, "%s", lines[i].c_str());
+          for (size_t i = 0; i < lines.size(); i++) it.print(24, 62 + (int) i * 44, mf, amber, lines[i].c_str());
           // buttons, like the settings screen
           const char *BTN[3] = {"< Prev", "Close", "Next >"};
           for (int b = 0; b < 3; b++) {
@@ -2926,17 +2927,17 @@ display:
         snprintf(cb, sizeof(cb), "%02d:%02d%s", hh, now.minute, ap);
         it.printf(400, 105, F_BIG[fi], amber, TextAlign::CENTER, "%s", cb);
         std::string ds = now.strftime("%A %d %B");
-        if (!wx_ok()) { it.printf(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, "%s", ds.c_str()); return; }
+        if (!wx_ok()) { it.print(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, ds.c_str()); return; }
         int dbx, dby, dw, dh, tw;
         it.get_text_bounds(0, 0, ds.c_str(), F_ROWL[fi], TextAlign::TOP_LEFT, &dbx, &dby, &dw, &dh);
         it.get_text_bounds(0, 0, id(wx_temp).c_str(), F_ROWL[fi], TextAlign::TOP_LEFT, &dbx, &dby, &tw, &dh);
         const int total = dw + 40 + 44 + 12 + tw + 12;
         int x = 400 - total / 2;
-        it.printf(x, 215, F_ROWL[fi], amber, TextAlign::CENTER_LEFT, "%s", ds.c_str());
+        it.print(x, 215, F_ROWL[fi], amber, TextAlign::CENTER_LEFT, ds.c_str());
         x += dw + 40;
         draw_wx(x + 22, 215, 44, id(wx_cond), amber);
         x += 44 + 12;
-        it.printf(x, 215, F_ROWL[fi], amber, TextAlign::CENTER_LEFT, "%s", id(wx_temp).c_str());
+        it.print(x, 215, F_ROWL[fi], amber, TextAlign::CENTER_LEFT, id(wx_temp).c_str());
         it.circle(x + tw + 7, 215 - 14, 4, amber); it.circle(x + tw + 7, 215 - 14, 3, amber);   // degree sign
       };
       // focus mode / clock screen: the trains are collected first, then the first one you can still catch is shown
@@ -2974,7 +2975,7 @@ display:
           draw_bigclock();
           it.printf(400, 290, F_ROWL[fi], amber, TextAlign::CENTER, "%s  %s", sched.c_str(), dest.c_str());
           std::string l2 = pl.empty() ? st : pl + "   " + st;
-          it.printf(400, 350, F_SUB[fi], sc, TextAlign::CENTER, "%s", l2.c_str());
+          it.print(400, 350, F_SUB[fi], sc, TextAlign::CENTER, l2.c_str());
           return;
         }
         auto width = [&](const std::string &s, font::Font *f) {
@@ -3009,7 +3010,7 @@ display:
           return s;
         };
         // one train on one line: "1st 21:39 Hull ...... On time"
-        auto train_line = [&](const FocusTrain &f, const char *ord, int ytop) {
+        auto train_line = [&](const FocusTrain &f, const char *ord, int ytop, font::Font *fL) {
           Color c;
           const std::string st = status(f, c);
           const int wst = width(st, fL);
@@ -3017,20 +3018,20 @@ display:
           it.printf(x, ytop, fL, sub_col, TextAlign::TOP_LEFT, "%s", ord);
           x += width(std::string(ord) + " ", fL);
           const Color tc = f.cancelled && id(fade_cancelled).state ? cxl_col : amber;
-          it.printf(x, ytop, fL, tc, TextAlign::TOP_LEFT, "%s", f.sched.c_str());
+          it.print(x, ytop, fL, tc, TextAlign::TOP_LEFT, f.sched.c_str());
           x += width(f.sched + "  ", fL);
           std::string d = departure::destination(f.calls, 80);
           for (size_t ai = 0; width(d, fL) > 784 - wst - 24 - x && ai < departure::ABBR_N; ai++) departure::abbrev_word(d, ai);
           fit(d, fL, 784 - wst - 24 - x);
-          it.printf(x, ytop, fL, tc, TextAlign::TOP_LEFT, "%s", d.c_str());
-          it.printf(784, ytop, fL, c, TextAlign::TOP_RIGHT, "%s", st.c_str());
+          it.print(x, ytop, fL, tc, TextAlign::TOP_LEFT, d.c_str());
+          it.print(784, ytop, fL, c, TextAlign::TOP_RIGHT, st.c_str());
         };
 
         // ---- the next train, in full ----
         const int TOP_BOT = 304;                                  // bottom of the top band
         lband(10, 6, 780, TOP_BOT - 6);
         int ink = 20;                                             // ink top of the next line
-        train_line(t, "1st", ink - lT);
+        train_line(t, "1st", ink - lT, fL);
         ink += hl + 22;
         // platform (orange when it has changed) and the train company
         {
@@ -3043,27 +3044,38 @@ display:
           const bool changed = pl.find("(was") != std::string::npos;
           std::string op = departure::valid(t.oper) ? (id(src_tfl) ? ftline : t.oper) : std::string("");
           fit(op, fS, 760 - width(pl, fS) - 30);
-          if (!pl.empty()) it.printf(22, ink - sT2, fS, changed ? sub_ora : sub_col, TextAlign::TOP_LEFT, "%s", pl.c_str());
-          if (!op.empty()) it.printf(784, ink - sT2, fS, sub_col, TextAlign::TOP_RIGHT, "%s", op.c_str());
+          if (!pl.empty()) it.print(22, ink - sT2, fS, changed ? sub_ora : sub_col, TextAlign::TOP_LEFT, pl.c_str());
+          if (!op.empty()) it.print(784, ink - sT2, fS, sub_col, TextAlign::TOP_RIGHT, op.c_str());
           ink += hs + 18;
         }
         // why it's late or cancelled
         if (departure::valid(t.reason) && (late || cancelled)) {
           std::string rs = t.reason;
           fit(rs, fS, 760);
-          it.printf(22, ink - sT2, fS, cancelled ? sub_red : sub_ora, TextAlign::TOP_LEFT, "%s", rs.c_str());
+          it.print(22, ink - sT2, fS, cancelled ? sub_red : sub_ora, TextAlign::TOP_LEFT, rs.c_str());
           ink += hs + 14;
         }
         // calling points: "Ferriby (21:45), Hessle (21:51) and Hull (21:58)", wrapped; pages when long
         if (!cancelled) {
           std::vector<std::string> items;
           if (departure::valid(t.stops)) {
-            for (auto &p : departure::points(t.stops)) {
+            std::vector<std::string> sl;                     // stops come as "Ferriby 21:45, Hessle 21:51"
+            size_t s0 = 0;
+            while (s0 < t.stops.size()) {
+              size_t s1 = t.stops.find(", ", s0);
+              if (s1 == std::string::npos) s1 = t.stops.size();
+              std::string one = t.stops.substr(s0, s1 - s0);
+              while (!one.empty() && one[0] == ' ') one.erase(0, 1);
+              if (!one.empty()) sl.push_back(one);
+              s0 = s1 + 2;
+            }
+            for (auto &p : sl) {
               const size_t ls = p.rfind(' ');
               if (ls != std::string::npos && departure::is_hhmm(p.substr(ls + 1))) items.push_back(p.substr(0, ls) + " (" + p.substr(ls + 1) + ")");
               else items.push_back(p);
             }
-          } else for (auto &p : departure::points(t.calls)) items.push_back(p);
+          }
+          if (items.empty()) for (auto &p : departure::points(t.calls)) items.push_back(p);
           if (!items.empty()) {
             it.printf(22, ink - sT2, fS, sub_col, TextAlign::TOP_LEFT, "Calling at:");
             ink += hs + 10;
@@ -3088,7 +3100,7 @@ display:
             const int pages_c = ((int) lines.size() + per - 1) / per;
             const int pg0 = pages_c > 1 ? (int) ((millis() / 5000) % pages_c) * per : 0;
             for (int i = pg0; i < (int) lines.size() && i < pg0 + per; i++) {
-              it.printf(22, ink - sT2, fS, amber, TextAlign::TOP_LEFT, "%s", lines[i].c_str());
+              it.print(22, ink - sT2, fS, amber, TextAlign::TOP_LEFT, lines[i].c_str());
               ink += hs + 10;
             }
           }
@@ -3100,8 +3112,11 @@ display:
           lband(10, MB_TOP, 780, MB_BOT - MB_TOP);
           const bool two = t3 != nullptr;
           const bool show3 = two && (millis() / 4000) % 2;
-          const int ytop = (MB_TOP + MB_BOT) / 2 - (lT + lB) / 2;
-          train_line(show3 ? *t3 : *t2, show3 ? "3rd" : "2nd", ytop);
+          font::Font *f2 = F_ROW[fi];
+          int t2T, t2B;
+          ink_of(f2, t2T, t2B);
+          const int ytop = (MB_TOP + MB_BOT) / 2 - (t2T + t2B) / 2;
+          train_line(show3 ? *t3 : *t2, show3 ? "3rd" : "2nd", ytop, f2);
         }
       };
       auto draw_detail = [&](std::string sched, std::string exp, std::string plat, std::string pchg, std::string calls,
@@ -3146,10 +3161,10 @@ display:
         if (!pl.empty()) it.get_text_bounds(0, 0, pl.c_str(), fh, TextAlign::TOP_LEFT, &bx, &by, &plw, &bh);
         std::string dd = departure::destination(calls, 60);
         fit(dd, fh, (pl.empty() ? 784 - 140 : 610 - plw - 16) - 130);
-        it.printf(18, y, fh, amber, "%s", sched.c_str());
-        it.printf(130, y, fh, amber, "%s", dd.c_str());
-        if (!pl.empty()) it.printf(610, y, fh, departure::truthy(pchg) ? orange : amber, TextAlign::TOP_RIGHT, "%s", pl.c_str());
-        it.printf(784, y, fh, sc, TextAlign::TOP_RIGHT, "%s", st.c_str());
+        it.print(18, y, fh, amber, sched.c_str());
+        it.print(130, y, fh, amber, dd.c_str());
+        if (!pl.empty()) it.print(610, y, fh, departure::truthy(pchg) ? orange : amber, TextAlign::TOP_RIGHT, pl.c_str());
+        it.print(784, y, fh, sc, TextAlign::TOP_RIGHT, st.c_str());
         if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
           int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb2 = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
           warm_rgb(cr, cg, cb2);
@@ -3177,7 +3192,7 @@ display:
               rem = (next < rem.size()) ? rem.substr(next) : "";
               if (ln == 1 && !rem.empty()) line += " ...";
               fit(line, fd, 784 - x);
-              it.printf(x, yy, fd, c, "%s", line.c_str());
+              it.print(x, yy, fd, c, line.c_str());
               yy += LHB;
             }
           };
@@ -3185,7 +3200,7 @@ display:
           bandline(y, fd);
           std::string tl = tline;
           fit(tl, fd, 784 - 130);
-          it.printf(130, y, fd, sub_col, "%s", tl.c_str());
+          it.print(130, y, fd, sub_col, tl.c_str());
           y += LHB + 14;
           // where the train is now
           if (!tloc.empty() && !cancelled) {
@@ -3214,7 +3229,7 @@ display:
               std::string dn = departure::destination(*C[i], 60);
               fit(dn, fd, 784 - cdw - 24 - 130);
               it.printf(18, y, fd, amber, "%s", S[i]->c_str());
-              it.printf(130, y, fd, amber, "%s", dn.c_str());
+              it.print(130, y, fd, amber, dn.c_str());
               it.printf(784, y, fd, green, TextAlign::TOP_RIGHT, "%s", cd);
               y += LHB;
               shown++;
@@ -3255,7 +3270,7 @@ display:
         std::string op = departure::valid(oper) ? oper : std::string("");
         if (departure::truthy(pchg) && departure::valid(pprev) && !bus) op += (op.empty() ? "" : "  -  ") + std::string("was platform ") + pprev;
         fit(op, fd, 784 - (cw ? cw + 24 : 0) - 130);
-        it.printf(130, y, fd, amber, "%s", op.c_str());
+        it.print(130, y, fd, amber, op.c_str());
         if (cb[0]) it.printf(784, y, fd, late ? orange : green, TextAlign::TOP_RIGHT, "%s", cb);
         y += LHB + 3;
 
@@ -3275,7 +3290,7 @@ display:
         if (!l3.empty()) {
           bandline(y, fd);
           fit(l3, fd, 784 - 130);
-          it.printf(130, y, fd, l3c, "%s", l3.c_str());
+          it.print(130, y, fd, l3c, l3.c_str());
           y += LHB + 3;
         }
         // delay or cancellation reason, wrapped onto up to two lines
@@ -3299,7 +3314,7 @@ display:
             if (ln == 1 && !rem.empty()) line += " ...";
             fit(line, fd, 784 - 130);
             bandline(y, fd);
-            it.printf(130, y, fd, amber, "%s", line.c_str());
+            it.print(130, y, fd, amber, line.c_str());
             y += LHB + 3;
           }
         }
@@ -3344,7 +3359,7 @@ display:
             it.get_text_bounds(0, 0, "Calling at", fd, TextAlign::TOP_LEFT, &bx, &by, &lw, &bh);
             const int right = 784 - (pgw ? pgw + 20 : 0);
             fit(ht, fd, right - (18 + lw + 30));
-            it.printf(right, y, fd, hc, TextAlign::TOP_RIGHT, "%s", ht.c_str());
+            it.print(right, y, fd, hc, TextAlign::TOP_RIGHT, ht.c_str());
           }
         }
         y += LHB;
@@ -3367,10 +3382,10 @@ display:
           if (!is_last) it.filled_rectangle(lx - 1, my, 2, (yy + dB + 4 + (row < rows - 1 ? 3 : 0)) - my, amber);
           it.filled_circle(lx, my, is_last ? 6 : 4, amber);
           if (!stp[i].second.empty())
-            it.printf(x0 + tmw, yy, fd, fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, "%s", stp[i].second.c_str());
+            it.print(x0 + tmw, yy, fd, fav ? hilite : (late ? orange : amber), TextAlign::TOP_RIGHT, stp[i].second.c_str());
           std::string nm = stp[i].first;
           fit(nm, fd, (last_i - first <= rows ? 784 : x0 + 383) - (lx + 18));
-          it.printf(lx + 18, yy, fd, tc, "%s", nm.c_str());
+          it.print(lx + 18, yy, fd, tc, nm.c_str());
         }
       };
 
@@ -3384,7 +3399,7 @@ display:
         if (!filt.empty()) dh += " (all call at " + filt + ")";
         else if (!id(route_to).empty()) dh += " (all call at " + id(route_to) + ")";
         fit(dh, fh, (id(show_platform).state ? PX - 60 : 784 - 70) - DX);
-        it.printf(DX, hy, fh, hc, "%s", dh.c_str());
+        it.print(DX, hy, fh, hc, dh.c_str());
         if (id(show_platform).state) it.printf(PX, hy, fh, hc, TextAlign::TOP_RIGHT, "Plat");
         it.printf(784, hy, fh, hc, TextAlign::TOP_RIGHT, "Expected");
       }
@@ -3453,7 +3468,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -3494,11 +3509,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -3514,9 +3529,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -3531,7 +3546,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -3562,7 +3577,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -3576,11 +3591,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -3628,7 +3643,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -3636,18 +3651,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -3729,7 +3744,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -3770,11 +3785,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -3790,9 +3805,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -3807,7 +3822,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -3838,7 +3853,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -3852,11 +3867,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -3904,7 +3919,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -3912,18 +3927,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -4005,7 +4020,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -4046,11 +4061,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4066,9 +4081,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -4083,7 +4098,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -4114,7 +4129,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -4128,11 +4143,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -4180,7 +4195,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -4188,18 +4203,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -4281,7 +4296,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -4322,11 +4337,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4342,9 +4357,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -4359,7 +4374,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -4390,7 +4405,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -4404,11 +4419,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -4456,7 +4471,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -4464,18 +4479,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -4557,7 +4572,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -4598,11 +4613,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4618,9 +4633,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -4635,7 +4650,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -4666,7 +4681,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -4680,11 +4695,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -4732,7 +4747,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -4740,18 +4755,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -4833,7 +4848,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -4874,11 +4889,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -4894,9 +4909,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -4911,7 +4926,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -4942,7 +4957,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -4956,11 +4971,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -5008,7 +5023,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -5016,18 +5031,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -5109,7 +5124,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -5150,11 +5165,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -5170,9 +5185,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -5187,7 +5202,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -5218,7 +5233,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -5232,11 +5247,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -5284,7 +5299,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -5292,18 +5307,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -5385,7 +5400,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -5426,11 +5441,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -5446,9 +5461,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -5463,7 +5478,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -5494,7 +5509,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -5508,11 +5523,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -5560,7 +5575,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -5568,18 +5583,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -5661,7 +5676,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -5702,11 +5717,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -5722,9 +5737,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -5739,7 +5754,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -5770,7 +5785,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -5784,11 +5799,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -5836,7 +5851,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -5844,18 +5859,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -5937,7 +5952,7 @@ display:
           Color c0 = soon ? grey : amber;
           Color c0s = soon ? grey : sub_col;
           if (cancelled && id(fade_cancelled).state) { c0 = cxl_col; c0s = cxl_col; }
-          it.printf(TX, y, fr, c0, "%s", sched.c_str());
+          it.print(TX, y, fr, c0, sched.c_str());
           if (id(src_tfl) && id(tfl_colours).state && pprev.size() == 7 && pprev[0] == '#') {
             // TfL line colour (sent in place of the previous platform), brightened so dark lines show on black
             int cr = strtol(pprev.substr(1, 2).c_str(), nullptr, 16), cg = strtol(pprev.substr(3, 2).c_str(), nullptr, 16), cb = strtol(pprev.substr(5, 2).c_str(), nullptr, 16);
@@ -5978,11 +5993,11 @@ display:
               const int t = (int) ((millis() + (uint32_t) eidx * 1300) % (uint32_t) cyc);   // rows out of step
               const int off = t < 3000 ? 0 : (t < 3000 + run ? (t - 3000) * sp / 1000 : over);
               it.start_clipping(DX, y + rT - 3, DX + davail, y + rB + 3);
-              it.printf(DX - off, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX - off, y, fr, c0, dshow.c_str());
               it.end_clipping();
             } else {
               if (dw > davail) fit(dshow, fr, davail);
-              it.printf(DX, y, fr, c0, "%s", dshow.c_str());
+              it.print(DX, y, fr, c0, dshow.c_str());
             }
           }
           if (id(show_platform).state && departure::valid(plat) && !cancelled) {
@@ -5998,9 +6013,9 @@ display:
                 pit = pchg_seen.emplace(pk, millis()).first;
               }
               bool hide = millis() - pit->second < 60000 && (millis() / 500) % 2;
-              if (!hide) it.printf(PX, y, fr, orange, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              if (!hide) it.print(PX, y, fr, orange, TextAlign::TOP_RIGHT, pshow.c_str());
             } else {
-              it.printf(PX, y, fr, c0, TextAlign::TOP_RIGHT, "%s", pshow.c_str());
+              it.print(PX, y, fr, c0, TextAlign::TOP_RIGHT, pshow.c_str());
             }
           }
           char cd[16];
@@ -6015,7 +6030,7 @@ display:
           else if (countdown)
             it.printf(784, y, fr, soon ? grey : (late ? orange : green), TextAlign::TOP_RIGHT, "%s", cd);
           else if (late)
-            it.printf(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, "%s", exp.c_str());
+            it.print(784, y, fr, soon ? grey : orange, TextAlign::TOP_RIGHT, exp.c_str());
           else
             it.printf(784, y, fr, soon ? grey : green, TextAlign::TOP_RIGHT, "On time");
           std::string arr_s;
@@ -6046,7 +6061,7 @@ display:
               if (!msg.empty()) arr_s += "  -  ";
               int abx, aby, abw, abh;
               it.get_text_bounds(0, 0, arr_s.c_str(), fs, TextAlign::TOP_LEFT, &abx, &aby, &abw, &abh);
-              it.printf(DX, ry, fs, arr_c, "%s", arr_s.c_str());
+              it.print(DX, ry, fs, arr_c, arr_s.c_str());
               ax = DX + abw;
             }
             if (!msg.empty() && ry != C_NONE) {
@@ -6060,11 +6075,11 @@ display:
                 const uint32_t ph = millis() % cyc;
                 const int off = ph < 2500 ? 0 : (ph < 2500 + move ? (int) ((ph - 2500) * sp / 1000) : over);
                 it.start_clipping(ax, ry - 10, ax + avail, ry + mbh + 20);
-                it.printf(ax - off, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax - off, ry, fs, mc, msg.c_str());
                 it.end_clipping();
               } else {
                 fit(msg, fs, avail);
-                it.printf(ax, ry, fs, mc, "%s", msg.c_str());
+                it.print(ax, ry, fs, mc, msg.c_str());
               }
             }
             if (aoff > 0) it.end_clipping();
@@ -6112,7 +6127,7 @@ display:
             it.get_text_bounds(0, 0, seg.c_str(), fs, TextAlign::TOP_LEFT, &sbx, &sby, &wseg, &sbh);
           }
           auto drawsub = [&](int x) {
-            if (aw > 0) { it.printf(x, sy, fs, arr_c, "%s", arr_s.c_str()); x += aw; }
+            if (aw > 0) { it.print(x, sy, fs, arr_c, arr_s.c_str()); x += aw; }
             if (!head.empty()) {
               size_t k = std::min(labn, head.size());
               std::string l1 = head.substr(0, k), l2 = head.substr(k);
@@ -6120,18 +6135,18 @@ display:
               if (!l1.empty()) {
                 int a, b, c;
                 it.get_text_bounds(0, 0, l1.c_str(), fs, TextAlign::TOP_LEFT, &a, &b, &lw, &c);
-                it.printf(x, sy, fs, rc, "%s", l1.c_str());
+                it.print(x, sy, fs, rc, l1.c_str());
               }
-              if (!l2.empty()) it.printf(x + lw, sy, fs, c0s, "%s", l2.c_str());
+              if (!l2.empty()) it.print(x + lw, sy, fs, c0s, l2.c_str());
             }
             if (tail.empty()) return;
             if (hpos < 0) {
-              it.printf(x + hw, sy, fs, c0s, "%s", tail.c_str());
+              it.print(x + hw, sy, fs, c0s, tail.c_str());
             } else {
               int tx = x + hw;
-              if (!pre.empty()) it.printf(tx, sy, fs, c0s, "%s", pre.c_str());
-              it.printf(tx + wpre, sy, fs, hilite, "%s", seg.c_str());
-              if (!post.empty()) it.printf(tx + wpre + wseg, sy, fs, c0s, "%s", post.c_str());
+              if (!pre.empty()) it.print(tx, sy, fs, c0s, pre.c_str());
+              it.print(tx + wpre, sy, fs, hilite, seg.c_str());
+              if (!post.empty()) it.print(tx + wpre + wseg, sy, fs, c0s, post.c_str());
             }
           };
           it.start_clipping(DX, sy - 2, 784, sy + std::max(SUBH, (int) fs->get_height()) + 2);
@@ -6205,7 +6220,7 @@ display:
           it.rectangle(60, 170, 680, 90, hilite);
           it.rectangle(61, 171, 678, 88, hilite);
           fit(pn, F_ROWL[fi], 640);
-          it.printf(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, "%s", pn.c_str());
+          it.print(400, 215, F_ROWL[fi], amber, TextAlign::CENTER, pn.c_str());
         } else pop_until = 0;
       }
       if (id(fav_toast_until) != 0) {
@@ -6213,7 +6228,7 @@ display:
           it.filled_rectangle(100, 180, 600, 64, band_col);
           it.rectangle(100, 180, 600, 64, hilite);
           it.rectangle(101, 181, 598, 62, hilite);
-          it.printf(400, 212, id(f_row_0), amber, TextAlign::CENTER, "%s", id(fav_toast).c_str());
+          it.print(400, 212, id(f_row_0), amber, TextAlign::CENTER, id(fav_toast).c_str());
         } else id(fav_toast_until) = 0;
       }
       if (id(flash_slot) >= 0 && view == 0 && !detail) {
@@ -6276,10 +6291,10 @@ display:
           const char *anchor = !wifi_ok ? "wifi" : (!api_ok ? "home-assistant" : ((dms == 0 || millis() - dms > 30UL * 60000UL) ? "trains" : ""));
           const bool qr = anchor[0] != 0;
           int yy = qr ? 125 : ((h1.empty() && l2.empty()) ? 190 : 140);
-          it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l1.c_str());
-          if (!l2.empty()) { yy += qr ? 55 : 65; it.printf(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, "%s", l2.c_str()); }
-          if (!h1.empty()) { yy += qr ? 50 : 60; fit(h1, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h1.c_str()); }
-          if (!h2.empty()) { yy += 36 + (qr ? 0 : 4); fit(h2, F_SUB[fi], 760); it.printf(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, "%s", h2.c_str()); }
+          it.print(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, l1.c_str());
+          if (!l2.empty()) { yy += qr ? 55 : 65; it.print(400, yy, F_ROWL[fi], amber, TextAlign::CENTER, l2.c_str()); }
+          if (!h1.empty()) { yy += qr ? 50 : 60; fit(h1, F_SUB[fi], 760); it.print(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, h1.c_str()); }
+          if (!h2.empty()) { yy += 36 + (qr ? 0 : 4); fit(h2, F_SUB[fi], 760); it.print(400, yy, F_SUB[fi], sub_col, TextAlign::CENTER, h2.c_str()); }
           if (qr) {
             static std::string qr_url;
             const std::string url = std::string("https://grimmnorth.github.io/departure-board/#") + anchor;
@@ -6403,7 +6418,7 @@ display:
         it.printf(784, fb, F_CLK[fi], amber, TextAlign::BASELINE_RIGHT, "%s", cb);
       }
       id(msg_icon_x) = -1;
-      if (id(msg_n) > 0 && !detail && !switching) {
+      if (id(msg_n) > 0 && !detail && !switching && id(msg_scroll).active_index().value_or(3) != 0) {   // not when Hidden
         const int icx = clk_left - 34, icy = fb - 11;
         const bool flash = millis() - id(msg_new_ms) < 6000 && (millis() / 400) % 2;   // flashes when a message arrives
         const Color ic = flash ? hilite : orange;
@@ -6435,7 +6450,7 @@ display:
         int tbx, tby, tbw, tbh;
         it.get_text_bounds(0, 0, tt.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &tbx, &tby, &tbw, &tbh);
         const int tr = clk_left - 30;                              // right edge of the number
-        it.printf(tr, fb, F_SUB[fi], amber, TextAlign::BASELINE_RIGHT, "%s", tt.c_str());
+        it.print(tr, fb, F_SUB[fi], amber, TextAlign::BASELINE_RIGHT, tt.c_str());
         it.circle(tr + 6, fb - 21, 3, amber); it.circle(tr + 6, fb - 21, 2, amber);   // degree sign
         const int icx = tr - tbw - 20;
         draw_wx(icx, fb - 11, 28, id(wx_cond), amber);
@@ -6447,7 +6462,7 @@ display:
         int ibx, iby, ibw, ibh;
         it.get_text_bounds(0, 0, info.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &ibx, &iby, &ibw, &ibh);
         info_left = clk_left - 24 - ibw;
-        it.printf(clk_left - 24, fb, F_SUB[fi], infoc, TextAlign::BASELINE_RIGHT, "%s", info.c_str());
+        it.print(clk_left - 24, fb, F_SUB[fi], infoc, TextAlign::BASELINE_RIGHT, info.c_str());
         if (walk_ic) {
           // a walking figure, 28 px tall, standing on the text baseline
           const int wx = info_left - 20, wt = fb - 28;
@@ -6468,29 +6483,40 @@ display:
       bool mscroll = false;
       {
         static uint32_t ms_t0 = 0, ms_last = 0;
-        const int msi = id(msg_scroll).active_index().value_or(2);
-        const uint32_t every = msi == 1 ? 120000UL : (msi == 2 ? 300000UL : 600000UL);
+        const int msi = id(msg_scroll).active_index().value_or(3);
+        const uint32_t every = msi == 2 ? 120000UL : (msi == 3 ? 300000UL : 600000UL);
         const int mx0 = fx, mx1 = info_left - 20;
-        if (msi > 0 && id(msg_n) > 0 && id(scroll_enabled).state && !detail && !switching && mx1 - mx0 > 80) {
+        if (msi >= 2 && id(msg_n) > 0 && id(scroll_enabled).state && !detail && !switching && mx1 - mx0 > 80) {
           if (ms_t0 == 0 && (ms_last == 0 || millis() - ms_last > every)) ms_t0 = millis();
           if (ms_t0 != 0) {
-            std::string mt;
-            bool sep = false;
-            for (char ch : id(msg_text)) {
-              if (ch == '\n') { if (!mt.empty()) sep = true; }
-              else { if (sep) { mt += "   -   "; sep = false; } mt += ch; }
+            // one message per pass, taking turns; long ones are cut at about 200 characters (tap the i for the rest)
+            static int ms_idx = 0;
+            std::vector<std::string> ml;
+            {
+              std::string cur;
+              for (char ch : id(msg_text)) {
+                if (ch == '\n') { if (cur.find_first_not_of(' ') != std::string::npos) ml.push_back(cur); cur.clear(); }
+                else cur += ch;
+              }
+              if (cur.find_first_not_of(' ') != std::string::npos) ml.push_back(cur);
+            }
+            std::string mt = ml.empty() ? std::string("") : ml[ms_idx % ml.size()];
+            if (mt.size() > 200) {
+              size_t cut = mt.rfind(' ', 200);
+              mt = mt.substr(0, cut == std::string::npos ? 200 : cut) + "... (tap the i to read on)";
             }
             int mbx, mby, mw, mbh;
             it.get_text_bounds(0, 0, mt.c_str(), F_SUB[fi], TextAlign::TOP_LEFT, &mbx, &mby, &mw, &mbh);
-            const int off = (int) ((uint64_t) (millis() - ms_t0) * sp / 1000);
-            if (mt.empty() || off > (mx1 - mx0) + 40 + mw) { ms_t0 = 0; ms_last = millis(); }
+            const int msp = std::max(60, sp * 2);                    // a little brisker than the calling points
+            const int off = (int) ((uint64_t) (millis() - ms_t0) * msp / 1000);
+            if (mt.empty() || off > (mx1 - mx0) + 40 + mw) { ms_t0 = 0; ms_last = millis(); ms_idx++; }
             else {
               mscroll = true;
               const int x = mx1 - off;
               it.start_clipping(mx0, fb - 40, mx1, fb + 12);
               it.filled_circle(x + 14, fb - 11, 14, orange);                   // an orange "i" leads the message
               it.printf(x + 14, fb - 11, F_SUB[fi], bg_col, TextAlign::CENTER, "i");
-              it.printf(x + 40, fb, F_SUB[fi], amber, TextAlign::BASELINE_LEFT, "%s", mt.c_str());
+              it.print(x + 40, fb, F_SUB[fi], orange, TextAlign::BASELINE_LEFT, mt.c_str());   // orange, like the i
               it.end_clipping();
             }
           }
@@ -6498,7 +6524,7 @@ display:
       }
       if (!mscroll) {
         fit(foot, F_SUB[fi], info_left - 20 - fx);
-        it.printf(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, "%s", foot.c_str());
+        it.print(fx, fb, F_SUB[fi], footc, TextAlign::BASELINE_LEFT, foot.c_str());
       }
 
 qr_code:

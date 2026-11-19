@@ -60,16 +60,6 @@ views:
         perform_action: button.press
         target:
           entity_id: button.departure_board_xxxxxx_next_station
-    - type: tile
-      entity: sensor.departure_board_xxxxxx_leave_in
-      name: Leave in
-      grid_options:
-        columns: 6
-    - type: tile
-      entity: sensor.departure_board_xxxxxx_station_messages
-      name: Station messages
-      grid_options:
-        columns: 6
   - type: grid
     cards:
     - type: heading
@@ -104,16 +94,6 @@ views:
       features:
       - type: toggle
       features_position: bottom
-    - type: tile
-      entity: text.departure_board_xxxxxx_platform
-      name: Platform
-      icon: mdi:sign-direction
-      grid_options:
-        columns: 6
-      visibility:
-      - condition: state
-        entity: select.departure_board_xxxxxx_layout
-        state: Platform
     - type: tile
       entity: switch.departure_board_xxxxxx_train_numbers
       name: Train numbers
@@ -475,8 +455,8 @@ views:
         entity: select.departure_board_xxxxxx_layout
         state: Platform
     - type: tile
-      entity: switch.departure_board_xxxxxx_disruption_banner
-      name: Disruption banner
+      entity: switch.departure_board_xxxxxx_disruption_alert
+      name: Disruption alert
       grid_options:
         columns: 6
       icon: mdi:alert
@@ -511,8 +491,8 @@ views:
       - type: select-options
       features_position: bottom
     - type: tile
-      entity: select.departure_board_xxxxxx_scroll_station_messages
-      name: Scroll station messages
+      entity: select.departure_board_xxxxxx_station_messages
+      name: Station messages
       icon: mdi:message-arrow-left-outline
       grid_options:
         columns: 12
