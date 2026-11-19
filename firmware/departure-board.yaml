@@ -161,6 +161,7 @@ api:
             { const char *bs = id(bp_ver) >= 3 ? "Up to date" : "Update available: re-import it";   // BP_NEED = 3
               if (!id(bp_ts).has_state() || id(bp_ts).state != bs) id(bp_ts).publish_state(bs); }
             id(data_ms_stn) = millis();
+    # One train (older blueprints): n is 1 to 10
     - action: update_train
       variables:
         n: int
@@ -180,49 +181,44 @@ api:
         calls: string[]
       then:
         - lambda: |-
-            if (id(demo_kind) != 0) return;   // a demo board is showing
+            if (id(demo_kind) != 0 || n < 1 || n > 10) return;   // a demo board is showing
             std::string cp = "[";
             for (size_t i = 0; i < calls.size(); i++) { if (i) cp += ", "; cp += "\"" + calls[i] + "\""; }
             cp += "]";
-            if (n < 1 || n > 10) return;
             departure::Train &t = departure::train(n);
             t.sched = sched; t.exp = expct; t.plat = plat; t.pchg = pchg; t.stat = stat; t.dreason = dreason; t.creason = creason;
             t.oper = oper; t.delaym = delaym; t.sarr = sarr; t.earr = earr; t.pprev = pprev; t.stops = stops; t.calls = cp;
-            // a favourite train: tell Home Assistant when it becomes late, is cancelled or changes platform
-            if (!id(src_tfl) && departure::is_hhmm(sched.substr(0, 5)) && departure::fav_match(id(fav_times).state, sched, id(station_ts).state)) {
-              struct FavSeen { int bucket; bool canc; std::string plat; uint32_t ms; };
-              static std::map<std::string, FavSeen> seen;
-              const std::string key = sched.substr(0, 5) + "|" + id(station_ts).state;
-              std::string ls = stat;
-              for (auto &ch : ls) ch = tolower((unsigned char) ch);
-              const bool canc = ls.find("cancel") != std::string::npos;
-              int dm = atoi(delaym.c_str());
-              if (dm <= 0 && departure::is_hhmm(expct.substr(0, 5)))
-                dm = ((atoi(expct.substr(0, 2).c_str()) * 60 + atoi(expct.substr(3, 2).c_str())) - (atoi(sched.substr(0, 2).c_str()) * 60 + atoi(sched.substr(3, 2).c_str())) + 1440) % 1440;
-              if (dm > 720) dm = 0;
-              const int b = dm >= 30 ? 5 : dm >= 15 ? 4 : dm >= 10 ? 3 : dm >= 5 ? 2 : dm >= 1 ? 1 : 0;
-              const bool pc = departure::truthy(pchg) && departure::valid(pprev) && departure::valid(plat);
-              std::string kind;
-              auto f = seen.find(key);
-              if (f == seen.end() || millis() - f->second.ms > 6UL * 3600000UL) {   // first time seen today
-                if (seen.size() > 30) seen.clear();
-                if (canc) kind = "cancelled"; else if (b > 0) kind = "delayed"; else if (pc) kind = "platform";
-                seen[key] = {b, canc, plat, millis()};
-              } else {
-                FavSeen &s = f->second;
-                if (canc && !s.canc) kind = "cancelled";
-                else if (!canc && b > s.bucket) kind = "delayed";
-                else if (!canc && departure::valid(plat) && departure::valid(s.plat) && plat != s.plat) kind = "platform";
-                s.bucket = std::max(s.bucket, b); s.canc = s.canc || canc; s.ms = millis();
-                if (departure::valid(plat)) s.plat = plat;
-              }
-              if (!kind.empty()) {
-                const std::string r = canc ? creason : dreason;
-                id(fav_alert).execute(kind, sched.substr(0, 5), id(station_ts).state, departure::destination(cp, 40),
-                                      departure::is_hhmm(expct.substr(0, 5)) ? expct.substr(0, 5) : std::string(""), dm,
-                                      departure::valid(plat) ? plat : std::string(""), departure::valid(r) ? r : std::string(""));
-              }
+            id(fav_check).execute(n);
+            id(data_ms_stn) = millis();
+    # All ten trains in one go (newer blueprints), so the board never shows half old, half new trains.
+    # Each list has one entry per train; calls holds each train's calling points as ["A", "B"].
+    - action: update_trains
+      variables:
+        sched: string[]
+        expct: string[]
+        plat: string[]
+        pchg: string[]
+        stat: string[]
+        dreason: string[]
+        creason: string[]
+        oper: string[]
+        delaym: string[]
+        sarr: string[]
+        earr: string[]
+        pprev: string[]
+        stops: string[]
+        calls: string[]
+      then:
+        - lambda: |-
+            if (id(demo_kind) != 0) return;   // a demo board is showing
+            auto at = [](const std::vector<std::string> &v, int i) { return i < (int) v.size() ? v[i] : std::string(); };
+            for (int i = 0; i < 10; i++) {
+              departure::Train &t = departure::trains()[i];
+              t.sched = at(sched, i); t.exp = at(expct, i); t.plat = at(plat, i); t.pchg = at(pchg, i); t.stat = at(stat, i);
+              t.dreason = at(dreason, i); t.creason = at(creason, i); t.oper = at(oper, i); t.delaym = at(delaym, i);
+              t.sarr = at(sarr, i); t.earr = at(earr, i); t.pprev = at(pprev, i); t.stops = at(stops, i); t.calls = at(calls, i);
             }
+            for (int n = 1; n <= 10; n++) id(fav_check).execute(n);
             id(data_ms_stn) = millis();
 
 ota:
@@ -495,6 +491,52 @@ time:
 # Decides every 2 seconds whether the screen should be normal, dimmed for the night,
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
+  # after a train is stored: a favourite train tells Home Assistant when it becomes late, is cancelled or changes platform
+  - id: fav_check
+    mode: parallel
+    max_runs: 10
+    parameters:
+      n: int
+    then:
+      - lambda: |-
+          const departure::Train &tr = departure::train(n);
+          const std::string &sched = tr.sched, &expct = tr.exp, &plat = tr.plat, &pchg = tr.pchg, &stat = tr.stat, &dreason = tr.dreason,
+                            &creason = tr.creason, &delaym = tr.delaym, &pprev = tr.pprev, &cp = tr.calls;
+          // a favourite train: tell Home Assistant when it becomes late, is cancelled or changes platform
+          if (!id(src_tfl) && departure::is_hhmm(sched.substr(0, 5)) && departure::fav_match(id(fav_times).state, sched, id(station_ts).state)) {
+            struct FavSeen { int bucket; bool canc; std::string plat; uint32_t ms; };
+            static std::map<std::string, FavSeen> seen;
+            const std::string key = sched.substr(0, 5) + "|" + id(station_ts).state;
+            std::string ls = stat;
+            for (auto &ch : ls) ch = tolower((unsigned char) ch);
+            const bool canc = ls.find("cancel") != std::string::npos;
+            int dm = atoi(delaym.c_str());
+            if (dm <= 0 && departure::is_hhmm(expct.substr(0, 5)))
+              dm = ((atoi(expct.substr(0, 2).c_str()) * 60 + atoi(expct.substr(3, 2).c_str())) - (atoi(sched.substr(0, 2).c_str()) * 60 + atoi(sched.substr(3, 2).c_str())) + 1440) % 1440;
+            if (dm > 720) dm = 0;
+            const int b = dm >= 30 ? 5 : dm >= 15 ? 4 : dm >= 10 ? 3 : dm >= 5 ? 2 : dm >= 1 ? 1 : 0;
+            const bool pc = departure::truthy(pchg) && departure::valid(pprev) && departure::valid(plat);
+            std::string kind;
+            auto f = seen.find(key);
+            if (f == seen.end() || millis() - f->second.ms > 6UL * 3600000UL) {   // first time seen today
+              if (seen.size() > 30) seen.clear();
+              if (canc) kind = "cancelled"; else if (b > 0) kind = "delayed"; else if (pc) kind = "platform";
+              seen[key] = {b, canc, plat, millis()};
+            } else {
+              FavSeen &s = f->second;
+              if (canc && !s.canc) kind = "cancelled";
+              else if (!canc && b > s.bucket) kind = "delayed";
+              else if (!canc && departure::valid(plat) && departure::valid(s.plat) && plat != s.plat) kind = "platform";
+              s.bucket = std::max(s.bucket, b); s.canc = s.canc || canc; s.ms = millis();
+              if (departure::valid(plat)) s.plat = plat;
+            }
+            if (!kind.empty()) {
+              const std::string r = canc ? creason : dreason;
+              id(fav_alert).execute(kind, sched.substr(0, 5), id(station_ts).state, departure::destination(cp, 40),
+                                    departure::is_hhmm(expct.substr(0, 5)) ? expct.substr(0, 5) : std::string(""), dm,
+                                    departure::valid(plat) ? plat : std::string(""), departure::valid(r) ? r : std::string(""));
+            }
+          }
   - id: test_sound
     then:
       - if:
@@ -1248,7 +1290,7 @@ media_player:
     volume_initial: 1.0
     files:
       - id: chime_sound
-        file: sounds/chime.wav  # an original three-note chime, played on the board itself
+        file: sounds/chime.flac  # an original three-note chime, played on the board itself (compressed: a third of the size)
     announcement_pipeline:
       speaker: board_speaker
       format: WAV               # Home Assistant converts it; the board has nothing to decode
