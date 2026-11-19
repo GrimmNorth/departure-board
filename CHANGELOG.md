@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Sound: the board, README, dashboard and automation now say announcements can play on a speaker plugged into the board or on one you already have in Home Assistant (e.g. a Google Nest Mini)
 - Blueprint: the *Names on the board* option is gone; each station shows its own name
 - Announcements: pick the voice from a list (Google Translate British, five Piper voices, four Home Assistant Cloud voices) instead of typing a service and voice name. Announcements now use a British voice: before, Google used its American one. Re-import the blueprint
 

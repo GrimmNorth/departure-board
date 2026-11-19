@@ -491,6 +491,14 @@ time:
 # Decides every 2 seconds whether the screen should be normal, dimmed for the night,
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
+  # restart the screen's picture feed at the next frame: clears a picture that has slipped sideways and jitters
+  - id: panel_resync
+    then:
+      - lambda: |-
+          struct PanelH : public mipi_rgb::MipiRgb {
+            static esp_lcd_panel_handle_t get(mipi_rgb::MipiRgb *d) { return d->*(&PanelH::handle_); }
+          };
+          esp_lcd_rgb_panel_restart(PanelH::get(id(main_display)));
   # after a train is stored: a favourite train tells Home Assistant when it becomes late, is cancelled or changes platform
   - id: fav_check
     mode: parallel
@@ -1296,6 +1304,9 @@ media_player:
       format: WAV               # Home Assistant converts it; the board has nothing to decode
       num_channels: 1
       sample_rate: 16000
+    # after each sound: put the screen's picture back in step, in case the busy moment made it slip (jitter at the left edge)
+    on_idle:
+      - script.execute: panel_resync
 
 font:
   - file: "gfonts://DotGothic16"
@@ -1734,7 +1745,7 @@ select:
     optimistic: true
     restore_value: true
     initial_option: "Off"
-    options: ["Off", "All trains", "Delays only", "Favourites only"]   # spoken by Home Assistant; needs a speaker plugged in
+    options: ["Off", "All trains", "Delays only", "Favourites only"]   # spoken by Home Assistant, on the board's speaker or any Home Assistant speaker
   - platform: template
     name: "Demo mode"
     id: demo_select
@@ -1955,7 +1966,7 @@ display:
     hsync_pin: GPIO39
     vsync_pin: GPIO40
     pclk_pin: GPIO0
-    pclk_frequency: 15MHz
+    pclk_frequency: 14MHz    # a little slower than 15: more headroom for the picture feed while sound plays
     pclk_inverted: true
     hsync_front_porch: 40
     hsync_pulse_width: 48
@@ -2216,7 +2227,7 @@ display:
             if (p == 2 && r >= 3 && r <= 5 && !id(night_dimming).state) return "Turn on Night dimming to use this";
             if (p == 2 && (r == 4 || r == 5) && id(night_sun).state) return "Follows sunset and sunrise";
             if (p == 2 && r == 7 && id(idle_minutes).state <= 0) return "Set Idle dim after to use this";
-            if (p == 4 && r >= 1 && !id(sounds_sw).state) return "Turn on Sounds to use this (needs a speaker plugged in)";
+            if (p == 4 && r >= 1 && !id(sounds_sw).state) return "Turn on Sounds to use this (needs a speaker)";
             if (p == 4 && r >= 4 && r <= 6 && id(ann_mode).active_index().value_or(0) == 0) return "Turn on Announcements to use this";
             return nullptr;
           };
@@ -2283,10 +2294,10 @@ display:
              "The logo in the footer", "Hidden, Icon only, or scroll along the footer every 2, 5 or 10 min",
              "Switch to the big clock after this long", "12 or 24 hour, with or without seconds",
              "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"},
-            {"Turn on if a speaker is plugged into the board", "Silence the speaker for now; a grey speaker shows in the footer",
+            {"Turn on with a speaker on the board, or one in Home Assistant", "Silence announcements for now; a grey speaker shows in the footer",
              "How loud announcements and the chime are", "All trains, only delays, or only your favourite trains (hold a train)",
              "How long before each train's booked time", "A chime before each announcement",
-             "Silent between Night starts and Night ends", "Play the chime"}};
+             "Silent between Night starts and Night ends", "Play the chime on the board's own speaker"}};
           static const char *ABOUT_HINTS[8] = {"The Wi-Fi network and its signal", "The board's address on your network",
              "The link to Home Assistant", "Time since the last trains arrived",
              "Updates install themselves at about 03:00", "Time since the board last restarted",

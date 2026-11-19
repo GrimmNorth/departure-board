@@ -11,7 +11,7 @@ A live UK train departure board for the **Elecrow CrowPanel Basic 7.0" (ESP32-S3
 - Home Assistant 2026.11 or newer
 - **My Rail Commute** from the Marketplace (Settings > Marketplace), with a free National Rail Darwin token
 - For Tube / DLR only: **London TfL** from the Marketplace
-- Optional, for sound and announcements: a small speaker plugged into the board's speaker socket (not included with the board)
+- Optional, for sound and announcements: a small speaker plugged into the board's speaker socket (not included with the board), or a speaker you already have in Home Assistant (e.g. a Google Nest Mini or a Sonos)
 
 ## Setup
 1. **Install the firmware.** Open the [install page](https://grimmnorth.github.io/departure-board/) in Chrome or Edge on a computer, plug the board in by USB and click Install.
@@ -70,10 +70,10 @@ To get a phone notification when a favourite is late, cancelled or changes platf
 ### Sound (optional, experimental)
 Sound is new and has only been tested on one board and speaker, with Google's voice, so expect some rough edges. Feedback is welcome.
 
-Sound needs a speaker plugged into the board's speaker socket (a small 4-8 ohm speaker of about 2-3 W). The board doesn't come with one, and without one these settings do nothing.
-- **On the board:** settings has a **Sound** page. Turn on *Sounds* once a speaker is plugged in (it's off to start with, and while it's off nothing plays and no speaker icon shows). Then: *Mute*, *Volume*, *Announcements* (*Off*, *All trains*, *Delays only* or *Favourites only*), *Announce before* (5 minutes by default), *Chime first*, *Quiet at night* (silent between the board's Night starts and Night ends, or sunset to sunrise) and *Test sound*. The same settings are on the board's device page in Home Assistant.
+Sound needs a speaker. Either plug one into the board's speaker socket (a small 4-8 ohm speaker of about 2-3 W; the board doesn't come with one), or announce on a speaker you already have in Home Assistant, such as a Google Nest Mini or a Sonos (pick it under *Speakers* in your automation, see below). The chime and *Test sound* only play on the board's own speaker.
+- **On the board:** settings has a **Sound** page. Turn on *Sounds* once you have a speaker (it's off to start with, and while it's off nothing plays and no speaker icon shows). Then: *Mute*, *Volume*, *Announcements* (*Off*, *All trains*, *Delays only* or *Favourites only*), *Announce before* (5 minutes by default), *Chime first*, *Quiet at night* (silent between the board's Night starts and Night ends, or sunset to sunrise) and *Test sound*. The same settings are on the board's device page in Home Assistant.
 - **Announcements:** station-style, for the station or route the board is showing (not Tube / DLR), e.g. *"The next train to depart from platform 1 will be the 10:53 Northern service to Hull"*, or *"We are sorry to announce..."* when a train is delayed or cancelled. A delayed train with a new time is announced again a few minutes before it now leaves. Home Assistant does the speaking, in a British voice: Google Translate (free, built in) unless you pick a Piper or Home Assistant Cloud voice.
-- **Voice and other speakers (optional):** in your departure board automation (Settings > Automations & scenes), expand **Announcement voice and speakers (optional, experimental)** and pick a *Voice* from the list: Google Translate (British, the default), Piper or Home Assistant Cloud voices. You can add other speakers to announce on too.
+- **Voice and speakers (optional):** in your departure board automation (Settings > Automations & scenes), expand **Announcement voice and speakers (optional, experimental)**. Pick a *Voice* from the list: Google Translate (British, the default), Piper or Home Assistant Cloud voices. Under *Speakers*, pick any Home Assistant speakers to announce on instead of the board's own (add the board's speaker too if you want both).
 - **Footer:** with Sounds on, a speaker icon shows only while the board is speaking (amber; tap it to stop) or when it's muted (grey with a cross; tap it to unmute).
 - You can also play your own announcements to the board's *Speaker* media player with `tts.speak`.
 
@@ -86,7 +86,7 @@ Every setting is on the board (tap the clock) and on the board's device page in 
 - **Trains:** countdown, calling-at filter, cancelled trains (shown, faded or hidden), show platform, paging, pin next train, departed grace, walking time
 - **Screen:** brightness, panel colour warmth, night dimming (set times or sunset/sunrise), night brightness (down to screen off), idle dimming
 - **Extras:** highlight a stop, disruption alert, logo, station messages, clock screen, 12/24-hour clock and seconds, footer colour, weather
-- **Sound** (needs a speaker plugged in): sounds on or off, mute, volume, announcements, announce before, chime first, quiet at night, test sound
+- **Sound** (needs a speaker, on the board or in Home Assistant): sounds on or off, mute, volume, announcements, announce before, chime first, quiet at night, test sound
 - **About:** Wi-Fi, IP address, Home Assistant link, data age, firmware, uptime, ESPHome version, free memory
 - **Home Assistant only:** page interval, demo mode, and *Station number* for switching station from your own automations
 

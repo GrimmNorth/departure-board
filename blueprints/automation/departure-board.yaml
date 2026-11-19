@@ -9,7 +9,7 @@ blueprint:
     Up to 5 stations in total; swipe or tap the station name on the board to switch.
     Optionally, get a phone notification when one of your favourite trains (press and hold
     a train on the board) is late, cancelled or changes platform, and station-style announcements
-    on the board's speaker. Use one automation per board.
+    on the board's speaker or any Home Assistant speaker. Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:
@@ -95,14 +95,16 @@ blueprint:
       name: Announcement voice and speakers (optional, experimental)
       icon: mdi:bullhorn-outline
       description: >-
-        Spoken train announcements need a speaker plugged into the board's speaker socket. Turn them on
-        and choose which trains on the board (Settings > Sound) or on its device page. Here you can pick
-        the voice and add other speakers.
+        Spoken train announcements need a speaker: one plugged into the board's speaker socket, or any
+        speaker you already have in Home Assistant (e.g. a Google Nest Mini). Turn them on and choose which
+        trains on the board (Settings > Sound) or on its device page. Here you pick the voice and the speakers.
       collapsed: true
       input:
         ann_speakers:
           name: Speakers
-          description: Leave empty to use the board's own speaker.
+          description: >-
+            Leave empty to use the board's own speaker. Or pick any Home Assistant speakers (e.g. a Google Nest Mini)
+            to announce on instead; add the board's speaker too if you want both. The chime only plays on the board.
           default: []
           selector:
             entity:
