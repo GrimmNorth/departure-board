@@ -96,8 +96,8 @@ blueprint:
       icon: mdi:bullhorn-outline
       description: >-
         Spoken train announcements need a speaker plugged into the board's speaker socket. Turn them on
-        and choose which trains on the board (Settings > Sound) or on its device page. Here you can change
-        the voice or add other speakers; left empty, it uses the board's speaker and the first voice service you have.
+        and choose which trains on the board (Settings > Sound) or on its device page. Here you can pick
+        the voice and add other speakers.
       collapsed: true
       input:
         ann_speakers:
@@ -109,32 +109,52 @@ blueprint:
               multiple: true
               filter:
                 - domain: media_player
-        ann_tts:
-          name: Voice service
+        ann_voice_pick:
+          name: Voice
           description: >-
-            A text-to-speech service, e.g. Google Translate (free, built in), Piper (runs on your own
-            Home Assistant) or Home Assistant Cloud. Leave empty to use the first one you have.
+            Who reads the announcements. Google Translate is free and built in; Piper is free and runs on your
+            own Home Assistant (needs the Piper app); Home Assistant Cloud needs a Cloud subscription.
+            A small speaker sounds much the same with any of them.
+          default: google_uk
+          selector:
+            select:
+              options:
+                - label: "Google Translate: British"
+                  value: google_uk
+                - label: "Piper: Northern English (male)"
+                  value: "piper:en_GB-northern_english_male-medium"
+                - label: "Piper: Alan (male)"
+                  value: "piper:en_GB-alan-medium"
+                - label: "Piper: Cori (female)"
+                  value: "piper:en_GB-cori-high"
+                - label: "Piper: Jenny (female)"
+                  value: "piper:en_GB-jenny_dioco-medium"
+                - label: "Piper: Southern English (female)"
+                  value: "piper:en_GB-southern_english_female-low"
+                - label: "Home Assistant Cloud: Ryan (male)"
+                  value: "cloud:RyanNeural"
+                - label: "Home Assistant Cloud: Thomas (male, deeper)"
+                  value: "cloud:ThomasNeural"
+                - label: "Home Assistant Cloud: Sonia (female)"
+                  value: "cloud:SoniaNeural"
+                - label: "Home Assistant Cloud: Libby (female, warmer)"
+                  value: "cloud:LibbyNeural"
+                - label: "Other (set the two options below)"
+                  value: custom
+        ann_tts:
+          name: Other voice service (only with Voice set to Other)
+          description: Any other text-to-speech service.
           default: ""
           selector:
             entity:
               filter:
                 - domain: tts
         ann_voice:
-          name: Voice (optional)
-          description: >-
-            A voice name for services that have several, e.g. "en_GB-northern_english_male-medium" for Piper.
-            Leave empty for the service's own voice.
+          name: Other voice name (only with Voice set to Other)
+          description: The voice's name in that service, if it has several. Leave empty for its own voice.
           default: ""
           selector:
             text:
-    station_name:
-      name: Names on the board (optional)
-      description: >-
-        Usually leave empty to use each station's own name. Otherwise, one name per station
-        in order, separated by commas (e.g. "York, , Leeds" keeps station 2's own name).
-      default: ""
-      selector:
-        text:
 
 mode: queued
 max: 5
@@ -164,7 +184,6 @@ variables:
   first_station: !input station
   extra: !input more_stations
   tfl_in: !input tfl_stations
-  label_in: !input station_name
   weather_in: !input weather
   # announcements are switched on and set up on the board (Settings > Sound)
   ann_sel: "{{ board_ents | select('match', 'select\\..*_announcements$') | first | default('') }}"
@@ -188,12 +207,9 @@ variables:
   pick: >-
     {% if trigger is defined and trigger.platform == 'event' and trigger.event.data.number is defined %}{{ trigger.event.data.number | int(1) }}{% elif num_ent != '' %}{{ states(num_ent) | int(1) }}{% else %}1{% endif %}
   idx: "{{ pick - 1 if 1 <= pick <= (stations | count) else 0 }}"
-  # one name per station, comma separated (a single name still names station 1, as before)
-  names: "{{ (label_in | string).split(',') | map('trim') | list if label_in else [] }}"
   station_id: "{{ stations[idx] }}"
   is_tfl: "{{ station_id in tfl_keys }}"
   tfl_members: "{% set ns = namespace(m=[]) %}{% for g in tfl_groups if g[0] == station_id %}{% set ns.m = g %}{% endfor %}{{ ns.m }}"
-  label: "{{ names[idx] if idx < (names | count) else '' }}"
   svc: "{{ device_attr(board_id, 'name') | slugify }}"
   ents: "{{ [] if is_tfl else device_entities(station_id) }}"
   # how the station's trains have run this week, from My Rail Commute (-1 when not known)
@@ -234,7 +250,7 @@ variables:
     {% set ns = namespace(m=[]) %}{% for e in tfl_members %}{% set tok = (e | replace('sensor.london_tfl_', '')).split('_')[0] %}{% set info = tfl_lines.get(tok) %}{% if info %}{% set st = 'sensor.london_underground_' ~ info[2] %}{% set v = states(st) %}{% if v not in ['Good Service', 'unknown', 'unavailable'] %}{% set dsc = (state_attr(st, 'Description') or '') | regex_replace('\\s+', ' ') | trim %}{% set m = dsc if dsc and dsc != 'Nothing to report' else info[0] ~ ': ' ~ v %}{% if m not in ns.m %}{% set ns.m = ns.m + [m] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.m | join('\n') }}
   # the station's name as the board shows it (favourites are saved with it, e.g. "07:42 Brough")
   stn_name: >-
-    {{ label if label | length > 0 else tfl_name if is_tfl and tfl_name else (origin_name if origin_name | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True))) }}
+    {{ tfl_name if is_tfl and tfl_name else (origin_name if origin_name | length > 0 else (device_attr(station_id, 'name') | regex_replace('^\\s*(departures|trains)\\s+from\\s+', '', ignorecase=True))) }}
   # National Rail station messages (engineering works, strikes...), one per line, without the web links
   messages: >-
     {% if is_tfl %}{{ tfl_status }}{% else %}{% set ns = namespace(out=[]) %}{% set raw = state_attr(summary_ent, 'nrcc_messages') if summary_ent != '' else none %}{% for m in (raw if raw is list else []) %}{% if m is mapping %}{% set v = m.get('Value', m.get('value', '')) %}{% else %}{% set v = m %}{% endif %}{% set v = (v | string) | regex_replace('<[^>]*>', '') | replace('&amp;', '&') | replace('&quot;', '"') | replace('&#39;', "'") | replace('&lt;', '<') | replace('&gt;', '>') | replace('&nbsp;', ' ') | regex_replace('[‘’]', "'") | regex_replace('[“”]', '"') | regex_replace('[–—]', '-') | regex_replace('[^\x20-\x7E]', ' ') | regex_replace('\s+', ' ') | trim | truncate(400, true, '...') %}{% if v %}{% set ns.out = ns.out + [v] %}{% endif %}{% endfor %}{{ ns.out | join('\n') }}{% endif %}
@@ -406,7 +422,7 @@ actions:
           notification_id: "{{ note_id }}_data"
           title: "UK Departure Board: no trains"
           message: >-
-            {{ label if label else 'The board\'s station' }} hasn't sent any trains for {{ data_bad_for }} minutes.
+            {{ stn_name if stn_name else 'The board\'s station' }} hasn't sent any trains for {{ data_bad_for }} minutes.
             {% if is_tfl %}Check the London TfL integration in Settings > Devices & services.{% else %}Check My Rail Commute in
             Settings > Devices & services: if it shows an error, your National Rail Darwin token may have expired or been
             mistyped, so reconfigure it with a new token.{% endif %}
@@ -425,7 +441,7 @@ actions:
           title: "UK Departure Board: change one My Rail Commute setting"
           message: >-
             My Rail Commute is still listing trains that left a few minutes ago, so they take up rows on the board.
-            Open {{ label if label else 'your station' }} in Settings > Devices & services > My Rail Commute, choose
+            Open {{ stn_name if stn_name else 'your station' }} in Settings > Devices & services > My Rail Commute, choose
             Configure > Disruption, and set "Departed train grace period" to 1 minute. This message goes away by itself once it's fixed.
     else:
       - action: persistent_notification.dismiss
@@ -444,14 +460,20 @@ actions:
           before: "{{ states(board_ents | select('match', 'number\\..*_announce_before$') | first | default('')) | int(5) }}"
           chime: "{{ is_state(board_ents | select('match', 'switch\\..*_chime_first$') | first | default(''), 'on') }}"
           spk_in: !input ann_speakers
+          pick: !input ann_voice_pick
           tts_in: !input ann_tts
-          voice: !input ann_voice
+          voice_in: !input ann_voice
           # quiet between the board's Night starts and Night ends (or sunset to sunrise when night follows the sun)
           quiet: >-
             {% set qs = board_ents | select('match', 'switch\\..*_quiet_at_night$') | first | default('') %}{% if not is_state(qs, 'on') %}false{% elif is_state(board_ents | select('match', 'switch\\..*_night_follows_sun$') | first | default(''), 'on') %}{{ is_state('sun.sun', 'below_horizon') }}{% else %}{% set q_from = states(board_ents | select('match', 'time\\..*_night_starts$') | first | default('')) %}{% set q_to = states(board_ents | select('match', 'time\\..*_night_ends$') | first | default('')) %}{% set n = now().strftime('%H:%M:%S') %}{% if not (q_from | regex_match('^[0-9]{2}:[0-9]{2}')) or not (q_to | regex_match('^[0-9]{2}:[0-9]{2}')) or q_from == q_to %}false{% elif q_from < q_to %}{{ q_from <= n < q_to }}{% else %}{{ n >= q_from or n < q_to }}{% endif %}{% endif %}
           speakers: >-
             {% set l = spk_in if spk_in is list else ([spk_in] if spk_in else []) %}{{ l if l else board_ents | select('match', 'media_player\\.') | list }}
-          tts_ent: "{{ tts_in if tts_in else (states.tts | map(attribute='entity_id') | first | default('')) }}"
+          # the speech service, voice and language for the chosen voice (British English throughout)
+          tts_ent: >-
+            {% set all = states.tts | map(attribute='entity_id') | list %}{% set want = 'google_translate' if pick == 'google_uk' else ('piper' if pick.startswith('piper:') else ('home_assistant_cloud' if pick.startswith('cloud:') else '')) %}{% set m = all | select('search', want) | first | default('') if want else '' %}{{ m if m else (tts_in if tts_in else (all | first | default(''))) }}
+          voice: "{{ pick.split(':', 1)[1] if ':' in pick else (voice_in if pick == 'custom' else '') }}"
+          lang: "{{ 'en' if pick == 'google_uk' else ('en_GB' if pick.startswith('piper:') else ('en-GB' if pick.startswith('cloud:') else '')) }}"
+          tts_opts: "{{ {'tld': 'co.uk'} if pick == 'google_uk' else ({'voice': voice} if voice else {}) }}"
           a_ents: "{{ device_entities(station_id) }}"
           a_sum: "{{ a_ents | select('search', '_summary$') | first | default('') }}"
           a_all: "{% set v = state_attr(a_sum, 'all_trains') if a_sum else none %}{{ v if v is list else [] }}"
@@ -486,14 +508,27 @@ actions:
                 - action: "esphome.{{ svc }}_play_chime"
                   continue_on_error: true
                 - delay: 2
-            - action: tts.speak
-              continue_on_error: true
-              target:
-                entity_id: "{{ tts_ent }}"
-              data:
-                media_player_entity_id: "{{ speakers }}"
-                message: "{{ message }}"
-                options: "{{ {'voice': voice} if voice else {} }}"
+            - if:
+                - "{{ lang != '' }}"
+              then:
+                - action: tts.speak
+                  continue_on_error: true
+                  target:
+                    entity_id: "{{ tts_ent }}"
+                  data:
+                    media_player_entity_id: "{{ speakers }}"
+                    message: "{{ message }}"
+                    language: "{{ lang }}"
+                    options: "{{ tts_opts }}"
+              else:
+                - action: tts.speak
+                  continue_on_error: true
+                  target:
+                    entity_id: "{{ tts_ent }}"
+                  data:
+                    media_player_entity_id: "{{ speakers }}"
+                    message: "{{ message }}"
+                    options: "{{ tts_opts }}"
             # let it finish before the next one
             - delay: 3
             - wait_template: "{{ speakers | select('is_state', ['playing', 'buffering']) | list | count == 0 }}"
