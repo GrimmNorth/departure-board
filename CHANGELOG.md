@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased
+## 2.3.1 - 2026-11-19 (beta)
+- README and install page: shorter and simpler, with a fresh screenshot instead of the animation
 - Screen: if the picture slips and jitters at the left edge after a sound, the board now puts it back in step as soon as the sound ends. The screen is also fed slightly slower (14 MHz instead of 15), which leaves more room for sound and the picture at the same time
 - Sound: the board, README, dashboard and automation now say announcements can play on a speaker plugged into the board or on one you already have in Home Assistant (e.g. a Google Nest Mini)
 - Blueprint: the *Names on the board* option is gone; each station shows its own name
