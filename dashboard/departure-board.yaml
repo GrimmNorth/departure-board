@@ -527,6 +527,43 @@ views:
       features:
       - type: toggle
       features_position: bottom
+  - type: grid
+    cards:
+    - type: heading
+      heading: Sound
+      icon: mdi:volume-high
+      heading_style: title
+    - type: tile
+      entity: switch.departure_board_xxxxxx_sounds
+      name: Sounds
+      grid_options:
+        columns: 6
+      icon: mdi:volume-high
+      features:
+      - type: toggle
+      features_position: bottom
+    - type: tile
+      entity: button.departure_board_xxxxxx_test_sound
+      name: Test sound
+      grid_options:
+        columns: 6
+      icon: mdi:bell-ring-outline
+      tap_action:
+        action: perform-action
+        perform_action: button.press
+        target:
+          entity_id: button.departure_board_xxxxxx_test_sound
+    - type: tile
+      entity: media_player.departure_board_xxxxxx_speaker
+      name: Volume
+      grid_options:
+        columns: 12
+      icon: mdi:speaker
+      features:
+      - type: media-player-volume-slider
+      features_position: bottom
+    - type: markdown
+      content: Announcements are set up in the blueprint, under **Announcements**.
 - title: 🔧 System
   path: system
   type: sections

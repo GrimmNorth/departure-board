@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0 - 2026-11-19 (beta)
+- Sound: optional station-style announcements from the blueprint (new **Announcements** section, off by default). A few minutes before each train from your first station or route: "The next train to depart from platform 1 will be..." or "We are sorry to announce..." for delays and cancellations. Choose which trains, how long before, the voice and speakers, a chime first, and quiet hours. Re-import the blueprint to get it
+- Sound: a new **Sound** page in the board's settings (Sounds on/off, volume, test chime), and *Sounds* and *Test sound* in Home Assistant
+- Sound: a speaker icon in the footer, only while the board is speaking (amber; tap to stop) or when sound is off (grey with a cross; tap to turn it back on)
+- Sound: the board's own chime, played before announcements and by *Test sound*
+- Speaker starts at full volume (turn it down with the Speaker volume in Home Assistant)
+
 ## 2.1.5 - 2026-11-19 (beta)
 - Speaker: the picture no longer jumps when a sound starts (the board downloaded the whole sound in one burst into a large buffer; it now uses a small one and plays uncompressed audio). Gentler volume scale, louder by default
 - Screen: fixes the brief flicker where part of the picture doubled or jumped down a few lines for a moment (seen on the column headings). The screen could miss a refresh while the board saved settings; the board now runs from its larger memory so the screen keeps going, snaps straight back if it ever slips, and saves settings less often

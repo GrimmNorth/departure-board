@@ -66,6 +66,12 @@ Press and hold a train to make it a favourite. It's saved as its time and statio
 
 To get a phone notification when a favourite is late, cancelled or changes platform, pick your phones (Home Assistant Companion app) under **Favourite train alerts** in the blueprint. You choose how late counts (5 minutes by default) and whether to include platform changes. A train only alerts again if it gets worse.
 
+### Sound (optional)
+The board has a socket for a small speaker (a 4-8 ohm speaker of about 2-3 W). With a speaker plugged in:
+- **Announcements:** turn on **Announcements** in the blueprint for station-style announcements a few minutes before each train from your first station or route, e.g. *"The next train to depart from platform 1 will be the 10:53 Northern service to Hull"*, or *"We are sorry to announce..."* when a train is delayed or cancelled. You choose which trains (on time, delayed, cancelled), how many minutes before, the voice (Google Translate is free and built in; Piper or Home Assistant Cloud also work), a chime first, other speakers, and quiet hours (22:00-07:00 by default). It's off unless you turn it on.
+- **On the board:** settings has a **Sound** page: Sounds on or off, volume, and a test chime. A speaker icon shows in the footer only while the board is speaking (tap it to stop) or when sound is off (tap it to turn sound back on).
+- **In Home Assistant:** *Sounds*, *Test sound* and the *Speaker* media player (volume and mute), so you can also play your own announcements with `tts.speak`.
+
 ### Weather
 Pick a weather entity under **Weather** in the blueprint to show the temperature and an icon in the footer and on the clock screen. Hide it with **Show weather**.
 
@@ -75,6 +81,7 @@ Every setting is on the board (tap the clock) and on the board's device page in 
 - **Trains:** countdown, calling-at filter, cancelled trains (shown, faded or hidden), show platform, paging, pin next train, departed grace, walking time
 - **Screen:** brightness, panel colour warmth, night dimming (set times or sunset/sunrise), night brightness (down to screen off), idle dimming
 - **Extras:** highlight a stop, disruption alert, logo, station messages, clock screen, 12/24-hour clock and seconds, footer colour, weather
+- **Sound:** sounds on or off, volume, test sound
 - **About:** Wi-Fi, IP address, Home Assistant link, data age, firmware, uptime, ESPHome version, free memory
 - **Home Assistant only:** page interval, demo mode, and *Station number* for switching station from your own automations
 
