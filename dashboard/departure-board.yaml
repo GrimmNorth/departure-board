@@ -646,7 +646,7 @@ views:
         entity: switch.departure_board_xxxxxx_sounds
         state: "on"
     - type: markdown
-      content: Needs a speaker plugged into the board. To change the voice or add other speakers, open your departure board automation (Settings > Automations & scenes) and expand **Announcement voice and speakers (optional, experimental)**.
+      content: Needs a speaker plugged into the board, or a speaker you already have in Home Assistant (e.g. a Google Nest Mini). To change the voice or pick other speakers, open your departure board automation (Settings > Automations & scenes) and expand **Announcement voice and speakers (optional, experimental)**.
 - title: 🔧 System
   path: system
   type: sections
