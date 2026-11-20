@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.7 - 2026-11-20 (beta)
+- Screen: less jitter at the left edge during announcements, and it clears more reliably. The picture feed can now fall twice as far behind before it slips (a bigger buffer, 32 KB more memory), and after each sound the picture is put back in step again at 2 and 5 seconds, once the board has calmed down
+
 ## 2.3.6 - 2026-11-20 (beta)
 - Screen: the jitter at the left edge clears itself within half a minute, whatever caused it (Wi-Fi, a reconnect to Home Assistant or a big update), not only after a sound. Before, it could stay until the next sound or a restart
 - Announcements (blueprint, already out): fixed no announcements at all while *Quiet at night* is switched off. The automation was treating "not quiet" as quiet. Re-import the blueprint
