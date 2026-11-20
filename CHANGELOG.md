@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.6 - 2026-11-20 (beta)
 - Screen: the jitter at the left edge clears itself within half a minute, whatever caused it (Wi-Fi, a reconnect to Home Assistant or a big update), not only after a sound. Before, it could stay until the next sound or a restart
 
 ## Unreleased
