@@ -46,7 +46,7 @@
   <li>Station messages, Tube line status and a platform-screen layout</li>
   <li>Eight themes and four layouts</li>
   <li>Favourite trains, with phone alerts when they're late</li>
-  <li>Optional station-style announcements, on a speaker on the board or in Home Assistant</li>
+  <li>Optional station-style announcements on a speaker you already have in Home Assistant</li>
   <li>Updates itself overnight (re-import the blueprint when the release notes say so)</li>
 </ul>
 <p><small><strong>You need:</strong> the CrowPanel 7&quot;, Home Assistant 2026.11 or newer, and a free National Rail Darwin token for My Rail Commute (step 4).</small></p>
@@ -92,7 +92,7 @@
     "scrolling_text","footer_colour","night_dimming","page_interval","show_platform","hide_cancelled","clock_seconds",
     "12_hour_clock","wi_fi_signal","walking_time","scroll_speed","night_starts","free_memory","data_source","night_ends",
     "screenshot","show_weather","background","brightness","train_numbers","scroll_station_messages","previous_station","next_station","blueprint","platform","station","large_text","show_logo","demo_mode","countdown","data_age",
-    "leave_in","firmware","restart","uptime","layout","paging","theme","route","test_sound","sounds","speaker","announcements","announce_before","chime_first","quiet_at_night","mute"].sort((a, b) => b.length - a.length);
+    "leave_in","firmware","restart","uptime","layout","paging","theme","route","test_announcement","announcement_volume","announcement_speaker","announcements","announce_before","chime_first","quiet_at_night"].sort((a, b) => b.length - a.length);
   const PLACEHOLDER = "departure_board_xxxxxx";
   const input = document.getElementById("dash-id"), msg = document.getElementById("dash-msg"), btn = document.getElementById("dash-copy");
   let template = null, prefix = null;

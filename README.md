@@ -11,7 +11,7 @@ A live UK train departure board for the **Elecrow CrowPanel Basic 7.0"** (ESP32-
 - Home Assistant 2026.11 or newer
 - **My Rail Commute** from the Marketplace (Settings > Marketplace), with a free National Rail Darwin token
 - For Tube / DLR: **London TfL** from the Marketplace
-- Optional, for announcements: a small speaker plugged into the board, or a speaker you already have in Home Assistant (e.g. a Google Nest Mini)
+- Optional, for announcements: a speaker you already have in Home Assistant (e.g. a Google Nest Mini, a WiiM or a Sonos)
 
 ## 🚀 Setup
 1. **Install the firmware.** Open the [install page](https://grimmnorth.github.io/departure-board/) in Chrome or Edge on a computer, plug the board in by USB and click Install.
@@ -40,7 +40,6 @@ Tube boards count down and show *Arriving*, with each train's line, direction, l
 | Swipe across, or tap the station name | Switch station |
 | Tap the clock | Open settings (tap any setting to see what it does) |
 | Tap the orange **i** | Read station messages or Tube line status |
-| Tap the speaker icon | Stop an announcement, or unmute |
 | Tap the orange arrow | Install a firmware update |
 
 With more trains than rows, the board pages every 15 seconds (the footer shows *1/2*). A changed platform flashes for a minute.
@@ -59,16 +58,16 @@ With more trains than rows, the board pages every 15 seconds (the footer shows *
 
 **🌤️ Weather:** pick a weather entity under **Weather** in the automation to show the temperature in the footer and on the clock screen.
 
-### 🔊 Sound and announcements (optional, experimental)
-New, and only tested on one board and speaker so far, so expect rough edges. Feedback welcome.
+### 🔊 Announcements (optional)
+Station-style announcements, with a chime first, on a speaker you already have in Home Assistant, such as a Google Nest Mini, a WiiM or a Sonos.
 
-You need a speaker: either a small 4-8 ohm, 2-3 W speaker plugged into the board's speaker socket (not included), or one you already have in Home Assistant, such as a Google Nest Mini.
+1. **In your automation:** expand **Announcements (optional)** and pick your **Speakers**. You can also pick a voice: Google Translate British by default, or a Piper or Home Assistant Cloud voice.
+2. **On the board:** Settings > **Sound** shows the speaker you picked. Set **Announcements** to *All trains*, *Delays only* or *Favourites only*.
+3. Press **Test announcement** and set the **Volume** (10% to start with). The speaker is set to this volume just for each announcement, then put back to its own volume.
 
-1. **On the board:** Settings > **Sound**, turn on **Sounds**. It starts off, and while it's off nothing plays and no speaker icon shows.
-2. Set **Announcements** to *All trains*, *Delays only* or *Favourites only*. You can also set *Announce before* (5 minutes), *Chime first* and *Quiet at night* (follows the board's night times).
-3. **Optional, in your automation:** expand **Announcement voice and speakers** to pick a voice (Google Translate British by default, or a Piper or Home Assistant Cloud voice) and any Home Assistant speakers to announce on instead of the board's.
+You can also set *Announce before* (5 minutes), *Chime first* and *Quiet at night* (follows the board's night times). All of these are on the board, its device page in Home Assistant, and the dashboard.
 
-Announcements are for the station on screen (not Tube / DLR), e.g. *"The next train to depart from platform 1 will be the 10:53 Northern service to Leeds"*, or *"We are sorry to announce..."* for delays and cancellations. A train that becomes 5 or more minutes late, or is cancelled, while it's on the board is announced straight away, and a delayed train is announced again shortly before its new time. The chime and *Test sound* play on the board's own speaker only. Use **Mute** to silence it for a while: a grey crossed speaker shows in the footer.
+Announcements are for the station on screen (not Tube / DLR), e.g. *"The next train to depart from platform 1 will be the 10:53 Northern service to Leeds"*, or *"We are sorry to announce..."* for delays and cancellations. A train that becomes 5 or more minutes late, or is cancelled, while it's on the board is announced straight away, and a delayed train is announced again shortly before its new time. To stop them for a while, set **Announcements** to *Off*.
 
 ### ⚙️ Settings
 Every setting is on the board (tap the clock) and on its device page in Home Assistant:
@@ -76,7 +75,7 @@ Every setting is on the board (tap the clock) and on its device page in Home Ass
 - **Trains:** countdown, calling-at filter, cancelled trains, show platform, paging, pin next train, departed grace, walking time
 - **Screen:** brightness, panel warmth, night dimming (set times or sunset/sunrise), night brightness (down to screen off), idle dimming
 - **Extras:** highlight a stop, disruption alert, logo, station messages, clock screen, clock format, footer colour, weather
-- **Sound:** sounds, mute, volume, announcements, announce before, chime first, quiet at night, test sound
+- **Sound:** speaker (picked in the automation), announcements, volume, announce before, chime first, quiet at night, test announcement
 - **About:** Wi-Fi, IP address, Home Assistant, data age, firmware, uptime, blueprint, free memory
 - **Home Assistant only:** page interval, demo mode, and *Station number* for switching station from your own automations
 

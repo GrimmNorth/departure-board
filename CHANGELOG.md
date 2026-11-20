@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
-- Announcements (blueprint): the chime now plays on the speakers you pick. Before, it always played on the board, even when the announcements went to another speaker
-- Announcements (blueprint): new *Volume on Home Assistant speakers* setting, 10% to start with. Speakers you pick (a WiiM, a Nest Mini) are set to it just for the announcement, then put back to their own volume. The board's own speaker isn't affected. 0 leaves the volume alone
+## 2.4.0 - 2026-11-20 (beta)
+- Announcements now play only on a speaker you already have in Home Assistant (e.g. a Google Nest Mini, a WiiM or a Sonos), picked in the automation. The board's built-in speaker support has been removed: whenever the board played sound itself, the screen jittered at the left edge, and nothing fixed that reliably. With announcements on a Home Assistant speaker, the screen stays steady
+- The chime plays on your speaker before each announcement
+- New on the board's Sound page (and its device page and the dashboard): **Speaker** shows which speakers the automation announces on, **Volume** sets how loud announcements are on them (10% to start with; each speaker goes back to its own volume afterwards), and **Test announcement** plays a short sample
+- Removed: *Sounds*, *Mute*, the speaker's media player and volume, *Test sound*, the footer speaker icon and the *Audio state* sensor. To stop announcements for a while, set *Announcements* to *Off*
+- Sound settings are no longer marked experimental
+- Screen: back to the picture clock speed from before 2.3.10, and the extra picture resets added for the speaker are gone
+- Re-import the blueprint after updating (the board says so on its About page)
 
 ## 2.3.10 - 2026-11-20 (beta)
 - Screen: the picture now refreshes about 25 times a second instead of 30, which gives it more room while sound is playing, so it should slip less often
