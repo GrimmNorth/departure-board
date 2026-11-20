@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.8",
+  "version": "2.3.9",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.8.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.9.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "b23af1c0407cde1cc8d50b84cc4b5135",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.8.ota.bin",
-        "summary": "Fixes the whole-screen jitter in 2.3.7: back to the standard picture buffer."
+        "md5": "c7b300302cd6f42e1657e8ea50651e11",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.9.ota.bin",
+        "summary": "Tries to stop the screen jitter that lasted until the next announcement, and adds an Audio state diagnostic sensor."
       }
     }
   ]
