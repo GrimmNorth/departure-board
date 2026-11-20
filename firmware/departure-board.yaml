@@ -28,7 +28,7 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.9"
+    version: "2.3.10"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -504,16 +504,22 @@ script:
       - delay: 2s
       - script.execute: panel_resync
       - delay: 3s
-      # if the speaker's output is still running with nothing playing, stop it: a running output keeps the board busy
-      # and the picture keeps slipping (an announcement ending was the only thing that cleared it)
-      - lambda: |-
-          if (id(board_media).state == media_player::MEDIA_PLAYER_STATE_IDLE && !id(play_chime_now).is_running()) {
-            if (id(chime_spk_in)->is_running()) id(chime_spk_in)->stop();
-            if (id(board_speaker)->is_running()) {
-              ESP_LOGW("sound", "speaker output still running after the sound ended: stopping it");
-              id(board_speaker)->stop();
-            }
-          }
+      # a tenth of a second of silence through the speaker once things are quiet: starting the sound again was the
+      # one thing that put a jittering picture back in step (the next announcement always cleared it), so do it now
+      - if:
+          condition:
+            lambda: |-
+              return id(board_media).state == media_player::MEDIA_PLAYER_STATE_IDLE && !id(play_chime_now).is_running();
+          then:
+            - lambda: |-
+                static const uint8_t SILENCE[3200] = {0};   // 100 ms at 16 kHz, 16-bit mono
+                id(chime_spk_in)->set_audio_stream_info(audio::AudioStreamInfo(16, 1, 16000));
+                id(chime_spk_in)->play(SILENCE, sizeof(SILENCE));
+                id(chime_spk_in)->finish();
+            - wait_until:
+                condition:
+                  lambda: 'return !id(chime_spk_in)->is_running();'
+                timeout: 2s
       - delay: 500ms
       - script.execute: panel_resync
   - id: panel_resync
@@ -2086,7 +2092,7 @@ display:
     hsync_pin: GPIO39
     vsync_pin: GPIO40
     pclk_pin: GPIO0
-    pclk_frequency: 14MHz    # a little slower than 15: more headroom for the picture feed while sound plays
+    pclk_frequency: 12MHz    # about 25 frames a second: more headroom for the picture feed while sound plays
     pclk_inverted: true
     hsync_front_porch: 40
     hsync_pulse_width: 48
