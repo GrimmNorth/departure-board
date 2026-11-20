@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Screen: back to the standard picture buffer. The bigger one in 2.3.7 made the whole screen jitter. The extra resets after each sound stay
+
 ## 2.3.7 - 2026-11-20 (beta)
 - Screen: less jitter at the left edge during announcements, and it clears more reliably. The picture feed can now fall twice as far behind before it slips (a bigger buffer, 32 KB more memory), and after each sound the picture is put back in step again at 2 and 5 seconds, once the board has calmed down
 
