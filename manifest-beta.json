@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.7",
+  "version": "2.3.8",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.7.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.8.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "e26d8133e98a76c5841b0535c4f17305",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.7.ota.bin",
-        "summary": "Less jitter at the left edge of the screen during announcements, and it clears more reliably."
+        "md5": "b23af1c0407cde1cc8d50b84cc4b5135",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.8.ota.bin",
+        "summary": "Fixes the whole-screen jitter in 2.3.7: back to the standard picture buffer."
       }
     }
   ]
