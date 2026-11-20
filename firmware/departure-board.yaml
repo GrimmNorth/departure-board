@@ -28,20 +28,13 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.7"
+    version: "2.3.8"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
   includes:
     - departure_board.h
     - chime_pcm.h
-
-# ESPHome's mipi_rgb display driver with one change: a bigger bounce buffer (components/mipi_rgb/mipi_rgb.cpp)
-external_components:
-  - source:
-      type: local
-      path: components
-    components: [mipi_rgb]
 
 esp32:
   board: esp32-s3-devkitc-1
