@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Screen: the jitter at the left edge clears itself within half a minute, whatever caused it (Wi-Fi, a reconnect to Home Assistant or a big update), not only after a sound. Before, it could stay until the next sound or a restart
+
+## Unreleased
 - Announcements: fixed no announcements at all while *Quiet at night* is switched off. The automation was treating "not quiet" as quiet. Re-import the blueprint
 
 ## 2.3.5 - 2026-11-19 (beta)
