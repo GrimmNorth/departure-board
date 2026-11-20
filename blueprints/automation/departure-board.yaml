@@ -476,9 +476,10 @@ actions:
           pick: !input ann_voice_pick
           tts_in: !input ann_tts
           voice_in: !input ann_voice
-          # quiet between the board's Night starts and Night ends (or sunset to sunrise when night follows the sun)
+          # quiet between the board's Night starts and Night ends (or sunset to sunrise when night follows the sun).
+          # "False" with a capital F: Home Assistant only reads that as a true/false value; "false" stays text, which counts as true
           quiet: >-
-            {% set qs = board_ents | select('match', 'switch\\..*_quiet_at_night$') | first | default('') %}{% if not is_state(qs, 'on') %}false{% elif is_state(board_ents | select('match', 'switch\\..*_night_follows_sun$') | first | default(''), 'on') %}{{ is_state('sun.sun', 'below_horizon') }}{% else %}{% set q_from = states(board_ents | select('match', 'time\\..*_night_starts$') | first | default('')) %}{% set q_to = states(board_ents | select('match', 'time\\..*_night_ends$') | first | default('')) %}{% set n = now().strftime('%H:%M:%S') %}{% if not (q_from | regex_match('^[0-9]{2}:[0-9]{2}')) or not (q_to | regex_match('^[0-9]{2}:[0-9]{2}')) or q_from == q_to %}false{% elif q_from < q_to %}{{ q_from <= n < q_to }}{% else %}{{ n >= q_from or n < q_to }}{% endif %}{% endif %}
+            {% set qs = board_ents | select('match', 'switch\\..*_quiet_at_night$') | first | default('') %}{% if not is_state(qs, 'on') %}False{% elif is_state(board_ents | select('match', 'switch\\..*_night_follows_sun$') | first | default(''), 'on') %}{{ is_state('sun.sun', 'below_horizon') }}{% else %}{% set q_from = states(board_ents | select('match', 'time\\..*_night_starts$') | first | default('')) %}{% set q_to = states(board_ents | select('match', 'time\\..*_night_ends$') | first | default('')) %}{% set n = now().strftime('%H:%M:%S') %}{% if not (q_from | regex_match('^[0-9]{2}:[0-9]{2}')) or not (q_to | regex_match('^[0-9]{2}:[0-9]{2}')) or q_from == q_to %}False{% elif q_from < q_to %}{{ q_from <= n < q_to }}{% else %}{{ n >= q_from or n < q_to }}{% endif %}{% endif %}
           speakers: >-
             {% set l = spk_in if spk_in is list else ([spk_in] if spk_in else []) %}{{ l if l else board_ents | select('match', 'media_player\\.') | list }}
           # the speech service, voice and language for the chosen voice (British English throughout)
