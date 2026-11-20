@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.4.0 - 2026-11-20 (beta)
 - Announcements now play only on a speaker you already have in Home Assistant (e.g. a Google Nest Mini, a WiiM or a Sonos), picked in the automation. The board's built-in speaker support has been removed: whenever the board played sound itself, the screen jittered at the left edge, and nothing fixed that reliably. With announcements on a Home Assistant speaker, the screen stays steady
 - The chime plays on your speaker before each announcement
 - New on the board's Sound page (and its device page and the dashboard): **Speaker** shows which speakers the automation announces on, **Volume** sets how loud announcements are on them (10% to start with; each speaker goes back to its own volume afterwards), and **Test announcement** plays a short sample
