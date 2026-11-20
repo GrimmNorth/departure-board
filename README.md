@@ -133,6 +133,8 @@ This board wouldn't work without two Home Assistant integrations, which do the h
 - **[My Rail Commute](https://github.com/adamf83/my-rail-commute)** by adamf83: National Rail departures, delays, cancellations and platforms.
 - **[London TfL](https://github.com/morosanmihail/HA-LondonTfL)** by morosanmihail: Tube, DLR and other TfL departures.
 
+And to **[Elecrow](https://www.elecrow.com/)** for the CrowPanel 7.0" HMI ESP32 display (DIS08070H) this runs on. Their [GitHub repo for the board](https://github.com/Elecrow-RD/CrowPanel-7.0-HMI-ESP32-Display-800x480) and [wiki](https://www.elecrow.com/wiki/esp32-display-702727-intelligent-touch-screen-wi-fi26ble-800480-hmi-display.html) have the pinouts, schematics and 3D model the firmware and case are built from.
+
 If you find this project useful, consider starring their repos too.
 
 ## 📝 Notes
