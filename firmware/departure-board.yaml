@@ -16,11 +16,7 @@ esphome:
       # follow the update channel chosen in Home Assistant (Stable unless changed)
       - lambda: |-
           if (id(update_channel).active_index().value_or(0) == 1) id(fw_update).set_source_url("${update_url_beta}");
-      - delay: 5s
-      - speaker.play:
-          id: board_speaker
-          data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-      - delay: 15s
+      - delay: 20s
       - lambda: |-
           if (id(dim_state) != 0 || !id(backlight).current_values.is_on()) return;
           const float b = id(brightness_num).has_state() ? id(brightness_num).state / 100.0f : id(day_brightness);
@@ -28,13 +24,12 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.10"
+    version: "2.4.0"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
   includes:
     - departure_board.h
-    - chime_pcm.h
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -136,13 +131,13 @@ api:
             id(hist_avg) = avg;
     # Called by the Home Assistant blueprint (about once a minute).
     # Called by the blueprint first, every minute: its version (BP_NEED below is the version this firmware expects)
-    - action: play_chime
+    # Called by the blueprint every minute: the Home Assistant speakers picked for announcements ("" = none)
+    - action: set_speakers
+      variables:
+        names: string
       then:
-        - if:
-            condition:
-              lambda: 'return id(sounds_sw).state && !id(board_media).is_muted();'
-            then:
-              - script.execute: play_chime_now
+        - lambda: |-
+            if (!id(spk_names_ts).has_state() || id(spk_names_ts).state != names) id(spk_names_ts).publish_state(names);
     - action: set_blueprint_version
       variables:
         ver: int
@@ -159,7 +154,7 @@ api:
             id(stn_status).publish_state(status);
             { const std::string l = id(station_ts).state + (id(route_to).empty() ? std::string("") : " to " + id(route_to));
               if (!l.empty() && (!id(stn_label_ts).has_state() || id(stn_label_ts).state != l)) id(stn_label_ts).publish_state(l); }
-            { const char *bs = id(bp_ver) >= 3 ? "Up to date" : "Update available: re-import it";   // BP_NEED = 3
+            { const char *bs = id(bp_ver) >= 4 ? "Up to date" : "Update available: re-import it";   // BP_NEED = 4
               if (!id(bp_ts).has_state() || id(bp_ts).state != bs) id(bp_ts).publish_state(bs); }
             id(data_ms_stn) = millis();
     # One train (older blueprints): n is 1 to 10
@@ -260,11 +255,11 @@ debug:
 
 button:
   - platform: template
-    name: "Test sound"
-    id: test_sound_btn
-    icon: mdi:bell-ring-outline
+    name: "Test announcement"
+    id: test_ann_btn
+    icon: mdi:bullhorn-variant-outline
     on_press:
-      - script.execute: test_sound
+      - script.execute: test_announcement
   - platform: template
     name: "Next station"
     icon: mdi:chevron-right
@@ -294,9 +289,6 @@ button:
     entity_category: config
 
 globals:
-  - id: chime_pos            # how much of the chime has been handed to the speaker so far
-    type: size_t
-    initial_value: "0"
   - id: stn_count            # how many stations the blueprint offers (it sends this every minute)
     type: int
     restore_value: true
@@ -438,9 +430,6 @@ globals:
   - id: msg_idx            # which message is open
     type: int
     initial_value: "0"
-  - id: spk_icon_x         # left edge of the footer speaker icon's tap area (-1 = not shown)
-    type: int
-    initial_value: "-1"
   - id: msg_icon_x         # left edge of the footer message icon's tap area (-1 = not shown)
     type: int
     initial_value: "-1"
@@ -496,32 +485,6 @@ time:
 # off for the night (tap to wake) or dimmed after inactivity.
 script:
   # restart the screen's picture feed at the next frame: clears a picture that has slipped sideways and jitters
-  # and again once things have calmed down after a sound: just after it ends, the download and audio can still be
-  # finishing and knock the picture straight back out
-  - id: panel_resync_later
-    mode: restart
-    then:
-      - delay: 2s
-      - script.execute: panel_resync
-      - delay: 3s
-      # a tenth of a second of silence through the speaker once things are quiet: starting the sound again was the
-      # one thing that put a jittering picture back in step (the next announcement always cleared it), so do it now
-      - if:
-          condition:
-            lambda: |-
-              return id(board_media).state == media_player::MEDIA_PLAYER_STATE_IDLE && !id(play_chime_now).is_running();
-          then:
-            - lambda: |-
-                static const uint8_t SILENCE[3200] = {0};   // 100 ms at 16 kHz, 16-bit mono
-                id(chime_spk_in)->set_audio_stream_info(audio::AudioStreamInfo(16, 1, 16000));
-                id(chime_spk_in)->play(SILENCE, sizeof(SILENCE));
-                id(chime_spk_in)->finish();
-            - wait_until:
-                condition:
-                  lambda: 'return !id(chime_spk_in)->is_running();'
-                timeout: 2s
-      - delay: 500ms
-      - script.execute: panel_resync
   - id: panel_resync
     then:
       - lambda: |-
@@ -619,38 +582,11 @@ script:
             train: !lambda 'return to_string(n);'
             sched: !lambda 'return sched;'
             station: !lambda 'return stn;'
-  # the chime, fed straight into its own mixer input a piece at a time, at the speaker's volume. Not through the media
-  # player: there, speech arriving during the chime stopped it and played it again after the speech
-  - id: play_chime_now
-    mode: restart
+  # Test announcement: Home Assistant plays a short sample on the speakers picked in the automation
+  - id: test_announcement
     then:
-      - lambda: |-
-          id(chime_pos) = 0;
-          id(chime_spk_in)->stop();
-          id(chime_spk_in)->set_audio_stream_info(audio::AudioStreamInfo(16, 1, 16000));
-          id(chime_spk_in)->set_volume(id(ann_spk_in)->get_volume());
-      - while:
-          condition:
-            lambda: 'return id(chime_pos) < departure::CHIME_PCM_LEN;'
-          then:
-            - lambda: |-
-                id(chime_pos) += id(chime_spk_in)->play(departure::CHIME_PCM + id(chime_pos),
-                                                         departure::CHIME_PCM_LEN - id(chime_pos));
-            - delay: 20ms
-      - lambda: 'id(chime_spk_in)->finish();'
-      - wait_until:
-          condition:
-            lambda: 'return !id(chime_spk_in)->is_running();'
-          timeout: 3s
-      - script.execute: panel_resync
-  - id: test_sound
-    then:
-      - if:
-          condition:
-            lambda: 'return id(sounds_sw).state;'   # nothing with Sounds off
-          then:
-            - lambda: 'if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
-            - script.execute: play_chime_now
+      - homeassistant.event:
+          event: esphome.departure_board_test
   # fills the board with a made-up station, every train's time counted from now
   - id: demo_fill
     then:
@@ -851,11 +787,6 @@ script:
           c.perform();
 
 interval:
-  # put the screen's picture back in step every half minute, and the jitter at the left edge (the picture slipping
-  # when Wi-Fi, sound or a big update keeps the board busy) never lasts long. It's invisible when nothing has slipped
-  - interval: 30s
-    then:
-      - script.execute: panel_resync
   # automatic updates: check for a new version at 03:00 and install it a few minutes later
   - interval: 60s
     then:
@@ -1138,8 +1069,9 @@ touchscreen:
               const bool inactive = (sp0 == 1 && row == 5 && !id(paging_on).state) ||               // greyed out: nothing to change
                                     (sp0 == 2 && row >= 3 && row <= 5 && !id(night_dimming).state) ||
                                     (sp0 == 2 && row == 7 && id(idle_minutes).state <= 0) ||
-                                    (sp0 == 4 && row >= 1 && !id(sounds_sw).state) ||
-                                    (sp0 == 4 && row >= 4 && row <= 6 && id(ann_mode).active_index().value_or(0) == 0);
+                                    (sp0 == 4 && (row == 0 || row == 7)) ||
+                                    (sp0 == 4 && row == 6 && id(spk_names_ts).state.empty()) ||
+                                    (sp0 == 4 && row >= 3 && row <= 5 && id(ann_mode).active_index().value_or(0) == 0);
               if (!inactive) switch (id(settings_page)) {
                 case 0:   // Display
                   switch (row) {
@@ -1241,18 +1173,12 @@ touchscreen:
                   break;
                 case 4:   // Sound
                   switch (row) {
-                    case 0: id(sounds_sw).toggle(); break;
-                    case 1: id(mute_sw).toggle(); break;
-                    case 2: if (plus || minus) {
-                              float v = id(board_media).volume + (plus ? 0.1f : -0.1f);
-                              if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-                              id(board_media).make_call().set_volume(v).perform();
-                            } break;
-                    case 3: id(ann_mode).make_call().select_next(true).perform(); break;
-                    case 4: if (plus || minus) { float v = id(ann_before).state + (plus ? 1 : -1); if (v < 1) v = 1; if (v > 30) v = 30; auto c = id(ann_before).make_call(); c.set_value(v); c.perform(); } break;
-                    case 5: id(ann_chime).toggle(); break;
-                    case 6: id(ann_quiet).toggle(); break;
-                    case 7: id(test_sound).execute(); break;
+                    case 1: id(ann_mode).make_call().select_next(true).perform(); break;
+                    case 2: if (plus || minus) { float v = id(ann_volume).state + (plus ? 5 : -5); if (v < 5) v = 5; if (v > 100) v = 100; auto c = id(ann_volume).make_call(); c.set_value(v); c.perform(); } break;
+                    case 3: if (plus || minus) { float v = id(ann_before).state + (plus ? 1 : -1); if (v < 1) v = 1; if (v > 30) v = 30; auto c = id(ann_before).make_call(); c.set_value(v); c.perform(); } break;
+                    case 4: id(ann_chime).toggle(); break;
+                    case 5: id(ann_quiet).toggle(); break;
+                    case 6: id(test_announcement).execute(); break;
                   }
                   break;
                 case 5:   // About
@@ -1328,15 +1254,7 @@ touchscreen:
               return;
             }
             // departures screen: tap the clock (bottom right) for settings, anywhere else = next station
-            if (y >= 410 && id(spk_icon_x) >= 0 && x >= id(spk_icon_x) && x < id(spk_icon_x) + 54) {
-              if (id(board_media).is_muted()) id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();
-              else {   // stop the speech and the chime
-                id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).set_announcement(true).perform();
-                id(play_chime_now).stop();
-                id(chime_spk_in)->stop();
-              }
-            }
-            else if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
+            if (y >= 410 && id(upd_icon_x) >= 0 && x >= id(upd_icon_x) && x < id(upd_icon_x) + 54) { id(ui_screen) = 4; }
             else if (y >= 410 && id(msg_icon_x) >= 0 && x >= id(msg_icon_x) && x < id(msg_icon_x) + 64) { id(ui_screen) = 3; id(msg_idx) = 0; }
             else if (y >= 410 && x >= 540) { id(ui_screen) = 1; id(settings_page) = 0; id(set_row) = -1; id(help_seen) = true; }
             else if (y < 406) {
@@ -1377,51 +1295,6 @@ light:
           if (id(dim_state) != 0 || !id(backlight).current_values.is_on()) return;
           const float pct = std::round(id(backlight).current_values.get_brightness() * 100.0f);
           if (!id(brightness_num).has_state() || std::fabs(id(brightness_num).state - pct) >= 1.0f) id(brightness_num).publish_state(pct);
-
-# The speaker socket on the back (PH2.0-2P) drives a small 8 ohm speaker through the NS4168 amplifier.
-# Home Assistant sees it as a media player, "Speaker", for announcements and chimes.
-i2s_audio:
-  - id: i2s_out
-    i2s_lrclk_pin: GPIO18
-    i2s_bclk_pin: GPIO42
-
-speaker:
-  - platform: i2s_audio
-    id: board_speaker
-    i2s_audio_id: i2s_out
-    i2s_dout_pin: GPIO17
-    dac_type: external
-    channel: mono
-  # two inputs mixed into the one speaker: announcements (Home Assistant's speech) and the board's own chime, so the
-  # voice can come in over the end of the chime, like a real station, instead of waiting for it or cutting it off
-  - platform: mixer
-    id: board_mixer
-    output_speaker: board_speaker
-    num_channels: 1
-    source_speakers:
-      - id: ann_spk_in
-      - id: chime_spk_in
-        # room for the whole chime at once: it's handed over in one go, so the screen's drawing (which holds up the
-        # rest of the board for a fifth of a second at a time) can't leave gaps in it that sound crackly
-        buffer_duration: 2500ms
-
-media_player:
-  - platform: speaker
-    name: "Speaker"
-    id: board_media
-    buffer_size: 32768          # about a second of speech: downloads gently instead of in one burst that upsets the screen
-    volume_min: 0.4             # the slider's bottom end is quiet, not silent, so the middle of the scale is useful
-    volume_initial: 1.0
-    # the chime isn't played through here: see play_chime_now (an original three-note chime, chime_pcm.h)
-    announcement_pipeline:
-      speaker: ann_spk_in
-      format: WAV               # Home Assistant converts it; the board has nothing to decode
-      num_channels: 1
-      sample_rate: 16000
-    # after each sound: put the screen's picture back in step, in case the busy moment made it slip (jitter at the left edge)
-    on_idle:
-      - script.execute: panel_resync
-      - script.execute: panel_resync_later
 
 font:
   - file: "gfonts://DotGothic16"
@@ -1493,6 +1366,17 @@ number:
     optimistic: true
     restore_value: true
     initial_value: 5          # minutes before each train's booked time
+  - platform: template
+    name: "Announcement volume"
+    id: ann_volume
+    icon: mdi:volume-medium
+    min_value: 5
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    initial_value: 10         # the automation sets the Home Assistant speakers to this for each announcement
   - platform: template
     name: "Station number"
     id: stn_num
@@ -1652,21 +1536,6 @@ switch:
     icon: mdi:sleep
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON   # no announcements between Night starts and Night ends (or sunset to sunrise)
-  - platform: template
-    name: "Sounds"
-    id: sounds_sw
-    icon: mdi:volume-high
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF   # turn on when a speaker is plugged in; off: no announcements, no speaker icon
-  - platform: template
-    name: "Mute"
-    id: mute_sw
-    icon: mdi:volume-off
-    lambda: 'return id(board_media).is_muted();'   # the speaker's mute, so Home Assistant's mute button matches
-    turn_on_action:
-      - lambda: 'id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_MUTE).perform();'
-    turn_off_action:
-      - lambda: 'id(board_media).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_UNMUTE).perform();'
   - platform: template
     name: "Paging"
     id: paging_on
@@ -1860,7 +1729,7 @@ select:
     optimistic: true
     restore_value: true
     initial_option: "Off"
-    options: ["Off", "All trains", "Delays only", "Favourites only"]   # spoken by Home Assistant, on the board's speaker or any Home Assistant speaker
+    options: ["Off", "All trains", "Delays only", "Favourites only"]   # spoken by Home Assistant on the speakers picked in the automation
   - platform: template
     name: "Demo mode"
     id: demo_select
@@ -1962,17 +1831,12 @@ select:
     options: ["DotGothic"]
 
 text_sensor:
-  # diagnostics: which parts of the sound system are running (should all be "off" when nothing is playing)
+  # the Home Assistant speakers picked for announcements in the automation (sent each minute; empty = none)
   - platform: template
-    name: "Audio state"
+    id: spk_names_ts
+    name: "Announcement speaker"
     icon: mdi:speaker-wireless
-    entity_category: diagnostic
-    update_interval: 5s
-    lambda: |-
-      std::string s = std::string("output ") + (id(board_speaker)->is_running() ? "on" : "off");
-      s += std::string(", speech ") + (id(ann_spk_in)->is_running() ? "on" : "off");
-      s += std::string(", chime ") + (id(chime_spk_in)->is_running() ? "on" : "off");
-      return s;
+    update_interval: never
   - platform: template
     id: bp_ts
     name: "Blueprint"
@@ -2092,7 +1956,7 @@ display:
     hsync_pin: GPIO39
     vsync_pin: GPIO40
     pclk_pin: GPIO0
-    pclk_frequency: 12MHz    # about 25 frames a second: more headroom for the picture feed while sound plays
+    pclk_frequency: 14MHz    # a little slower than 15: more headroom for the picture feed
     pclk_inverted: true
     hsync_front_porch: 40
     hsync_pulse_width: 48
@@ -2353,8 +2217,8 @@ display:
             if (p == 2 && r >= 3 && r <= 5 && !id(night_dimming).state) return "Turn on Night dimming to use this";
             if (p == 2 && (r == 4 || r == 5) && id(night_sun).state) return "Follows sunset and sunrise";
             if (p == 2 && r == 7 && id(idle_minutes).state <= 0) return "Set Idle dim after to use this";
-            if (p == 4 && r >= 1 && !id(sounds_sw).state) return "Turn on Sounds to use this (needs a speaker)";
-            if (p == 4 && r >= 4 && r <= 6 && id(ann_mode).active_index().value_or(0) == 0) return "Turn on Announcements to use this";
+            if (p == 4 && r == 6 && id(spk_names_ts).state.empty()) return "Pick a speaker in your automation first";
+            if (p == 4 && r >= 3 && r <= 5 && id(ann_mode).active_index().value_or(0) == 0) return "Turn on Announcements to use this";
             return nullptr;
           };
           auto ry = [&](int row) { return RY0 + row * RP; };
@@ -2396,7 +2260,7 @@ display:
           const bool api_ok = api::global_api_server->is_connected();
 
           // heading: small and white, like the board's column headings
-          static const char *PAGE_NAMES[6] = {"Display", "Trains", "Screen", "Extras", "Sound (experimental)", "About"};
+          static const char *PAGE_NAMES[6] = {"Display", "Trains", "Screen", "Extras", "Sound", "About"};
           it.printf(20, 6, id(f_hdr_0), hc, "Settings: %s", PAGE_NAMES[pg]);
           for (int d = 0; d < 6; d++) {                         // page dots
             int dx = 776 - (6 - 1 - d) * 18;
@@ -2420,10 +2284,10 @@ display:
              "The logo in the footer", "Hidden, Icon only, or scroll along the footer every 2, 5 or 10 min",
              "Switch to the big clock after this long", "12 or 24 hour, with or without seconds",
              "Footer text in the theme colour or white", "Temperature in the footer (pick a weather entity in the blueprint)"},
-            {"Turn on with a speaker on the board, or one in Home Assistant", "Silence announcements for now; a grey speaker shows in the footer",
-             "How loud announcements and the chime are", "All trains, only delays, or only your favourite trains (hold a train)",
-             "How long before each train's booked time", "A chime before each announcement",
-             "Silent between Night starts and Night ends", "Play the chime on the board's own speaker"}};
+            {"Pick speakers in Home Assistant: Automations > UK Departure Board", "All trains, only delays, or only your favourite trains (hold a train)",
+             "How loud announcements are on your speaker", "How long before each train's booked time",
+             "A chime before each announcement", "Silent between Night starts and Night ends",
+             "Plays a short announcement on your speaker", ""}};
           static const char *ABOUT_HINTS[8] = {"The Wi-Fi network and its signal", "The board's address on your network",
              "The link to Home Assistant", "Time since the last trains arrived",
              "Updates install themselves at about 03:00", "Time since the board last restarted",
@@ -2471,14 +2335,14 @@ display:
             R = 7; band(R); lab(R, "Weather"); if (id(wx_temp).empty() && id(show_weather).state) val(R, grey, "Not set up"); else onoff(R, id(show_weather).state);
           }
           else if (pg == 4) {
-            R = 0; band(R); lab(R, "Sounds"); onoff(R, id(sounds_sw).state);
-            R = 1; band(R); lab(R, "Mute"); onoff(R, id(board_media).is_muted());
-            R = 2; band(R); lab(R, "Volume"); snprintf(buf, sizeof(buf), "%d%%", (int) (id(board_media).volume * 100.0f + 0.5f)); pm(R, buf);
-            R = 3; band(R); lab(R, "Announcements"); { static const char *AN[4] = {"Off", "All trains", "Delays only", "Favourites only"}; cyc(R, AN[std::min(3, (int) id(ann_mode).active_index().value_or(0))]); }
-            R = 4; band(R); lab(R, "Announce before"); snprintf(buf, sizeof(buf), "%d min", (int) id(ann_before).state); pm(R, buf);
-            R = 5; band(R); lab(R, "Chime first"); onoff(R, id(ann_chime).state);
-            R = 6; band(R); lab(R, "Quiet at night"); onoff(R, id(ann_quiet).state);
-            R = 7; band(R); lab(R, "Test sound"); cyc(R, "Play");
+            R = 0; band(R); lab(R, "Speaker");
+            { std::string sn = id(spk_names_ts).state; if (sn.empty()) val(R, orange, "None: pick in automation"); else { if (sn.size() > 26) { sn.resize(25); sn += "..."; } val(R, amber, sn.c_str()); } }
+            R = 1; band(R); lab(R, "Announcements"); { static const char *AN[4] = {"Off", "All trains", "Delays only", "Favourites only"}; cyc(R, AN[std::min(3, (int) id(ann_mode).active_index().value_or(0))]); }
+            R = 2; band(R); lab(R, "Volume"); snprintf(buf, sizeof(buf), "%d%%", (int) id(ann_volume).state); pm(R, buf);
+            R = 3; band(R); lab(R, "Announce before"); snprintf(buf, sizeof(buf), "%d min", (int) id(ann_before).state); pm(R, buf);
+            R = 4; band(R); lab(R, "Chime first"); onoff(R, id(ann_chime).state);
+            R = 5; band(R); lab(R, "Quiet at night"); onoff(R, id(ann_quiet).state);
+            R = 6; band(R); lab(R, "Test announcement"); cyc(R, "Play");
           }
           else {
             R = 0; band(R); lab(R, "Wi-Fi"); if (wifi_ok) { std::string s = id(wifi_ssid_ts).state; if (s.size() > 14) s.resize(14); snprintf(buf, sizeof(buf), "%s %ddBm", s.c_str(), (int) id(wifi_rssi_s).state); val(R, green, buf); } else val(R, red, "Offline");
@@ -2489,7 +2353,7 @@ display:
             if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) { snprintf(buf, sizeof(buf), "%s, %s ready", ESPHOME_PROJECT_VERSION, id(fw_update).update_info.latest_version.c_str()); val(R, orange, buf); }
             else { snprintf(buf, sizeof(buf), "%s %s", ESPHOME_PROJECT_VERSION, __DATE__); val(R, amber, buf); }
             R = 5; band(R); lab(R, "Uptime"); { uint32_t u = millis() / 1000; snprintf(buf, sizeof(buf), "%ud %uh %um", (unsigned) (u / 86400), (unsigned) (u % 86400 / 3600), (unsigned) (u % 3600 / 60)); val(R, amber, buf); }
-            R = 6; band(R); lab(R, "Blueprint"); if (dms == 0) val(R, grey, "Not sending yet"); else if (id(bp_ver) >= 3) val(R, green, "Up to date"); else val(R, orange, "Update available");
+            R = 6; band(R); lab(R, "Blueprint"); if (dms == 0) val(R, grey, "Not sending yet"); else if (id(bp_ver) >= 4) val(R, green, "Up to date"); else val(R, orange, "Update available");
             R = 7; band(R); lab(R, "Free memory"); if (id(heap_free).has_state()) { snprintf(buf, sizeof(buf), "%d KB", (int) (id(heap_free).state / 1024)); val(R, amber, buf); } else val(R, amber, "...");
           }
 
@@ -2498,12 +2362,13 @@ display:
             const int hy = RY0 + 8 * RP + 20;
             const char *h = nullptr; Color c = grey;
             const int sr = id(set_row);
-            const bool bp_old = dms != 0 && id(bp_ver) < 3;
+            const bool bp_old = dms != 0 && id(bp_ver) < 4;
             if (pg == 5 && id(grace_warn)) { h = "Tip: set Departed grace to 1 min (Trains page)"; c = orange; }
             else if (pg == 5 && bp_old && (sr < 0 || sr == 6)) { h = "In Home Assistant: Blueprints > UK Departure Board > Re-import"; c = orange; }
             else if (sr >= 0 && sr < 8 && why_off(pg, sr) != nullptr) { h = why_off(pg, sr); c = amber; }
             else if (pg == 0 && sr == 7 && !id(src_tfl)) { h = "1st, 2nd, 3rd dimmed under each time"; c = amber; }
-            else if (pg == 4 && sr == 3 && id(sounds_sw).state && id(ann_mode).active_index().value_or(0) != 0) { h = "Voice: Home Assistant > Automations > UK Departure Board"; c = amber; }
+            else if (pg == 4 && sr == 1 && id(spk_names_ts).state.empty() && id(ann_mode).active_index().value_or(0) != 0) { h = "Pick a speaker in your automation to hear these"; c = orange; }
+            else if (pg == 4 && sr == 1 && id(ann_mode).active_index().value_or(0) != 0) { h = "Voice: Home Assistant > Automations > UK Departure Board"; c = amber; }
             else if (pg == 2 && sr == 0 && id(dim_state) != 0) { h = "Daytime brightness (the screen is dimmed just now)"; c = amber; }
             else if (pg == 0 && sr == 1 && id(layout_select).active_index().value_or(0) == 3) { h = "Platform: choose a platform in the row below, or leave All"; c = amber; }
             else if (pg == 0 && sr == 2 && id(layout_select).active_index().value_or(0) == 3) { h = "Show only one platform's trains: tap to pick, or All"; c = amber; }
@@ -3868,38 +3733,6 @@ display:
         }
         id(msg_icon_x) = icx - 30;
         clk_left = icx - 20;
-      }
-      id(spk_icon_x) = -1;
-      {
-        const bool muted = id(board_media).is_muted();
-        const auto mst = id(board_media).state;
-        const bool talking = mst == media_player::MEDIA_PLAYER_STATE_ANNOUNCING || mst == media_player::MEDIA_PLAYER_STATE_PLAYING;
-        if (id(sounds_sw).state && (muted || talking) && !detail && !switching) {
-          const int scx = clk_left - 40, scy = fb - 11;
-          const Color sc = muted ? grey : amber;
-          it.filled_rectangle(scx - 14, scy - 5, 6, 11, sc);                         // the box
-          it.filled_rectangle(scx - 8, scy - 5, 8, 11, sc);                          // the cone
-          it.filled_triangle(scx - 8, scy - 5, scx - 1, scy - 12, scx - 1, scy - 5, sc);
-          it.filled_triangle(scx - 8, scy + 5, scx - 1, scy + 12, scx - 1, scy + 5, sc);
-          if (muted) {
-            for (int d = -1; d <= 1; d++) {                                            // a cross where the waves would be
-              it.line(scx + 5 + d, scy - 6, scx + 15 + d, scy + 6, sc);
-              it.line(scx + 15 + d, scy - 6, scx + 5 + d, scy + 6, sc);
-            }
-          } else {
-            const int nw = 1 + (millis() / 300) % 3;                                   // one, two, three waves, over and over
-            for (int w = 0; w < nw; w++) {
-              const int r0 = 6 + w * 6;
-              for (int a = -50; a <= 50; a += 3) {
-                const float rad = a * 3.14159f / 180.0f;
-                for (int r = r0; r <= r0 + 1; r++)
-                  it.draw_pixel_at(scx + (int) (r * cosf(rad)), scy + (int) (r * sinf(rad)), sc);
-              }
-            }
-          }
-          id(spk_icon_x) = scx - 24;
-          clk_left = scx - 26;
-        }
       }
       id(upd_icon_x) = -1;
       if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE && !detail && !switching) {

@@ -9,7 +9,7 @@ blueprint:
     Up to 5 stations in total; swipe or tap the station name on the board to switch.
     Optionally, get a phone notification when one of your favourite trains (press and hold
     a train on the board) is late, cancelled or changes platform, and station-style announcements
-    on the board's speaker or any Home Assistant speaker. Use one automation per board.
+    on a speaker you already have in Home Assistant. Use one automation per board.
   domain: automation
   source_url: https://github.com/GrimmNorth/departure-board/blob/main/blueprints/automation/departure-board.yaml
   input:
@@ -92,39 +92,25 @@ blueprint:
       selector:
         boolean:
     announcements:
-      name: Announcement voice and speakers (optional, experimental)
+      name: Announcements (optional)
       icon: mdi:bullhorn-outline
       description: >-
-        Spoken train announcements need a speaker: one plugged into the board's speaker socket, or any
-        speaker you already have in Home Assistant (e.g. a Google Nest Mini). Turn them on and choose which
-        trains on the board (Settings > Sound) or on its device page. Here you pick the voice and the speakers.
+        Station-style announcements on a speaker you already have in Home Assistant (e.g. a Google Nest Mini,
+        a WiiM or a Sonos). Pick the speaker and voice here, then turn announcements on and choose which trains,
+        the volume and the chime on the board (Settings > Sound), on its device page or on the dashboard.
       collapsed: true
       input:
         ann_speakers:
           name: Speakers
           description: >-
-            Leave empty to use the board's own speaker. Or pick any Home Assistant speakers (e.g. a Google Nest Mini)
-            to announce on instead; add the board's speaker too if you want both. The chime plays on whichever speakers you pick.
+            The Home Assistant speakers to announce on, with the chime first. Pick at least one: with none,
+            there are no announcements. The board shows which speakers are picked.
           default: []
           selector:
             entity:
               multiple: true
               filter:
                 - domain: media_player
-        ann_volume:
-          name: Volume on Home Assistant speakers
-          description: >-
-            How loud the announcements are on the Home Assistant speakers picked above (not the board's own speaker,
-            which uses its volume setting). The speaker is set to this just for the announcement, then put back to
-            what it was. 0 leaves the speaker's volume as it is.
-          default: 10
-          selector:
-            number:
-              min: 0
-              max: 100
-              step: 5
-              unit_of_measurement: "%"
-              mode: slider
         ann_voice_pick:
           name: Voice
           description: >-
@@ -198,6 +184,12 @@ triggers:
     event_type: esphome.departure_board_change
     event_data:
       device_id: !input board
+  # Test announcement pressed on the board
+  - trigger: event
+    id: test
+    event_type: esphome.departure_board_test
+    event_data:
+      device_id: !input board
 
 variables:
   board_id: !input board
@@ -209,10 +201,10 @@ variables:
   weather_in: !input weather
   # announcements are switched on and set up on the board (Settings > Sound)
   ann_sel: "{{ board_ents | select('match', 'select\\..*_announcements$') | first | default('') }}"
-  # Sounds off (no speaker) or muted: no announcements at all
-  ann_sound: >-
-    {% set e = board_ents %}{{ is_state(e | select('match', 'switch\\..*_sounds$') | first | default(''), 'on') and not is_state(e | select('match', 'switch\\..*_mute$') | first | default(''), 'on') }}
-  ann_mode: "{{ states(ann_sel) if ann_sel and ann_sound else 'Off' }}"
+  ann_mode: "{{ states(ann_sel) if ann_sel else 'Off' }}"
+  # the Home Assistant speakers picked for announcements
+  spk_in: !input ann_speakers
+  speakers: "{{ spk_in if spk_in is list else ([spk_in] if spk_in else []) }}"
   # the temperature, rounded ("" when there's no weather entity or it isn't available)
   wx_temp: >-
     {% set t = state_attr(weather_in, 'temperature') if weather_in else none %}{{ (t | float) | round(0) | int if t is number or (t is string and t | float(none) is not none) else '' }}
@@ -316,7 +308,7 @@ actions:
       - stop: Favourite train alert handled
   # everything except an announcement-only run: send the trains and the rest to the board
   - if:
-      - "{{ trigger.id != 'chg' }}"
+      - "{{ trigger.id not in ['chg', 'test'] }}"
     then:
       # this blueprint's version, so the board can say when it needs re-importing. Raise it whenever a
       # change needs the new blueprint (and BP_NEED in the firmware). Only newer boards have the action.
@@ -326,7 +318,15 @@ actions:
           - action: "esphome.{{ svc }}_set_blueprint_version"
             continue_on_error: true
             data:
-              ver: 3
+              ver: 4
+      # the speakers picked for announcements, by name, for the board's Sound page (boards from 2.4.0)
+      - if:
+          - "{{ board_ents | select('search', '_announcement_speaker$') | list | count > 0 }}"
+        then:
+          - action: "esphome.{{ svc }}_set_speakers"
+            continue_on_error: true
+            data:
+              names: "{{ speakers | map('state_attr', 'friendly_name') | map('default', '', true) | reject('eq', '') | join(', ') if speakers else '' }}"
       - action: "esphome.{{ svc }}_update_status"
         continue_on_error: true
         data:
@@ -475,9 +475,10 @@ actions:
             continue_on_error: true
             data:
               notification_id: "{{ note_id }}_grace"
-  # announcements: a few minutes before each train from the station on the board (not Tube / DLR), once a minute
+  # announcements: a few minutes before each train from the station on the board (not Tube / DLR), once a minute;
+  # and Test announcement from the board, whatever the settings
   - if:
-      - "{{ ann_mode in ['All trains', 'Delays only', 'Favourites only'] and trigger is defined and (trigger.platform == 'time_pattern' or trigger.id == 'chg') }}"
+      - "{{ trigger is defined and (trigger.id == 'test' or (ann_mode in ['All trains', 'Delays only', 'Favourites only'] and (trigger.platform == 'time_pattern' or trigger.id == 'chg'))) }}"
     then:
       - variables:
           which: "{{ ['delayed', 'cancelled'] if ann_mode == 'Delays only' else ['on_time', 'delayed', 'cancelled'] }}"
@@ -486,17 +487,16 @@ actions:
             {% set ns = namespace(l=[]) %}{% if ann_mode == 'Favourites only' %}{% set fe = board_ents | select('match', 'text\\..*_favourite_trains$') | first | default('') %}{% for f in (states(fe) if fe else '').split(',') %}{% set f = f | trim %}{% set hm = f[:5] %}{% set st = f[5:] | trim %}{% if hm | regex_match('^[0-9]{2}:[0-9]{2}$') and (st == '' or st | lower == stn_name | lower) %}{% set ns.l = ns.l + [hm] %}{% endif %}{% endfor %}{% endif %}{{ ns.l }}
           before: "{{ states(board_ents | select('match', 'number\\..*_announce_before$') | first | default('')) | int(5) }}"
           chime: "{{ is_state(board_ents | select('match', 'switch\\..*_chime_first$') | first | default(''), 'on') }}"
-          spk_in: !input ann_speakers
           pick: !input ann_voice_pick
-          ann_vol: !input ann_volume
+          # the board's Announcement volume (none on older boards: the speakers' own volume is left alone)
+          ann_vol: >-
+            {% set e = board_ents | select('match', 'number\\..*_announcement_volume$') | first | default('') %}{{ states(e) | int(0) if e else 0 }}
           tts_in: !input ann_tts
           voice_in: !input ann_voice
           # quiet between the board's Night starts and Night ends (or sunset to sunrise when night follows the sun).
           # "False" with a capital F: Home Assistant only reads that as a true/false value; "false" stays text, which counts as true
           quiet: >-
             {% set qs = board_ents | select('match', 'switch\\..*_quiet_at_night$') | first | default('') %}{% if not is_state(qs, 'on') %}False{% elif is_state(board_ents | select('match', 'switch\\..*_night_follows_sun$') | first | default(''), 'on') %}{{ is_state('sun.sun', 'below_horizon') }}{% else %}{% set q_from = states(board_ents | select('match', 'time\\..*_night_starts$') | first | default('')) %}{% set q_to = states(board_ents | select('match', 'time\\..*_night_ends$') | first | default('')) %}{% set n = now().strftime('%H:%M:%S') %}{% if not (q_from | regex_match('^[0-9]{2}:[0-9]{2}')) or not (q_to | regex_match('^[0-9]{2}:[0-9]{2}')) or q_from == q_to %}False{% elif q_from < q_to %}{{ q_from <= n < q_to }}{% else %}{{ n >= q_from or n < q_to }}{% endif %}{% endif %}
-          speakers: >-
-            {% set l = spk_in if spk_in is list else ([spk_in] if spk_in else []) %}{{ l if l else board_ents | select('match', 'media_player\\.') | list }}
           # the speech service, voice and language for the chosen voice (British English throughout)
           tts_ent: >-
             {% set all = states.tts | map(attribute='entity_id') | list %}{% set want = 'google_translate' if pick == 'google_uk' else ('piper' if pick.startswith('piper:') else ('home_assistant_cloud' if pick.startswith('cloud:') else '')) %}{% set m = all | select('search', want) | first | default('') if want else '' %}{{ m if m else (tts_in if tts_in else (all | first | default(''))) }}
@@ -509,8 +509,8 @@ actions:
           # the trains to announce this minute, of the kinds chosen: each train that many minutes before its booked
           # time; a delayed train with a new time again that many minutes before the new time ("next_delayed")
           due: >-
-            {% set ns = namespace(l=[]) %}{% if trigger.id == 'chg' %}{% set ce = trigger.event.data %}{% set t = a_ents | select('search', '_train_' ~ (ce.train | int(0)) ~ '$') | first | default('') %}{% set sd = state_attr(t, 'scheduled_departure') | string if t else '' %}{% set ex0 = state_attr(t, 'expected_departure') | string if t else '' %}{% set tm = ex0 if ex0 | regex_match('^[0-9]{2}:[0-9]{2}$') else sd[:5] %}{% set nm0 = now().hour * 60 + now().minute %}{% set ahead = 1 if not ex0 | regex_match('^[0-9]{2}:[0-9]{2}') and ce.kind != 'cancelled' and ex0 | lower in ['delayed', 'unknown'] else (((tm[:2] | int(0)) * 60 + (tm[3:5] | int(0)) - nm0) % 1440 if tm | regex_match('^[0-9]{2}:[0-9]{2}$') else -1) %}{% if t and sd[:5] == ce.sched and 0 < ahead <= 720 and ce.kind in which and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ns.l = [[t, ce.kind]] %}{% endif %}{{ ns.l }}{% else %}{% set nm = now().hour * 60 + now().minute %}{% for i in range(1, 11) %}{% set t = a_ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% if t %}{% set sd = state_attr(t, 'scheduled_departure') | string %}{% if sd | regex_match('^[0-9]{2}:[0-9]{2}$') and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ex = state_attr(t, 'expected_departure') | string %}{% set ex_ok = ex | regex_match('^[0-9]{2}:[0-9]{2}$') %}{% set k = 'cancelled' if state_attr(t, 'is_cancelled') or state_attr(t, 'status') == 'cancelled' else ('delayed' if (state_attr(t, 'delay_minutes') | int(0)) > 0 or (ex_ok and ex != sd) or ex | lower == 'delayed' else 'on_time') %}{% if k in which and ((sd[:2] | int) * 60 + (sd[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, k]] %}{% endif %}{% if k == 'delayed' and 'delayed' in which and ex_ok and ex != sd and ((ex[:2] | int) * 60 + (ex[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, 'next_delayed']] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.l }}{% endif %}
-      - condition: "{{ not is_tfl and not quiet and tts_ent != '' and speakers | count > 0 and due | count > 0 }}"
+            {% set ns = namespace(l=[]) %}{% if trigger.id == 'test' %}{% set ns.l = [['', 'test']] %}{% elif trigger.id == 'chg' %}{% set ce = trigger.event.data %}{% set t = a_ents | select('search', '_train_' ~ (ce.train | int(0)) ~ '$') | first | default('') %}{% set sd = state_attr(t, 'scheduled_departure') | string if t else '' %}{% set ex0 = state_attr(t, 'expected_departure') | string if t else '' %}{% set tm = ex0 if ex0 | regex_match('^[0-9]{2}:[0-9]{2}$') else sd[:5] %}{% set nm0 = now().hour * 60 + now().minute %}{% set ahead = 1 if not ex0 | regex_match('^[0-9]{2}:[0-9]{2}') and ce.kind != 'cancelled' and ex0 | lower in ['delayed', 'unknown'] else (((tm[:2] | int(0)) * 60 + (tm[3:5] | int(0)) - nm0) % 1440 if tm | regex_match('^[0-9]{2}:[0-9]{2}$') else -1) %}{% if t and sd[:5] == ce.sched and 0 < ahead <= 720 and ce.kind in which and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ns.l = [[t, ce.kind]] %}{% endif %}{{ ns.l }}{% else %}{% set nm = now().hour * 60 + now().minute %}{% for i in range(1, 11) %}{% set t = a_ents | select('search', '_train_' ~ i ~ '$') | first | default('') %}{% if t %}{% set sd = state_attr(t, 'scheduled_departure') | string %}{% if sd | regex_match('^[0-9]{2}:[0-9]{2}$') and (ann_mode != 'Favourites only' or sd in fav_times) %}{% set ex = state_attr(t, 'expected_departure') | string %}{% set ex_ok = ex | regex_match('^[0-9]{2}:[0-9]{2}$') %}{% set k = 'cancelled' if state_attr(t, 'is_cancelled') or state_attr(t, 'status') == 'cancelled' else ('delayed' if (state_attr(t, 'delay_minutes') | int(0)) > 0 or (ex_ok and ex != sd) or ex | lower == 'delayed' else 'on_time') %}{% if k in which and ((sd[:2] | int) * 60 + (sd[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, k]] %}{% endif %}{% if k == 'delayed' and 'delayed' in which and ex_ok and ex != sd and ((ex[:2] | int) * 60 + (ex[3:5] | int) - nm) % 1440 == before | int %}{% set ns.l = ns.l + [[t, 'next_delayed']] %}{% endif %}{% endif %}{% endif %}{% endfor %}{{ ns.l }}{% endif %}
+      - condition: "{{ (trigger.id == 'test' or (not is_tfl and not quiet)) and tts_ent != '' and speakers | count > 0 and due | count > 0 }}"
       # Home Assistant speakers (not the board's own): remember their volume and set the announcement volume
       - variables:
           ext_all: "{{ speakers | reject('in', board_ents) | list }}"
@@ -547,7 +547,7 @@ actions:
                 # the commas split each sentence into short pieces: Google's voice reads at most 100 characters at a time and
                 # otherwise breaks mid-name ("Manchester ... Airport"); the pauses sound like a real station announcer
                 message: >-
-                  {% if kind == 'cancelled' %}We are sorry to announce, that {{ svc_name }} has been cancelled.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'delayed' %}We are sorry to announce, that {{ svc_name }} is delayed{{ ', and is now expected at ' ~ ex if ex | regex_match('^[0-9]{2}:[0-9]{2}$') else '' }}.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'next_delayed' %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be the delayed {{ svc_name[4:] }}, now expected at {{ ex }}. {{ stops }}{% else %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be {{ svc_name }}. {{ stops }}{% endif %}{% if kind != 'cancelled' and state_attr(t, 'platform_changed') and plat %} Please note, this train will now depart from platform {{ plat }}.{% endif %}
+                  {% if kind == 'test' %}This is a test announcement, from your departure board.{% elif kind == 'cancelled' %}We are sorry to announce, that {{ svc_name }} has been cancelled.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'delayed' %}We are sorry to announce, that {{ svc_name }} is delayed{{ ', and is now expected at ' ~ ex if ex | regex_match('^[0-9]{2}:[0-9]{2}$') else '' }}.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'next_delayed' %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be the delayed {{ svc_name[4:] }}, now expected at {{ ex }}. {{ stops }}{% else %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be {{ svc_name }}. {{ stops }}{% endif %}{% if kind != 'cancelled' and state_attr(t, 'platform_changed') and plat %} Please note, this train will now depart from platform {{ plat }}.{% endif %}
             # the chime on Home Assistant speakers: the same sound as a file, played before the voice
             - if:
                 - "{{ chime and ext_all | count > 0 }}"
@@ -562,17 +562,6 @@ actions:
                 - delay: 1
                 - wait_template: "{{ ext_all | select('is_state', ['playing', 'buffering']) | list | count == 0 }}"
                   timeout: 4
-            # the chime on the board's own speaker, when it's one of the speakers
-            - if:
-                - "{{ chime and speakers | select('in', board_ents) | list | count > 0 and board_ents | select('search', '_test_sound$') | list | count > 0 }}"
-              then:
-                - action: "esphome.{{ svc }}_play_chime"
-                  continue_on_error: true
-                # ask for the speech straight away: making and fetching it takes a second or two. Boards from 2.3.3
-                # play the voice over the end of the chime; older ones would cut the chime off, so wait a little there
-                - delay:
-                    milliseconds: >-
-                      {% set u = board_ents | select('match', 'update\\.') | first | default('') %}{% set v = (state_attr(u, 'installed_version') or '0') | string %}{% set p = (v.split('.') + ['0', '0'])[:3] | map('int', 0) | list %}{{ 0 if p[0] * 10000 + p[1] * 100 + p[2] >= 20303 else 600 }}
             - if:
                 - "{{ lang != '' }}"
               then:
