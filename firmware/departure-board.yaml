@@ -28,7 +28,7 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.8"
+    version: "2.3.9"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -504,6 +504,17 @@ script:
       - delay: 2s
       - script.execute: panel_resync
       - delay: 3s
+      # if the speaker's output is still running with nothing playing, stop it: a running output keeps the board busy
+      # and the picture keeps slipping (an announcement ending was the only thing that cleared it)
+      - lambda: |-
+          if (id(board_media).state == media_player::MEDIA_PLAYER_STATE_IDLE && !id(play_chime_now).is_running()) {
+            if (id(chime_spk_in)->is_running()) id(chime_spk_in)->stop();
+            if (id(board_speaker)->is_running()) {
+              ESP_LOGW("sound", "speaker output still running after the sound ended: stopping it");
+              id(board_speaker)->stop();
+            }
+          }
+      - delay: 500ms
       - script.execute: panel_resync
   - id: panel_resync
     then:
@@ -1945,6 +1956,17 @@ select:
     options: ["DotGothic"]
 
 text_sensor:
+  # diagnostics: which parts of the sound system are running (should all be "off" when nothing is playing)
+  - platform: template
+    name: "Audio state"
+    icon: mdi:speaker-wireless
+    entity_category: diagnostic
+    update_interval: 5s
+    lambda: |-
+      std::string s = std::string("output ") + (id(board_speaker)->is_running() ? "on" : "off");
+      s += std::string(", speech ") + (id(ann_spk_in)->is_running() ? "on" : "off");
+      s += std::string(", chime ") + (id(chime_spk_in)->is_running() ? "on" : "off");
+      return s;
   - platform: template
     id: bp_ts
     name: "Blueprint"

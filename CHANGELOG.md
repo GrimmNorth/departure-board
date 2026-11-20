@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- Screen: a few seconds after each sound, the speaker's output is switched off if it was left running with nothing playing, then the picture is put back in step. A running output may be what kept the jitter going until the next announcement
+- New diagnostic sensor, Audio state, showing which parts of the sound system are running
+
 ## 2.3.8 - 2026-11-20 (beta)
 - Screen: back to the standard picture buffer. The bigger one in 2.3.7 made the whole screen jitter. The extra resets after each sound stay
 
