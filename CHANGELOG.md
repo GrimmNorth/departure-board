@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.9 - 2026-11-20 (beta)
 - Screen: a few seconds after each sound, the speaker's output is switched off if it was left running with nothing playing, then the picture is put back in step. A running output may be what kept the jitter going until the next announcement
 - New diagnostic sensor, Audio state, showing which parts of the sound system are running
 
