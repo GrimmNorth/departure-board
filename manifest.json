@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.1.1",
+  "version": "2.4.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.1.1.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.4.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "a7b70ada1439f4f65540b2726c449f40",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.1.1.ota.bin",
-        "summary": "Settings redesign, favourites with a heart and phone alerts (re-import the blueprint for alerts)"
+        "md5": "85abde440a9c01fa0e271b8c802974ec",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.4.0.ota.bin",
+        "summary": "Announcements on Home Assistant speakers only; built-in speaker removed (it made the screen jitter)"
       }
     }
   ]
