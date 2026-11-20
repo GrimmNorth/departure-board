@@ -28,7 +28,7 @@ esphome:
           auto c = id(backlight).turn_on(); c.set_brightness(b); c.set_transition_length(0); c.perform();
   project:
     name: "community.uk_departure_board"
-    version: "2.3.5"
+    version: "2.3.6"
   platformio_options:
     board_build.esp-idf.memory_type: qio_opi
     board_build.flash_mode: dio
@@ -61,6 +61,9 @@ logger:
 
 api:
   reboot_timeout: 15min      # no Home Assistant connection for 15 min = reboot
+  # (re)connecting to Home Assistant is a busy moment that can make the picture slip: put it back in step
+  on_client_connected:
+    - script.execute: panel_resync
   actions:
     - action: set_station_count
       variables:
@@ -822,6 +825,11 @@ script:
           c.perform();
 
 interval:
+  # put the screen's picture back in step every half minute, and the jitter at the left edge (the picture slipping
+  # when Wi-Fi, sound or a big update keeps the board busy) never lasts long. It's invisible when nothing has slipped
+  - interval: 30s
+    then:
+      - script.execute: panel_resync
   # automatic updates: check for a new version at 03:00 and install it a few minutes later
   - interval: 60s
     then:

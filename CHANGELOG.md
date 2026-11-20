@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
-- Announcements: fixed no announcements at all while *Quiet at night* is switched off. The automation was treating "not quiet" as quiet. Re-import the blueprint
+## 2.3.6 - 2026-11-20 (beta)
+- Screen: the jitter at the left edge clears itself within half a minute, whatever caused it (Wi-Fi, a reconnect to Home Assistant or a big update), not only after a sound. Before, it could stay until the next sound or a restart
+- Announcements (blueprint, already out): fixed no announcements at all while *Quiet at night* is switched off. The automation was treating "not quiet" as quiet. Re-import the blueprint
 
 ## 2.3.5 - 2026-11-19 (beta)
 - Sound: the chime is clean again. In 2.3.4 it was handed to the speaker a little at a time, and the screen's drawing sometimes held that up long enough to leave tiny gaps, which sounded distorted. The whole chime is now handed over at once
