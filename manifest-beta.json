@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.5",
+  "version": "2.3.6",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.5.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.3.6.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "cb34ea3a6d87bb0a465af7f3d181f577",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.5.ota.bin",
-        "summary": "The chime sounds clean again (it could sound distorted in 2.3.4)."
+        "md5": "9ad48396e61511aa26f2abdd0edd5c53",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.6.ota.bin",
+        "summary": "The jitter at the left edge of the screen clears itself within half a minute. Announcements work again with Quiet at night switched off (re-import the blueprint)."
       }
     }
   ]
