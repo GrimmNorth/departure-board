@@ -9,7 +9,7 @@ A live UK train departure board for the **Elecrow CrowPanel Basic 7.0"** (ESP32-
 ## 🧰 What you need
 - The CrowPanel Basic 7.0" (tested on hardware V3.0, the current version)
 - Home Assistant 2026.11 or newer
-- **My Rail Commute** from the Marketplace (Settings > Marketplace), with a free National Rail Darwin token
+- **My Rail Commute** from the Marketplace (Settings > Marketplace), with a free National Rail API key from the [Rail Data Marketplace](https://raildata.org.uk/). [My Rail Commute's guide](https://github.com/adamf83/my-rail-commute#national-rail-api-key) shows how to get one
 - For Tube / DLR: **London TfL** from the Marketplace
 - Optional, for announcements: a speaker you already have in Home Assistant (e.g. a Google Nest Mini, a WiiM or a Sonos)
 
