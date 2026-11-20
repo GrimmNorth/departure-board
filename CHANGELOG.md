@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.10 - 2026-11-20 (beta)
+- Screen: the picture now refreshes about 25 times a second instead of 30, which gives it more room while sound is playing, so it should slip less often
+- Screen: a few seconds after each sound, the board plays a tenth of a second of silence. Starting the sound again was the one thing that cleared a jittering picture (the next announcement always did), so this should clear it straight away. 2.3.9 showed the speaker was switching off properly, so that wasn't the cause
+
 ## 2.3.9 - 2026-11-20 (beta)
 - Screen: a few seconds after each sound, the speaker's output is switched off if it was left running with nothing playing, then the picture is put back in step. A running output may be what kept the jitter going until the next announcement
 - New diagnostic sensor, Audio state, showing which parts of the sound system are running
