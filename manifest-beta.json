@@ -1,16 +1,16 @@
 {
   "name": "UK Departure Board",
-  "version": "2.3.10",
+  "version": "2.4.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "releases/departure-board-2.3.10.factory.bin", "offset": 0 }
+        { "path": "releases/departure-board-2.4.0.factory.bin", "offset": 0 }
       ],
       "ota": {
-        "md5": "a6b09f91c819eb70a8079dcf1c227f5f",
-        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.3.10.ota.bin",
-        "summary": "Screen: slower refresh and a silent pulse after each sound to clear the left-edge jitter"
+        "md5": "85abde440a9c01fa0e271b8c802974ec",
+        "path": "https://grimmnorth.github.io/departure-board/releases/departure-board-2.4.0.ota.bin",
+        "summary": "Announcements on Home Assistant speakers only; built-in speaker removed (it made the screen jitter)"
       }
     }
   ]
