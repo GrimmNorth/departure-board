@@ -104,7 +104,7 @@ blueprint:
           name: Speakers
           description: >-
             Leave empty to use the board's own speaker. Or pick any Home Assistant speakers (e.g. a Google Nest Mini)
-            to announce on instead; add the board's speaker too if you want both. The chime only plays on the board.
+            to announce on instead; add the board's speaker too if you want both. The chime plays on whichever speakers you pick.
           default: []
           selector:
             entity:
@@ -513,7 +513,8 @@ actions:
       - condition: "{{ not is_tfl and not quiet and tts_ent != '' and speakers | count > 0 and due | count > 0 }}"
       # Home Assistant speakers (not the board's own): remember their volume and set the announcement volume
       - variables:
-          ext_spk: "{{ speakers | reject('in', board_ents) | list if (ann_vol | int(0)) > 0 else [] }}"
+          ext_all: "{{ speakers | reject('in', board_ents) | list }}"
+          ext_spk: "{{ ext_all if (ann_vol | int(0)) > 0 else [] }}"
           prev_vol: >-
             {% set ns = namespace(d={}) %}{% for e in ext_spk %}{% set v = state_attr(e, 'volume_level') %}{% if v is number %}{% set ns.d = dict(ns.d, **{e: v}) %}{% endif %}{% endfor %}{{ ns.d }}
       - if:
@@ -547,8 +548,23 @@ actions:
                 # otherwise breaks mid-name ("Manchester ... Airport"); the pauses sound like a real station announcer
                 message: >-
                   {% if kind == 'cancelled' %}We are sorry to announce, that {{ svc_name }} has been cancelled.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'delayed' %}We are sorry to announce, that {{ svc_name }} is delayed{{ ', and is now expected at ' ~ ex if ex | regex_match('^[0-9]{2}:[0-9]{2}$') else '' }}.{{ ' ' ~ reason if reason else '' }}{% elif kind == 'next_delayed' %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be the delayed {{ svc_name[4:] }}, now expected at {{ ex }}. {{ stops }}{% else %}The next train to depart from {{ 'platform ' ~ plat if plat else 'this station' }}, will be {{ svc_name }}. {{ stops }}{% endif %}{% if kind != 'cancelled' and state_attr(t, 'platform_changed') and plat %} Please note, this train will now depart from platform {{ plat }}.{% endif %}
+            # the chime on Home Assistant speakers: the same sound as a file, played before the voice
             - if:
-                - "{{ chime and board_ents | select('search', '_test_sound$') | list | count > 0 }}"
+                - "{{ chime and ext_all | count > 0 }}"
+              then:
+                - action: media_player.play_media
+                  continue_on_error: true
+                  target:
+                    entity_id: "{{ ext_all }}"
+                  data:
+                    media_content_id: https://raw.githubusercontent.com/GrimmNorth/departure-board/main/firmware/sounds/chime.mp3
+                    media_content_type: music
+                - delay: 1
+                - wait_template: "{{ ext_all | select('is_state', ['playing', 'buffering']) | list | count == 0 }}"
+                  timeout: 4
+            # the chime on the board's own speaker, when it's one of the speakers
+            - if:
+                - "{{ chime and speakers | select('in', board_ents) | list | count > 0 and board_ents | select('search', '_test_sound$') | list | count > 0 }}"
               then:
                 - action: "esphome.{{ svc }}_play_chime"
                   continue_on_error: true

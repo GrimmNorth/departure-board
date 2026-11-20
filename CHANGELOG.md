@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Announcements (blueprint): the chime now plays on the speakers you pick. Before, it always played on the board, even when the announcements went to another speaker
 - Announcements (blueprint): new *Volume on Home Assistant speakers* setting, 10% to start with. Speakers you pick (a WiiM, a Nest Mini) are set to it just for the announcement, then put back to their own volume. The board's own speaker isn't affected. 0 leaves the volume alone
 
 ## 2.3.10 - 2026-11-20 (beta)
