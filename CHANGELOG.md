@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.8 - 2026-11-20 (beta)
 - Screen: back to the standard picture buffer. The bigger one in 2.3.7 made the whole screen jitter. The extra resets after each sound stay
 
 ## 2.3.7 - 2026-11-20 (beta)
