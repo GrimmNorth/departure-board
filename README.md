@@ -127,6 +127,14 @@ The firmware is `firmware/departure-board.yaml` plus `firmware/departure_board.h
 To release, go to **Actions > Release > Run workflow**: choose **beta** with a version and a one-line summary, test it on a Beta board, then run it again with **promote** for everyone. To upgrade ESPHome, change `ESPHOME_VERSION` in both workflow files. `release.sh` publishes by hand if needed.
 </details>
 
+## 🙏 Thanks
+This board wouldn't work without two Home Assistant integrations, which do the hard work of fetching the trains:
+
+- **[My Rail Commute](https://github.com/adamf83/my-rail-commute)** by adamf83: National Rail departures, delays, cancellations and platforms.
+- **[London TfL](https://github.com/morosanmihail/HA-LondonTfL)** by morosanmihail: Tube, DLR and other TfL departures.
+
+If you find this project useful, consider starring their repos too.
+
 ## 📝 Notes
 - MIT licence. A hobby project, not affiliated with National Rail, TfL or Elecrow.
 - The board's API is unencrypted to keep setup simple, so keep it on your home network.
