@@ -137,7 +137,7 @@ Things that might come next. Nothing here is promised, and suggestions are welco
 - **Ask Home Assistant:** "when's the next train to Leeds?" answered by Assist, using what's on the board.
 - **More screens:** other CrowPanel sizes (5", the 7" Advance) and similar ESP32 displays.
 - **Automatic brightness:** dim and brighten with the room, using a light sensor.
-- **No Home Assistant needed:** a standalone mode that gets the trains straight from National Rail.
+- **Explore a standalone mode:** see whether the board can get the trains straight from National Rail, with no Home Assistant needed.
 
 ## 🙏 Thanks
 This board wouldn't work without two Home Assistant integrations, which do the hard work of fetching the trains:
