@@ -127,6 +127,17 @@ The firmware is `firmware/departure-board.yaml` plus `firmware/departure_board.h
 To release, go to **Actions > Release > Run workflow**: choose **beta** with a version and a one-line summary, test it on a Beta board, then run it again with **promote** for everyone. To upgrade ESPHome, change `ESPHOME_VERSION` in both workflow files. `release.sh` publishes by hand if needed.
 </details>
 
+## 💡 Ideas for the future
+Things that might come next. Nothing here is promised, and suggestions are welcome: [open an issue](https://github.com/GrimmNorth/departure-board/issues).
+
+- **A 3D-printed case:** a platform-style frame that stands on a desk or hangs on the wall. Being test printed now.
+- **Arrivals mode:** show trains arriving at the station, not just departing.
+- **Next train home:** a journey view for a set route, including a change of train.
+- **More rail networks:** trams, metros and underground systems beyond London (e.g. Metrolink, Tyne and Wear Metro, Glasgow Subway), wherever a Home Assistant integration provides the times.
+- **More screens:** other CrowPanel sizes (5", the 7" Advance) and similar ESP32 displays.
+- **Automatic brightness:** dim and brighten with the room, using a light sensor.
+- **Explore a standalone mode:** see whether the board can get the trains straight from National Rail, with no Home Assistant needed.
+
 ## 🙏 Thanks
 This board wouldn't work without two Home Assistant integrations, which do the hard work of fetching the trains:
 
