@@ -134,7 +134,6 @@ Things that might come next. Nothing here is promised, and suggestions are welco
 - **Arrivals mode:** show trains arriving at the station, not just departing.
 - **Next train home:** a journey view for a set route, including a change of train.
 - **More rail networks:** trams, metros and underground systems beyond London (e.g. Metrolink, Tyne and Wear Metro, Glasgow Subway), wherever a Home Assistant integration provides the times.
-- **Ask Home Assistant:** "when's the next train to Leeds?" answered by Assist, using what's on the board.
 - **More screens:** other CrowPanel sizes (5", the 7" Advance) and similar ESP32 displays.
 - **Automatic brightness:** dim and brighten with the room, using a light sensor.
 - **Explore a standalone mode:** see whether the board can get the trains straight from National Rail, with no Home Assistant needed.
